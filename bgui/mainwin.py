@@ -1,0 +1,226 @@
+import functools
+import traceback
+from PyQt5 import QtWidgets, QtGui
+from bdata import projroot
+from bgui import dlgs
+from bgui import tmodel
+from bgui import tview
+
+
+class MainWindow(QtWidgets.QMainWindow):
+    "application main window"
+
+    def __init__(self, proj=None):
+        super().__init__()
+        self.setWindowTitle("BioStat Analyser")
+        # =========== data
+        self.proj = None
+        self.models = []
+        self.active_model = None
+
+        # =========== central widget
+        self.wtab = QtWidgets.QTabWidget(self)
+        self.tabframes = []
+        self.setCentralWidget(self.wtab)
+
+        # ============== Menu
+        menubar = self.menuBar()
+
+        # --- File
+        self.filemenu = menubar.addMenu('File')
+        # Open db
+        open_action = QtWidgets.QAction("Open database...", self)
+        open_action.triggered.connect(self._act_open_database)
+        self.filemenu.addAction(open_action)
+        # Exit
+        exit_action = QtWidgets.QAction('Exit', self)
+        exit_action.setShortcut(QtGui.QKeySequence.Close)
+        exit_action.triggered.connect(QtWidgets.qApp.quit)
+        self.filemenu.addAction(exit_action)
+
+        # --- View
+        self.viewmenu = menubar.addMenu('View')
+        self.viewmenu.aboutToShow.connect(self._viewmenu_enabled)
+        # zoom
+        zoomin_act = QtWidgets.QAction('Increase font', self)
+        zoomin_act.triggered.connect(functools.partial(
+                self._act_zoom, 2))
+        self.viewmenu.addAction(zoomin_act)
+        zoomout_act = QtWidgets.QAction('Decrease font', self)
+        zoomout_act.triggered.connect(functools.partial(
+                self._act_zoom, -2))
+        self.viewmenu.addAction(zoomout_act)
+        # fold/unfold
+        self.viewmenu.addSeparator()
+        self.fold_rows_action = QtWidgets.QAction('Fold all groups', self)
+        self.fold_rows_action.setCheckable(True)
+        self.fold_rows_action.triggered.connect(self._act_fold_all_rows)
+        self.viewmenu.addAction(self.fold_rows_action)
+        self.unfold_rows_action = QtWidgets.QAction('Unfold all groups', self)
+        self.unfold_rows_action.setCheckable(True)
+        self.unfold_rows_action.triggered.connect(self._act_unfold_all_rows)
+        self.viewmenu.addAction(self.unfold_rows_action)
+
+        # --- Rows
+        self.rowsmenu = menubar.addMenu('Rows')
+        self.rowsmenu.aboutToShow.connect(self._rowsmenu_enabled)
+        # group/ungroup
+        group_by_redundancy_action = QtWidgets.QAction(
+                'Group redundancies', self)
+        group_by_redundancy_action.triggered.connect(
+                self._act_group_by_redundancy)
+        self.rowsmenu.addAction(group_by_redundancy_action)
+        group_rows_action = QtWidgets.QAction('Group rows...', self)
+        group_rows_action.triggered.connect(self._act_group_rows)
+        self.rowsmenu.addAction(group_rows_action)
+        self.ungroup_rows_action = QtWidgets.QAction('Ungroup all', self)
+        self.ungroup_rows_action.triggered.connect(self._act_ungroup_rows)
+        self.rowsmenu.addAction(self.ungroup_rows_action)
+
+        # filtering
+        self.rowsmenu.addSeparator()
+        filter_action = QtWidgets.QAction('Filter...', self)
+        filter_action.triggered.connect(self._act_filter)
+        self.rowsmenu.addAction(filter_action)
+
+        self.rem_last_filter_action = QtWidgets.QAction(
+                'Cancel last filter', self)
+        self.rem_last_filter_action.triggered.connect(
+                lambda: (self.active_model.rem_last_filter(),
+                         self.active_model.update()))
+        self.rowsmenu.addAction(self.rem_last_filter_action)
+
+        self.rem_all_filter_action = QtWidgets.QAction(
+                'Cancel all filters', self)
+        self.rem_all_filter_action.triggered.connect(
+                lambda: (self.active_model.rem_all_filters(),
+                         self.active_model.update()))
+        self.rowsmenu.addAction(self.rem_all_filter_action)
+
+        # --- About
+        self.aboutmenu = menubar.addMenu('About')
+
+        # =============== Load data
+        self._load_database(proj)
+
+        # #collapse
+        # viewmenu.addSeparator()
+        # collapse_cats_action = QtWidgets.QAction(
+        #         'Collapse all categories', self)
+        # collapse_cats_action.triggered.connect(functools.partial(
+        #         self._collapse_cats, range(self.tabmodel.dt.cat_count())))
+        # viewmenu.addAction(collapse_cats_action)
+
+    # =============== Actions
+    def _rowsmenu_enabled(self):
+        enabled = self.active_model is not None
+        for m in self.rowsmenu.actions():
+            m.setEnabled(enabled)
+        if not enabled:
+            return
+
+        # remove filters visible
+        has_flt = self.active_model.dt.n_filters() > 0
+        self.rem_last_filter_action.setEnabled(has_flt)
+        self.rem_all_filter_action.setEnabled(has_flt)
+        # ungroup all visible
+        has_groups = len(self.active_model.dt.group_by) > 0
+        self.ungroup_rows_action.setEnabled(has_groups)
+
+    def _viewmenu_enabled(self):
+        enabled = self.active_model is not None
+        for m in self.viewmenu.actions():
+            m.setEnabled(enabled)
+        if not enabled:
+            return
+
+        # set checks for fold/unfold
+        self.fold_rows_action.setChecked(
+            self.active_model._unfolded_groups is False)
+        self.unfold_rows_action.setChecked(
+            self.active_model._unfolded_groups is True)
+
+    def _act_open_database(self):
+        flt = "Databases (*.db, *.sqlite)(*.db *.sqlite);;Any files(*)"
+        filename = QtWidgets.QFileDialog.getOpenFileName(
+                self, "Open database", filter=flt)
+        if filename:
+            self._load_database(fname=filename[0])
+
+    def _act_zoom(self, delta):
+        conf = tview.ViewConfig.get()
+        conf._main_font.setPointSize(conf._main_font.pointSize()+delta)
+        conf.refresh()
+        if self.active_model is not None:
+            self.active_model.beginResetModel()
+            self.active_model.endResetModel()
+
+    def _act_fold_all_rows(self):
+        self.active_model.unfold_all_rows(False)
+
+    def _act_unfold_all_rows(self):
+        self.active_model.unfold_all_rows(True)
+
+    def _act_filter(self):
+        dialog = dlgs.FilterRowsDlg(self.active_model.dt, self)
+        if dialog.exec_():
+            flts = dialog.ret_value()
+            self.active_model.add_filters(flts)
+            self.active_model.update()
+
+    def _act_group_rows(self):
+        dialog = dlgs.GroupRowsDlg(
+            self.active_model.dt.get_category_names(), self)
+        if dialog.exec_():
+            r = dialog.ret_value()
+            self.active_model.group_rows(r[1], r[0])
+            self.active_model.update()
+
+    def _act_group_by_redundancy(self):
+        self.active_model.group_rows(
+                self.active_model.dt.get_category_names(), 'amean')
+        self.active_model.update()
+
+    def _act_ungroup_rows(self):
+        self.active_model.group_rows([])
+        self.active_model.update()
+
+    # ============== Procedures
+    def _load_database(self, fname):
+        self._close_database()
+        if fname is None:
+            return
+        try:
+            proj = projroot.ProjectDB(fname)
+            self._init_project(proj)
+        except Exception as e:
+            print(traceback.format_exc())
+            m = "Failed to load database from {}:\n{}".format(fname, e)
+            QtWidgets.QMessageBox.critical(self, self.windowTitle(), m)
+
+    def _close_database(self):
+        if self.proj:
+            self.proj.close_connection()
+        self.proj = None
+        self.models = []
+        self.wtab.clear()
+        self.tabframes = []
+
+    def _init_project(self, p):
+        self.proj = p
+        self.models = []
+        # models
+        for t in self.proj.data_tables:
+            self.models.append(tmodel.TabModel(t))
+        self.active_model = None if not self.models else self.models[0]
+        self._init_widgets()
+
+    def _init_widgets(self):
+        self.tabframes = []
+        for m in self.models:
+            self.tabframes.append(tview.TableView(m, self.wtab))
+        for f in self.tabframes:
+            self.wtab.addTab(f, f.table_name())
+
+    # def _collapse_cats(self, what):
+    #     pass

@@ -1,0 +1,136 @@
+import copy
+from PyQt5 import QtCore
+
+
+class TabModel(QtCore.QAbstractTableModel):
+    def __init__(self, dt):
+        super().__init__()
+        self.dt = dt
+        # False -- all are folded, True -- all are unfolded,
+        # set() indicies of unfolded rows, which vanish at update()
+        self._unfolded_groups = False
+
+    def table_changed_subscribe(self, fun):
+        self.dt.updated.add_subscriber(fun)
+
+    def rowCount(self, parent=None):    # noqa
+        return self.dt.n_rows() + 2
+
+    def columnCount(self, parent=None):   # noqa
+        return self.dt.n_cols()
+
+    def flags(self, index):   # noqa
+        ret = QtCore.Qt.ItemIsEnabled
+        if index.row() >= 2:
+            ret = ret | QtCore.Qt.ItemIsSelectable
+        return ret
+
+    def headerData(self, ind, orient, role):   # noqa
+        if role == QtCore.Qt.DisplayRole:
+            if orient == QtCore.Qt.Horizontal:
+                return ind+1
+            else:
+                return ind-1 if ind > 1 else None
+        return super().headerData(ind, orient, role)
+
+    def data(self, index, role):   # noqa
+        if not index.isValid():
+            return None
+
+        if role == QtCore.Qt.DisplayRole:
+            rr, cr = self.row_role(index), self.column_role(index)
+            if rr == 'C1':
+                if cr == 'I':
+                    return "Id"
+                elif cr == 'C':
+                    return "Category"
+                else:
+                    return self.dt.table_name()
+            elif rr == 'C2':
+                return self.dt.column_caption(index.column())
+            else:
+                v = self.dt.get_value(index.row()-2, index.column())
+                return v
+
+        return None
+
+    def update(self):
+        """ make a new query and recalculate the table """
+        self.beginResetModel()
+        self.dt.update()
+        if not isinstance(self._unfolded_groups, bool):
+            self._unfolded_groups = False
+        self.endResetModel()
+    
+    # ------------------------ information procedures
+    def table_name(self):
+        return self.dt.table_name()
+
+    def group_size(self, index):
+        ir = index.row()
+        if ir < 2:
+            return 0
+        else:
+            return self.dt.n_subrows(ir-2)
+
+    def is_unfolded(self, index):
+        if self.group_size(index) < 2:
+            return False
+        if isinstance(self._unfolded_groups, bool):
+            return self._unfolded_groups
+        else:
+            return index.row() in self._unfolded_groups
+
+    def row_role(self, index):
+        """ C1 - 1st caption, C2 - 2nd caption, D - data """
+        if index.row() == 0:
+            return 'C1'
+        elif index.row() == 1:
+            return 'C2'
+        else:
+            return 'D'
+
+    def column_role(self, index):
+        """ I-id, C-category, D-data """
+        return self.dt.column_role(index.column())
+
+    def n_categories(self):
+        return self.dt.n_categories()
+    
+    # ------------------------ modification procedures
+    def add_filters(self, flts):
+        self.dt.filters.extend(flts)
+
+    def rem_last_filter(self):
+        self.dt.filters.pop()
+
+    def rem_all_filters(self):
+        self.dt.filters.clear()
+
+    def group_rows(self, catnames, method=None):
+        self.dt.group_by = copy.deepcopy(catnames)
+        if method:
+            self.dt.set_data_group_function(method)
+
+    def unfold_row(self, index, do_unfold=None):
+        ir = index.row()
+        if do_unfold is None:
+            isthere = self.is_unfolded(index)
+            do_unfold = not isthere
+        if isinstance(self._unfolded_groups, bool):
+            if self._unfolded_groups:
+                self._unfolded_groups = set(range(2, self.rowCount()))
+            else:
+                self._unfolded_groups = set()
+            return self.unfold_row(index, do_unfold)
+        else:
+            if do_unfold:
+                self._unfolded_groups.add(ir)
+            else:
+                self._unfolded_groups.remove(ir)
+        self.dataChanged.emit(self.createIndex(ir, 0),
+                              self.createIndex(ir, self.columnCount()))
+
+    def unfold_all_rows(self, do_unfold):
+        self._unfolded_groups = do_unfold
+        self.modelReset.emit()
