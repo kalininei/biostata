@@ -1,6 +1,7 @@
 import functools
 from PyQt5 import QtWidgets, QtGui, QtCore
 from bdata import dtab
+from bdata import bsqlproc
 
 
 class ViewConfig(object):
@@ -118,7 +119,7 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         # data to show as main
         dt0 = index.data()
         if dt0 is None and n_uni > 1:
-            dt0 = '...[' + str(n_uni) + ']'
+            dt0 = bsqlproc.group_repr(n_uni)
         # main label
         lab, wdg = self._vert_layout_frame()
         w = self._label(dt0, self.conf.data_font(),
@@ -198,6 +199,36 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         painter.restore()
 
 
+class HorizontalHeader(QtWidgets.QHeaderView):
+    def __init__(self, parent):
+        super().__init__(QtCore.Qt.Horizontal, parent)
+        self.setSortIndicator(0, QtCore.Qt.AscendingOrder)
+        # disable clicks to forbid automatic sorting because
+        # we want to use right mouse button for sorting
+        # and left button for column selection
+        self.setSectionsClickable(False)
+
+    def mousePressEvent(self, event):   # noqa
+        if event.button() == QtCore.Qt.RightButton:
+            col = self.logicalIndexAt(event.pos())
+            order = QtCore.Qt.AscendingOrder
+            oldcol = self.sortIndicatorSection()
+            oldorder = self.sortIndicatorOrder()
+            if col == oldcol and oldorder == QtCore.Qt.AscendingOrder:
+                order = QtCore.Qt.DescendingOrder
+            self.setSortIndicator(col, order)
+
+        # enable clicks temporary to enable column selections
+        self.setSectionsClickable(True)
+        super().mousePressEvent(event)
+        self.setSectionsClickable(False)
+
+    def mouseMoveEvent(self, event):   # noqa
+        self.setSectionsClickable(True)
+        super().mouseMoveEvent(event)
+        self.setSectionsClickable(False)
+
+
 class TableView(QtWidgets.QTableView):
     def __init__(self, model, parent):
         super().__init__(parent)
@@ -206,11 +237,15 @@ class TableView(QtWidgets.QTableView):
         self.delegate = TabDelegate(model, parent)
         self.delegate.view = self
         self.setItemDelegate(self.delegate)
-        self.model().table_changed_subscribe(self._set_cells_span)
+        self.model().table_changed_subscribe(self._tab_changed)
 
         # header
         vh = self.verticalHeader()
         vh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        self.setHorizontalHeader(HorizontalHeader(self))
+        self.horizontalHeader().setSortIndicatorShown(True)
+        self.horizontalHeader().sortIndicatorChanged.connect(
+            self._act_sort_column)
 
         # context menu
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
@@ -222,14 +257,26 @@ class TableView(QtWidgets.QTableView):
     def table_name(self):
         return self.model().table_name()
 
-    def _set_cells_span(self):
+    def _tab_changed(self):
+        # ---------- spans
+        self.clearSpans()
         # id span
         self.setSpan(0, 0, 2, 1)
         # category span
-        a = self.model().n_categories()
-        self.setSpan(0, 1, 1, a)
+        a = self.model().n_visible_categories()
+        if a > 1:
+            self.setSpan(0, 1, 1, a)
         # data span
-        self.setSpan(0, a+1, 1, self.model().columnCount())
+        if self.model().columnCount()-a-1 > 0:
+            self.setSpan(0, a+1, 1, self.model().columnCount())
+        # ---------- if cancelled ordering return v-sign to id column
+        if self.model().dt.ordering is None:
+            self.horizontalHeader().sortIndicatorChanged.disconnect(
+                self._act_sort_column)
+            self.horizontalHeader().setSortIndicator(
+                    0, QtCore.Qt.AscendingOrder)
+            self.horizontalHeader().sortIndicatorChanged.connect(
+                self._act_sort_column)
 
     def _context_menu(self, pnt):
         index = self.indexAt(pnt)
@@ -272,3 +319,22 @@ class TableView(QtWidgets.QTableView):
         if bu is not None:
             self.model()._unfolded_groups = bu
             self.model().modelReset.emit()
+
+    def _act_sort_column(self, icol, is_desc):
+        # preserve fold/unfold set which will be altered after update()
+        bu = None
+        if not isinstance(self.model()._unfolded_groups, bool):
+            bu = set()
+            for r in self.model()._unfolded_groups:
+                bu.add(self.model().row_min_id(r))
+
+        # sorting
+        self.model().set_sorting(self.model().column_name(icol), not is_desc)
+        self.model().update()
+
+        # restore fold/unfold. After the update() _unfolded_groups is boolean
+        if bu is not None:
+            for i in range(self.model().rowCount()):
+                if self.model().row_min_id(i) in bu:
+                    index = self.model().createIndex(i, 0)
+                    self.model().unfold_row(index, True)

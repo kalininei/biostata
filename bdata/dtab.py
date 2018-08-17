@@ -34,8 +34,6 @@ class DataTable(object):
         # columns information
         # original and user defined columns
         self.columns = collections.OrderedDict()
-        # _status_columns
-        self.extended_columns = {}
         # columns which are visible for user
         self.visible_columns = []
 
@@ -53,11 +51,8 @@ class DataTable(object):
 
     def _init_columns(self):
         self.columns = collections.OrderedDict()
-        self.extended_columns = collections.OrderedDict()
         self.visible_columns = []
-        self.cursor.execute("""
-            PRAGMA TABLE_INFO("{}")
-            """.format(self.otab_name))
+        self.query("""PRAGMA TABLE_INFO("{}")""".format(self.otab_name))
         cid, ccat, cdt = [], [], []
         for v in self.cursor.fetchall():
             nm = v[1]
@@ -78,7 +73,6 @@ class DataTable(object):
         for c in cid + ccat + cdt:
             self.columns[c.name] = c
             self.visible_columns.append(c)
-            self.extended_columns[c.name] = c.build_status_column()
 
     def _init_ttab(self):
         collist = []
@@ -88,18 +82,17 @@ class DataTable(object):
             else:
                 collist.append("id INTEGER PRIMARY KEY AUTOINCREMENT")
             collist.append("{} INTEGER DEFAULT 0".format(
-                self.extended_columns[c.name].sql_fun))
+                self.columns[c.name].status_column.sql_fun))
 
-        qr = """
-        CREATE TEMPORARY TABLE "{0}" ({1})
+        qr = """CREATE TEMPORARY TABLE "{0}" ({1})
         """.format(self.ttab_name, ', '.join(collist))
-        self.cursor.execute(qr)
+        self.query(qr)
 
         qr = 'INSERT INTO "{0}" ({1}) SELECT {1} from "{2}"'.format(
             self.ttab_name,
             ", ".join([x.sql_fun for x in self.columns.values()]),
             self.otab_name)
-        self.cursor.execute(qr)
+        self.query(qr)
 
     def _output_columns_list(self, use_groups):
         vc = len(self.visible_columns)
@@ -109,14 +102,14 @@ class DataTable(object):
             ret.append(c.sql_fun)
         # status columns
         for c in self.visible_columns:
-            ret.append(self.extended_columns[c.name].sql_fun)
+            ret.append(self.columns[c.name].status_column.sql_fun)
 
         if use_groups:
             # change property name to its specific function
             for i in range(vc):
                 nm = self.visible_columns[i].name
                 ret[i] = self.columns[nm].sql_group_fun
-                ret[i + vc] = self.extended_columns[nm].sql_group_fun
+                ret[i + vc] = self.columns[nm].status_column.sql_group_fun
             # add distinct counts from categories data
             for v in self.visible_columns:
                 if v.is_category:
@@ -129,7 +122,10 @@ class DataTable(object):
 
     def _grouping_ordering(self, group):
         if self.ordering:
-            oc = self.columns[self.ordering[0]]
+            try:
+                oc = self.columns[self.ordering[0]]
+            except KeyError:
+                self.ordering = None
         if group:
             gc = [self.columns[x] for x in group]
             grlist = 'GROUP BY ' + ', '.join([x.sql_fun for x in gc])
@@ -167,14 +163,39 @@ class DataTable(object):
             fltline,
             grlist,
             order)
-        print(qr)
         return qr
+
+    def query(self, qr):
+        print(qr)
+        self.cursor.execute(qr)
 
     def update(self):
         qr = self._compile_query(self.filters, self.group_by)
-        self.cursor.execute(qr)
+        self.query(qr)
         self.tab.fill(self.cursor.fetchall())
         self.updated.emit()
+
+    def merge_categories(self, categories):
+        """ Creates new column build of merged list of categories,
+               places it after the last visible category column
+            categories -- list of ColumnInfo entries
+            returns newly created column or
+                    None if this column already exists
+        """
+        if len(categories) < 2:
+            return None
+        # create column
+        col = CollapsedCategories(categories)
+        # check if this merge was already done
+        if col.name in self.columns.keys():
+            return None
+        self.add_category_column(col)
+        # place to the visible columns list
+        for i, c in enumerate(self.visible_columns):
+            if not c.is_category:
+                break
+        self.visible_columns.insert(i, col)
+        return col
 
     # ------------------------ Data modification procedures
     def set_data_group_function(self, method):
@@ -196,6 +217,44 @@ class DataTable(object):
             if not c.is_category:
                 c.sql_group_fun = '{}("{}")'.format(m, c.name)
 
+    def remove_column(self, col):
+        self.columns.pop(col.name)
+        self.visible_columns.remove(col)
+
+    def add_category_column(self, col):
+        self.columns[col.name] = col
+        # move all data column after the newly added one
+        ks = [k for k, v in self.columns.items() if not v.is_category]
+        for k in ks[::-1]:
+            self.columns.move_to_end(k)
+
+    def add_data_column(self, col):
+        self.columns[col.name] = col
+
+    def resort_visible_categories(self):
+        """ Sets visible_columns categories in order:
+              id -> original categories -> derived categories
+        """
+        vis = []
+        for c in self.columns.values():
+            if c.is_category and c in self.visible_columns:
+                vis.append(c)
+        for c in self.visible_columns:
+            if not c.is_category:
+                vis.append(c)
+        self.visible_columns = vis
+
+    def set_visibility(self, col, do_show):
+        if not do_show:
+            self.visible_columns.remove(col)
+        else:
+            ks = self.columns.keys()
+            view_index = ks.index(col.name)
+            for i, c in enumerate(self.visible_columns):
+                if view_index < ks.index(c.name):
+                    self.visible_columns.insert(i, col)
+                    break
+
     # ------------------------ Data access procedures
     def table_name(self):
         return self.otab_name
@@ -210,7 +269,7 @@ class DataTable(object):
             return 'D'
 
     def column_caption(self, icol):
-        return self.visible_columns[icol].short_caption()
+        return self.visible_columns[icol].long_caption()
 
     def get_categories(self):
         """ -> [ColumnInfo] (excluding id)"""
@@ -250,16 +309,13 @@ class DataTable(object):
     def n_subdata_unique(self, ir, ic):
         return self.tab.rows[ir].n_unique_sub_values[ic]
 
-    def n_categories(self):
+    def n_visible_categories(self):
         ret = 0
         for c in self.visible_columns[1:]:
             if not c.is_category:
                 break
             ret += 1
         return ret
-
-    def n_filters(self):
-        return len(self.filters)
 
 
 # =================================== Additional classes
@@ -295,21 +351,41 @@ class FilterByValue(object):
 class ColumnInfo:
     def __init__(self):
         self.name = None
-        self.longname = None
+        self.shortname = None
         self.is_original = None
         self.is_category = None
         self.dt_type = None
         self.sql_group_fun = None
         self.sql_fun = None
         self.sql_data_type = None
-        self.__long_caption = None
-        # this is not none only for enum and boolean types
+        self._long_caption = None
+        self.status_column = None
+        # this is not None only for enum and boolean types
         self.possible_values = None
         self.possible_values_short = None
         # defined delegates
         self.repr = lambda x: x
         self.from_repr = lambda x: x
 
+    def short_caption(self):
+        return self.shortname
+
+    def long_caption(self):
+        return self._long_caption
+
+    def _build_status_column(self):
+        ret = ColumnInfo()
+        ret.name = '_status_' + self.name
+        ret.shortname = ret.name
+        ret.is_original = False
+        ret.is_category = False
+        ret.dt_type = "BOOLEAN"
+        ret.sql_fun = '"{}"'.format(ret.name)
+        ret.sql_group_fun = 'MAX({})'.format(ret.sql_fun)
+        ret.sql_data_type = "INTEGER"
+        self.status_column = ret
+
+    # --------------- constructors
     @classmethod
     def build_from_category(cls, category):
         ret = cls()
@@ -328,9 +404,9 @@ class ColumnInfo:
         else:
             ret.sql_data_type = "REAL"
         if category.dim:
-            ret.__long_caption = "{}, {}".format(ret.name, category.dim)
+            ret._long_caption = "{0}".format(ret.name, category.dim)
         else:
-            ret.__long_caption = ret.name
+            ret._long_caption = ret.name
 
         ret.possible_values = category.possible_values
         ret.possible_values_short = category.possible_values_short
@@ -344,6 +420,7 @@ class ColumnInfo:
             ret.repr = lambda x: bool(x)
             ret.from_repr = lambda x: 1 if x else 0
 
+        ret._build_status_column()
         return ret
 
     @classmethod
@@ -357,25 +434,50 @@ class ColumnInfo:
         ret.sql_group_fun = 'category_group(id)'
         ret.sql_fun = "id"
         ret.sql_data_type = "INTEGER"
-        ret.__long_caption = "id"
+        ret._long_caption = "id"
+        ret._build_status_column()
         return ret
 
-    def build_status_column(self):
-        ret = ColumnInfo()
-        ret.name = '_status_' + self.name
-        ret.is_original = False
-        ret.is_category = True
-        ret.dt_type = "BOOLEAN"
-        ret.sql_group_fun = 'MAX("{}")'.format(ret.name)
-        ret.sql_fun = '"{}"'.format(ret.name)
-        ret.sql_data_type = "INTEGER"
-        return ret
 
-    def short_caption(self):
-        return self.shortname
+class CollapsedCategories(ColumnInfo):
+    def __init__(self, categories):
+        super().__init__()
+        self.parent = categories
+        self.name = '-'.join([c.shortname for c in categories])
+        self.shortname = self.name
+        self.is_original = False
+        self.is_category = True
+        self.dt_type = "TEXT"
+        self.sql_fun = 'category_merge({})'.format(
+                ', '.join([c.sql_fun for c in categories]))
+        self.sql_group_fun = "merged_group({})".format(
+                ', '.join([c.sql_fun for c in categories]))
+        self.sql_data_type = "TEXT"
+        self._long_caption = self.name
+        self._build_status_column()
+        self.delimiter = '/'
 
-    def long_caption(self):
-        return self.__long_caption
+        # representation
+        def r(x):
+            sp = x.split(' & ')
+            ret = []
+            for c, x in zip(self.parent, sp):
+                try:
+                    if c.dt_type != "BOOLEAN":
+                            ret.append(c.repr(int(x)))
+                    else:
+                        ret.append(c.possible_values_short[int(x)])
+                except ValueError:
+                    ret.append(x)
+            return self.delimiter.join(map(str, ret))
+
+        self.repr = r
+        self.rrepr = None
+
+    def _build_status_column(self):
+        super()._build_status_column()
+        self.status_column.sql_fun = 'max_per_list({})'.format(
+            ','.join([x.status_column.sql_fun for x in self.parent]))
 
 
 # ------------ Visible table
@@ -431,8 +533,10 @@ class ViewedData:
                         # grouped value does not present in the data
                         # hence we make a query through the id
                         qr = 'SELECT {} from "{}" WHERE id={}'.format(
-                            n, self.model.ttab_name, self.id)
-                        self.model.cursor.execute(qr)
+                            self.model.columns[n].sql_fun,
+                            self.model.ttab_name,
+                            self.id)
+                        self.model.query(qr)
                         ret[n] = self.model.cursor.fetchone()[0]
                 return ret
 
@@ -449,7 +553,7 @@ class ViewedData:
                     False, True))
                 # build query
                 qr = self.model._compile_query(flt, [])
-                self.model.cursor.execute(qr)
+                self.model.query(qr)
                 # fill data
                 f = self.model.cursor.fetchall()
                 self.sub_values = [list(x[:vc]) for x in f]

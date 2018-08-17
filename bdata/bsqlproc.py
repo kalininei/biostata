@@ -1,3 +1,10 @@
+def group_repr(c):
+    """ c -> ...[c] """
+    return '...[' + str(c) + ']'
+
+tech_splitter = ' & '
+
+
 class _Grouping1:
     def __init__(self):
         self.vals = []
@@ -42,8 +49,8 @@ class MergedCategoryGrouping(_GroupingA):
             if len(c) == 1:
                 cols.append(str(self.vals[0][i]))
             else:
-                cols.append('['+str(len(c))+']')
-        return ' - '.join(cols)
+                cols.append(group_repr(len(c)))
+        return tech_splitter.join(cols)
 
 
 class MedianDataGrouping(_Grouping1):
@@ -86,7 +93,7 @@ class MedianMDataGrouping(_Grouping1):
 
 
 def category_merge(*args):
-    return ' - '.join(map(str, args))
+    return tech_splitter.join(map(str, args))
 
 
 def max_per_list(*args):

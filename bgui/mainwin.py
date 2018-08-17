@@ -61,6 +61,23 @@ class MainWindow(QtWidgets.QMainWindow):
         self.unfold_rows_action.triggered.connect(self._act_unfold_all_rows)
         self.viewmenu.addAction(self.unfold_rows_action)
 
+        # --- Columns
+        self.columnsmenu = menubar.addMenu('Columns')
+        self.columnsmenu.aboutToShow.connect(self._columnsmenu_enabled)
+        # collapse
+        collapse_cats_action = QtWidgets.QAction(
+                'Collapse all categories', self)
+        collapse_cats_action.triggered.connect(self._act_collapse_all)
+        self.columnsmenu.addAction(collapse_cats_action)
+        self.uncollapse_cats_action = QtWidgets.QAction(
+                'Remove all collapses', self)
+        self.uncollapse_cats_action.triggered.connect(self._act_uncollapse_all)
+        self.columnsmenu.addAction(self.uncollapse_cats_action)
+        collapse_menu_action = QtWidgets.QAction(
+                'Collapse ...', self)
+        collapse_menu_action.triggered.connect(self._act_collapse)
+        self.columnsmenu.addAction(collapse_menu_action)
+
         # --- Rows
         self.rowsmenu = menubar.addMenu('Rows')
         self.rowsmenu.aboutToShow.connect(self._rowsmenu_enabled)
@@ -70,12 +87,12 @@ class MainWindow(QtWidgets.QMainWindow):
         group_by_redundancy_action.triggered.connect(
                 self._act_group_by_redundancy)
         self.rowsmenu.addAction(group_by_redundancy_action)
-        group_rows_action = QtWidgets.QAction('Group rows...', self)
-        group_rows_action.triggered.connect(self._act_group_rows)
-        self.rowsmenu.addAction(group_rows_action)
         self.ungroup_rows_action = QtWidgets.QAction('Ungroup all', self)
         self.ungroup_rows_action.triggered.connect(self._act_ungroup_rows)
         self.rowsmenu.addAction(self.ungroup_rows_action)
+        group_rows_action = QtWidgets.QAction('Group rows...', self)
+        group_rows_action.triggered.connect(self._act_group_rows)
+        self.rowsmenu.addAction(group_rows_action)
 
         # filtering
         self.rowsmenu.addSeparator()
@@ -103,14 +120,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # =============== Load data
         self._load_database(proj)
 
-        # #collapse
-        # viewmenu.addSeparator()
-        # collapse_cats_action = QtWidgets.QAction(
-        #         'Collapse all categories', self)
-        # collapse_cats_action.triggered.connect(functools.partial(
-        #         self._collapse_cats, range(self.tabmodel.dt.cat_count())))
-        # viewmenu.addAction(collapse_cats_action)
-
     # =============== Actions
     def _rowsmenu_enabled(self):
         enabled = self.active_model is not None
@@ -120,12 +129,22 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         # remove filters visible
-        has_flt = self.active_model.dt.n_filters() > 0
+        has_flt = self.active_model.n_filters() > 0
         self.rem_last_filter_action.setEnabled(has_flt)
         self.rem_all_filter_action.setEnabled(has_flt)
         # ungroup all visible
-        has_groups = len(self.active_model.dt.group_by) > 0
+        has_groups = self.active_model.has_groups()
         self.ungroup_rows_action.setEnabled(has_groups)
+
+    def _columnsmenu_enabled(self):
+        enabled = self.active_model is not None
+        for m in self.columnsmenu.actions():
+            m.setEnabled(enabled)
+        if not enabled:
+            return
+        # uncollapse only if there are collapses
+        self.uncollapse_cats_action.setEnabled(
+            self.active_model.has_collapses())
 
     def _viewmenu_enabled(self):
         enabled = self.active_model is not None
@@ -184,6 +203,24 @@ class MainWindow(QtWidgets.QMainWindow):
     def _act_ungroup_rows(self):
         self.active_model.group_rows([])
         self.active_model.update()
+
+    def _act_collapse_all(self):
+        if self.active_model.collapse_categories('all', True):
+            self.active_model.update()
+
+    def _act_uncollapse_all(self):
+        if self.active_model.remove_collapsed('all', True):
+            self.active_model.update()
+
+    def _act_collapse(self):
+        dialog = dlgs.CollapseColumnsDlg(
+            self.active_model.dt.get_category_names(), self)
+        if dialog.exec_():
+            r = dialog.ret_value()
+            a = self.active_model.collapse_categories(r[2], r[0])
+            if a:
+                a.delimiter = r[1]
+                self.active_model.update()
 
     # ============== Procedures
     def _load_database(self, fname):

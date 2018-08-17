@@ -56,5 +56,6 @@ target/
 
 ~*
 *.swp
+*.swo
 dbg/a.py
 dbg/b.py

@@ -227,9 +227,9 @@ class GroupRowsDlg(SimpleAbstractDialog):
         "-> options struct with default values"
         obj.algo = 'arithmetic mean'
         obj.cat = collections.OrderedDict([(
-            "All", collections.OrderedDict())])
+            "All categories", collections.OrderedDict())])
         for c in self.cats:
-            obj.cat["All"][c] = True
+            obj.cat["All categories"][c] = True
 
     def olist(self):
         return optview.OptionsList([
@@ -250,10 +250,45 @@ class GroupRowsDlg(SimpleAbstractDialog):
         elif od.algo == 'minimum':
             od.algo = 'min'
         ret = []
-        for k, v in od.cat['All'].items():
+        for k, v in od.cat['All categories'].items():
             if v:
                 ret.append(k)
         return [od.algo, ret]
+
+
+class CollapseColumnsDlg(SimpleAbstractDialog):
+
+    def __init__(self, lst_categories, parent=None):
+        self.cats = lst_categories
+        super().__init__(parent)
+        self.odata().cats = lst_categories
+        self.resize(400, 300)
+        self.setWindowTitle("Collapse columns")
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.cat = collections.OrderedDict([(
+            "All categories", collections.OrderedDict())])
+        for c in self.cats:
+            obj.cat["All categories"][c] = False
+        obj.delim = '/'
+        obj.do_hide = True
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Basic", "Hide used columns", optwdg.BoolOptionEntry(
+                self, "do_hide")),
+            ("Basic", "Delimiter", optwdg.SimpleOptionEntry(
+                self, "delim")),
+            ("Categories", "Column list", optwdg.CheckTreeOptionEntry(
+                self, "cat", 1)),
+            ])
+
+    def ret_value(self):
+        "-> categories list"
+        od = self.odata()
+        ret = [k for k, v in od.cat['All categories'].items() if v]
+        return [od.do_hide, od.delim, ret]
 
 
 class FilterRowsDlg(SimpleAbstractDialog):

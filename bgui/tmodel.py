@@ -1,4 +1,5 @@
 import copy
+from bdata import dtab
 from PyQt5 import QtCore
 
 
@@ -47,6 +48,8 @@ class TabModel(QtCore.QAbstractTableModel):
                 else:
                     return self.dt.table_name()
             elif rr == 'C2':
+                if self.dt.column_caption(index.column()) is None:
+                    print(self.dt.column_caption(index.column()))
                 return self.dt.column_caption(index.column())
             else:
                 v = self.dt.get_value(index.row()-2, index.column())
@@ -61,7 +64,7 @@ class TabModel(QtCore.QAbstractTableModel):
         if not isinstance(self._unfolded_groups, bool):
             self._unfolded_groups = False
         self.endResetModel()
-    
+
     # ------------------------ information procedures
     def table_name(self):
         return self.dt.table_name()
@@ -90,13 +93,31 @@ class TabModel(QtCore.QAbstractTableModel):
         else:
             return 'D'
 
+    def row_min_id(self, irow):
+        return self.dt.tab.rows[irow-2].id
+
     def column_role(self, index):
         """ I-id, C-category, D-data """
         return self.dt.column_role(index.column())
 
-    def n_categories(self):
-        return self.dt.n_categories()
-    
+    def column_name(self, icol):
+        return self.dt.visible_columns[icol].name
+
+    def n_visible_categories(self):
+        return self.dt.n_visible_categories()
+
+    def has_collapses(self):
+        for c in self.dt.columns.values():
+            if isinstance(c, dtab.CollapsedCategories):
+                return True
+        return False
+
+    def has_groups(self):
+        return len(self.dt.group_by) > 0
+
+    def n_filters(self):
+        return len(self.dt.filters)
+
     # ------------------------ modification procedures
     def add_filters(self, flts):
         self.dt.filters.extend(flts)
@@ -134,3 +155,51 @@ class TabModel(QtCore.QAbstractTableModel):
     def unfold_all_rows(self, do_unfold):
         self._unfolded_groups = do_unfold
         self.modelReset.emit()
+
+    def set_sorting(self, colname, is_asc):
+        self.dt.ordering = (colname, 'ASC' if is_asc else 'DESC')
+
+    def collapse_categories(self, what, do_hide=True):
+        """ what - list of column names or "all" special word
+            returns newly created column or None
+        """
+        if what == 'all':
+            cats = []
+            for c in self.dt.columns.values():
+                if c.is_category and c.is_original and c.name != 'id':
+                    cats.append(c.name)
+            return self.collapse_categories(cats, do_hide)
+        cols = [self.dt.columns[w] for w in what]
+        ret = self.dt.merge_categories(cols)
+        if ret and do_hide:
+            for c in ret.parent:
+                self.dt.set_visibility(c, False)
+        return ret
+
+    def remove_collapsed(self, what, do_show=True):
+        """ removes collapsed column, show all categories which were collapsed
+
+            what - list of column names of CollapsedCategories entries
+                   or "all" special word
+            do_show - whether to show all parent categories
+            returns True if smth was removed
+                    False otherwise
+        """
+        if what == 'all':
+            cats = []
+            for c in self.dt.columns.values():
+                if isinstance(c, dtab.CollapsedCategories):
+                    cats.append(c.name)
+            return self.remove_collapsed(cats, do_show)
+        if len(what) == 0:
+            return False
+        cols = [self.dt.columns[w] for w in what]
+        showthis = set()
+        for c in cols:
+            for c2 in c.parent:
+                showthis.add(c2)
+            self.dt.remove_column(c)
+        for c in showthis:
+            self.dt.visible_columns.append(c)
+        self.dt.resort_visible_categories()
+        return True
