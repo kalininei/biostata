@@ -19,14 +19,18 @@
         Used for classes with x, y properties
 """
 import copy
+import os
 from PyQt5 import QtCore, QtWidgets, QtGui
+import resources    # noqa
 try:
     from bgui import optview
 except ImportError:
     import optview
 
 _tmp = None
-#option entries types
+
+
+# option entries types
 class SimpleOptionEntry(optview.OptionEntry):
     "simple str, int, float option entries "
     def __init__(self, data, member_name):
@@ -103,7 +107,7 @@ class BoolOptionEntry(SimpleOptionEntry):
 
     def fill_display_widget(self, wdg):
         wdg.setChecked(self.get())
-        
+
     def edit_widget(self, parent):
         return self._chbox_widget(parent)
 
@@ -191,7 +195,7 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
         return wdg
 
     def _clear_layout(self, wdg):
-        def deleteItems(layout):
+        def deleteItems(layout):  # noqa
             if layout is not None:
                 while layout.count():
                     item = layout.takeAt(0)
@@ -209,7 +213,7 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
         for v in self.get():
             lab.addWidget(self.conf._label(v))
         lab.setSpacing(self.conf.vert_gap)
-        lab.setContentsMargins(0,0,0,0)
+        lab.setContentsMargins(0, 0, 0, 0)
         lab.addStretch(1)
 
     def display_lines(self):
@@ -218,7 +222,7 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
     class EditWidget(QtWidgets.QWidget):
         'widget for creating unique sublist'
         def __init__(self, data, parent):
-            #---- building window
+            # ---- building window
             super(MultipleChoiceOptionEntry.EditWidget, self).__init__(parent)
             self.lw1 = QtWidgets.QListWidget()
             self.lw2 = QtWidgets.QListWidget()
@@ -232,30 +236,30 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
             btright.setFocusPolicy(QtCore.Qt.NoFocus)
             bbox = QtWidgets.QDialogButtonBox()
             bbox.setStandardButtons(QtWidgets.QDialogButtonBox.Cancel |
-                    QtWidgets.QDialogButtonBox.Ok)
+                                    QtWidgets.QDialogButtonBox.Ok)
             bbox.accepted.connect(self.ok_action)
             bbox.rejected.connect(self.cancel_action)
-            #left/right buttons
+            # left/right buttons
             button_frame = QtWidgets.QFrame()
             button_frame.setLayout(QtWidgets.QVBoxLayout())
             button_frame.layout().addStretch(1.0)
             button_frame.layout().addWidget(btleft)
             button_frame.layout().addWidget(btright)
             button_frame.layout().addStretch(1.0)
-            #widget
+            # widget
             widget_frame = QtWidgets.QFrame()
             widget_frame.setLayout(QtWidgets.QHBoxLayout())
             widget_frame.layout().addWidget(self.lw1)
             widget_frame.layout().addWidget(button_frame)
             widget_frame.layout().addWidget(self.lw2)
-            #window
+            # window
             self.setFocusProxy(self.lw1)
             self.setLayout(QtWidgets.QVBoxLayout())
             self.layout().addWidget(widget_frame)
             self.layout().addWidget(bbox)
             self.resize(400, 300)
             self.setWindowModality(QtCore.Qt.WindowModal)
-            #---- data
+            # ---- data
             self.data = data
             self.left_column = data.get()
             self.right_column = list(filter(
@@ -285,11 +289,11 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
 
         def left_click(self):
             self._add_rem(self.right_column, self.left_column,
-                    self.lw2.selectedItems())
+                          self.lw2.selectedItems())
 
         def right_click(self):
             self._add_rem(self.left_column, self.right_column,
-                    self.lw1.selectedItems())
+                          self.lw1.selectedItems())
 
         def ok_action(self):
             self.data.set(self.left_column)
@@ -298,7 +302,7 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
         def cancel_action(self):
             self.close()
 
-        def keyPressEvent(self, event):
+        def keyPressEvent(self, event):   # noqa
             k = event.key()
             if self.focusWidget() is self.lw1 and k == QtCore.Qt.Key_Right:
                 return self.right_click()
@@ -309,7 +313,7 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
             super(self.__class__, self).keyPressEvent(event)
 
     def edit_widget(self, parent=None):
-        #create widget in a separate window without parents
+        # create widget in a separate window without parents
         return MultipleChoiceOptionEntry.EditWidget(self, None)
 
     def get(self):
@@ -321,7 +325,7 @@ class MultipleChoiceOptionEntry(optview.OptionEntry):
         super(MultipleChoiceOptionEntry, self).set(v)
 
     def set_from_widget(self, editor):
-        #value was set in editor widget ok action
+        # value was set in editor widget ok action
         pass
 
     def __str__(self):
@@ -339,9 +343,10 @@ class CheckTreeOptionEntry(optview.OptionEntry):
         self.maxlen = min(self.MaximumPossibleLength, self._lines_count(False))
 
     def _expansion_from_level(self, lv):
-        ret = [] # expanded addreses
+        ret = []  # expanded addreses
+
         def analyze_children(dct, addr, curlv):
-            for i, (k,v) in enumerate(dct.items()):
+            for i, (k, v) in enumerate(dct.items()):
                 addr.append(i)
                 if isinstance(v, dict):
                     if curlv < lv:
@@ -353,12 +358,13 @@ class CheckTreeOptionEntry(optview.OptionEntry):
         return ret
 
     def _expansion_from_widget(self, wdg):
-        ret = [] # expanded addreses
+        ret = []  # expanded addreses
+
         def analyze_children(item, addr):
             for i in range(item.childCount()):
                 addr.append(i)
                 ch = item.child(i)
-                if ch.childCount()>0:
+                if ch.childCount() > 0:
                     if ch.isExpanded():
                         ret.append(addr[:])
                     analyze_children(ch, addr)
@@ -369,11 +375,12 @@ class CheckTreeOptionEntry(optview.OptionEntry):
 
     def _expansion_to_widget(self, wdg):
         # hide all
-        it = QtWidgets.QTreeWidgetItemIterator(wdg,
-            QtWidgets.QTreeWidgetItemIterator.HasChildren)
+        it = QtWidgets.QTreeWidgetItemIterator(
+                wdg, QtWidgets.QTreeWidgetItemIterator.HasChildren)
         while it.value():
             it.value().setExpanded(False)
             it += 1
+
         # open only needed
         def item_by_address(addr):
             ret = wdg.invisibleRootItem()
@@ -384,14 +391,15 @@ class CheckTreeOptionEntry(optview.OptionEntry):
             item_by_address(e).setExpanded(True)
 
     def _lines_count(self, only_visible):
-        h = [';'.join(map(str,x)) for x in self.__expansion]
+        h = [';'.join(map(str, x)) for x in self.__expansion]
+
         def analyze_children(dct, a):
             r = len(dct)
-            for i, (k,v) in enumerate(dct.items()):
+            for i, (k, v) in enumerate(dct.items()):
                 a.append(i)
                 deep = True
                 if only_visible:
-                    h2 = ';'.join(map(str,a))
+                    h2 = ';'.join(map(str, a))
                     if h2 not in h:
                         deep = False
                 if deep and isinstance(v, dict):
@@ -403,7 +411,6 @@ class CheckTreeOptionEntry(optview.OptionEntry):
         ret = analyze_children(self.values, a)
         return ret
 
-
     def _fill_item(self, item, value):
         item.setExpanded(True)
         for key, val in value.items():
@@ -414,8 +421,8 @@ class CheckTreeOptionEntry(optview.OptionEntry):
                 # here we disable signals and invoke handler manually,
                 # otherwise it doesnt work properly
                 self.__ignore_cs = True
-                child.setCheckState(0,
-                    QtCore.Qt.Checked if val else QtCore.Qt.Unchecked)
+                child.setCheckState(
+                    0, QtCore.Qt.Checked if val else QtCore.Qt.Unchecked)
                 self.__ignore_cs = False
                 self._checks_handler(child, 0)
             else:
@@ -467,7 +474,7 @@ class CheckTreeOptionEntry(optview.OptionEntry):
     def display_widget(self, parent=None):
         ret = self._create_widget(parent)
         qp = QtGui.QPalette(ret.palette())
-        qp.setColor(QtGui.QPalette.Base, QtGui.QColor(0,0,0,0))
+        qp.setColor(QtGui.QPalette.Base, QtGui.QColor(0, 0, 0, 0))
         ret.setPalette(qp)
         return ret
 
@@ -491,8 +498,8 @@ class CheckTreeOptionEntry(optview.OptionEntry):
             addr.append(cindex)
             itm = parent.child(cindex)
             if itm.childCount() == 0:
-                self._set_from_addr(addr,
-                    itm.checkState(0) == QtCore.Qt.Checked)
+                self._set_from_addr(
+                    addr, itm.checkState(0) == QtCore.Qt.Checked)
             else:
                 for i in range(itm.childCount()):
                     _set_from_item(itm, i, addr)
@@ -508,10 +515,64 @@ class CheckTreeOptionEntry(optview.OptionEntry):
     def __str__(self):
         return str(self.values)
 
-#=================== Usage example
+
+class LineEditWithButton(QtWidgets.QLineEdit):
+    def __init__(self, txt, parent):
+        super().__init__(parent)
+        self.setText(txt)
+        self.button = self.addAction(QtGui.QIcon(':/more16'),
+                                     QtWidgets.QLineEdit.TrailingPosition)
+
+
+class SaveFileOptionEntry(SimpleOptionEntry):
+    def __init__(self, data, member_name, filter_list):
+        """ filter list: [(name, (list of extensions without *)),] except *.*
+        """
+        super().__init__(data, member_name)
+        self.filter_list = filter_list
+        self._filters = []
+        for a in filter_list:
+            sd1 = ", ".join(a[1])
+            sd2 = " ".join(["*." + x for x in a[1]])
+            self._filters.append("{0} ({1})({2})".format(a[0], sd1, sd2))
+        self._filters.append("All Files(*)")
+
+    def filter_line(self):
+        # place needed filter to start position so
+        # it doesn't disturb filename
+        i = self.get_filter()
+        fff = self._filters[:]
+        fff.remove(self._filters[i])
+        fff.insert(0, self._filters[i])
+        return fff
+
+    def get_filter(self):
+        fn, ext = os.path.splitext(self.get())
+        if not fn:
+            return 0
+        for i, a in enumerate(self.filter_list):
+            if ext[1:] in a[1]:
+                return i
+        return -1
+
+    def show_dialog(self, parent=None):
+        fl = self.filter_line()
+        fn = QtWidgets.QFileDialog.getSaveFileName(
+            parent, "Save file", self.get(), ';;'.join(fl), fl[0],
+            QtWidgets.QFileDialog.DontConfirmOverwrite)
+        if fn[0]:
+            self.set(fn[0])
+
+    def edit_widget(self, parent):
+        w = LineEditWithButton(self.get(), parent)
+        w.button.triggered.connect(lambda: self.show_dialog(parent))
+        return w
+
+# =================== Usage example
 if __name__ == "__main__":
     import sys
     from collections import OrderedDict
+
     class Point(object):
         def __init__(self, x, y):
             self.x, self.y = x, y
@@ -530,18 +591,17 @@ if __name__ == "__main__":
             self.point = Point(3.4, 6.7)
             self.multikeys = OrderedDict([
                 ("ALL", OrderedDict([
-                    ("as", True), 
-                    ("bs", False), 
+                    ("as", True),
+                    ("bs", False),
                     ("cs", False),
                     ("AndAgain", OrderedDict([
-                        ("aa", False), 
+                        ("aa", False),
                         ("dd", False)
                     ]))
                 ])),
-                ("Other", False), 
-                ("Another", True), 
+                ("Other", False),
+                ("Another", True),
             ])
-
 
     class OContainer(optview.OptionsHolderInterface):
         def __init__(self):
@@ -555,10 +615,10 @@ if __name__ == "__main__":
             return self.checks
 
     def optionlist_for_circ(opt):
-        #all possible values for opt.units, opt.grids
+        # all possible values for opt.units, opt.grids
         a_units = ["units", "%"]
         a_grids = ["Grid1", "Grid2", "Grid3", "Grid4", "Grid5"]
-        #build an input array for OptionsList:
+        # build an input array for OptionsList:
         #   [(Caption, OptionName, OptionEntry), ....]
         ar = [
                 ("Basic", "Grid name", SimpleOptionEntry(opt, "name")),
@@ -587,20 +647,20 @@ if __name__ == "__main__":
             self.resize(400, 500)
             self.button = QtWidgets.QPushButton()
             self.button.setText("Options to stdout")
-            #!Option widget
+            # !Option widget
             self.opt_list = optionlist_for_circ(opt)
             self.tab = optview.OptionsView(self.opt_list, parent=self)
 
-            #add smart active row management
+            # add smart active row management
             def is_active(entry):
-                #matches name entry activity with is_trian flag
+                # matches name entry activity with is_trian flag
                 if entry.member_name == "name":
                     return entry.data.is_trian
                 else:
                     return True
             self.tab.is_active_delegate(is_active)
 
-            #window and layout
+            # window and layout
             vert_layout = QtWidgets.QVBoxLayout()
             vert_layout.addWidget(self.tab)
             vert_layout.addWidget(self.button)
@@ -609,7 +669,7 @@ if __name__ == "__main__":
 
             self.button.clicked.connect(self.buttonClicked)
 
-        def buttonClicked(self):
+        def buttonClicked(self):   # noqa
             print(self.opt_list)
 
     app = QtWidgets.QApplication(sys.argv)

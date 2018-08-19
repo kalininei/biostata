@@ -1,35 +1,9 @@
 #!/usr/bin/env python3
 import sys
-import math
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
 from bgui import optview, optwdg
-
-
-class Point2(object):
-    ' point in (x,y) plane '
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __str__(self):
-        return str(self.x) + " " + str(self.y)
-
-    def dist(self, p1):
-        " -> distance between self and p1 "
-        x, y = p1.x - self.x, p1.y - self.y
-        return math.sqrt(x * x + y * y)
-
-    def dist0(self):
-        " -> distance between self and (0, 0) "
-        x, y = self.x, self.y
-        return math.sqrt(x * x + y * y)
-
-    @classmethod
-    def fromstring(cls, s):
-        s2 = s.split()
-        return cls(float(s2[0]), float(s2[1]))
 
 
 class _BackGroundWorkerCB(QtCore.QThread):
@@ -157,6 +131,11 @@ class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
             self._default_odata(self._odata)
         return self._odata
 
+    def set_odata_entry(self, code, value):
+        " set odata.code = value with the respective callback"
+        self.odata().__dict__[code] = value
+        self.on_value_change(code)
+
     def odata_status(self):
         """returns options struct child class singleton which stores
         last dialog execution"""
@@ -168,6 +147,7 @@ class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
 
     def __init__(self, parent=None):
         super(SimpleAbstractDialog, self).__init__(parent)
+        self._odata_init()
         oview = optview.OptionsView(self.olist())
         oview.is_active_delegate(self._active_entries)
         buttonbox = QtWidgets.QDialogButtonBox(
@@ -178,6 +158,12 @@ class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
         layout = QtWidgets.QVBoxLayout(self)
         layout.addWidget(oview)
         layout.addWidget(buttonbox)
+        self.resize(self._sz_x, self._sz_y)
+
+    def resizeEvent(self, e):   # noqa
+        self.__class__._sz_x = e.size().width()
+        self.__class__._sz_y = e.size().height()
+        super().resizeEvent(e)
 
     def accept(self):
         "check errors and invoke parent accept"
@@ -197,6 +183,10 @@ class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
         "fills options struct obj with default values"
         pass
 
+    def _odata_init(self):
+        "called before olist call. It modifies odata() global  entries"
+        pass
+
     def olist(self):
         "-> optview.OptionsList"
         raise NotImplementedError
@@ -213,23 +203,29 @@ class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
         "return False for non-active entries"
         return True
 
+    def on_value_change(self, code):
+        "fired after odata().code is changed"
+        pass
+
 
 class GroupRowsDlg(SimpleAbstractDialog):
+    _sz_x, _sz_y = 300, 400
 
     def __init__(self, lst_categories, parent=None):
         self.cats = lst_categories
         super().__init__(parent)
-        self.odata().cats = lst_categories
-        self.resize(300, 400)
         self.setWindowTitle("Group Rows")
+
+    def _odata_init(self):
+        e = collections.OrderedDict([(
+            "All categories", collections.OrderedDict())])
+        for c in self.cats:
+            e["All categories"][c] = True
+        self.set_odata_entry("cat", e)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
         obj.algo = 'arithmetic mean'
-        obj.cat = collections.OrderedDict([(
-            "All categories", collections.OrderedDict())])
-        for c in self.cats:
-            obj.cat["All categories"][c] = True
 
     def olist(self):
         return optview.OptionsList([
@@ -257,22 +253,25 @@ class GroupRowsDlg(SimpleAbstractDialog):
 
 
 class CollapseColumnsDlg(SimpleAbstractDialog):
+    _sz_x, _sz_y = 400, 300
 
     def __init__(self, lst_categories, parent=None):
         self.cats = lst_categories
         super().__init__(parent)
         self.odata().cats = lst_categories
-        self.resize(400, 300)
         self.setWindowTitle("Collapse columns")
 
     def _default_odata(self, obj):
         "-> options struct with default values"
-        obj.cat = collections.OrderedDict([(
-            "All categories", collections.OrderedDict())])
-        for c in self.cats:
-            obj.cat["All categories"][c] = False
         obj.delim = '/'
         obj.do_hide = True
+
+    def _odata_init(self):
+        e = collections.OrderedDict([(
+            "All categories", collections.OrderedDict())])
+        for c in self.cats:
+            e["All categories"][c] = False
+        self.set_odata_entry("cat", e)
 
     def olist(self):
         return optview.OptionsList([
@@ -292,12 +291,12 @@ class CollapseColumnsDlg(SimpleAbstractDialog):
 
 
 class FilterRowsDlg(SimpleAbstractDialog):
+    _sz_x, _sz_y = 350, 400
 
     def __init__(self, data, parent):
         " data - dt.dattab object "
         self.data = data
         super().__init__(parent)
-        self.resize(350, 400)
         self.setWindowTitle("Filter Rows")
 
     def _default_odata(self, obj):
@@ -306,22 +305,32 @@ class FilterRowsDlg(SimpleAbstractDialog):
         obj.bv_group = False
         obj.redstatus = "Any column"
         obj.emptycell = "Any column"
-        for i, cat in enumerate(self.data.get_categories()):
-            nm = "cat" + str(i)
-            if cat.dt_type == "ENUM":
-                obj.__dict__[nm] = next(iter(
-                    cat.possible_values_short.values()))
-            elif cat.dt_type == "INTEGER":
-                obj.__dict__[nm] = 1
-            elif cat.dt_type == "BOOLEAN":
-                obj.__dict__[nm] = False
 
     def _default_odata_status(self, obj):
         obj.redstatus = False
         obj.emptycell = False
+
+    def _odata_init(self):
+        for k in self.odata().__dict__:
+            if k[:3] == "cat":
+                self.odata().__dict__.pop(k)
+        for k in self.odata_status().__dict__:
+            if k[:3] == "cat":
+                self.odata_status().__dict__.pop(k)
+
         for i, cat in enumerate(self.data.get_categories()):
             nm = "cat" + str(i)
-            obj.__dict__[nm] = False
+            if cat.dt_type == "ENUM":
+                self.set_odata_entry(
+                    nm, next(iter(cat.possible_values_short.values())))
+            elif cat.dt_type == "INTEGER":
+                self.set_odata_entry(nm, 1)
+            elif cat.dt_type == "BOOLEAN":
+                self.set_odata_entry(nm, False)
+
+        for i, cat in enumerate(self.data.get_categories()):
+            nm = "cat" + str(i)
+            self.odata_status().__dict__[nm] = False
 
     def olist(self):
         oe_ch = optwdg.SingleChoiceOptionEntry
@@ -379,6 +388,68 @@ class FilterRowsDlg(SimpleAbstractDialog):
         # TODO
 
         return ret
+
+
+class ExportTablesDlg(SimpleAbstractDialog):
+    _sz_x, _sz_y = 400, 300
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export table")
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.filename = ''
+        obj.with_caption = True
+        obj.with_id = True
+        obj.format = "plain text"
+        obj.numeric_enums = False
+        obj.grouped_categories = 'None'
+
+    def olist(self):
+        flt = [('Excel files', ('xlsx',))]
+        return optview.OptionsList([
+            ("Export to", "Filename", optwdg.SaveFileOptionEntry(
+                self, "filename", flt)),
+            ("Export to", "Format", optwdg.SingleChoiceOptionEntry(
+                self, "format", ["xlsx", "plain text"])),
+            ("Additional", "Include caption", optwdg.BoolOptionEntry(
+                self, "with_caption")),
+            ("Additional", "Include id column", optwdg.BoolOptionEntry(
+                self, "with_id")),
+            ("Additional", "Enums as integers", optwdg.BoolOptionEntry(
+                self, "numeric_enums")),
+            ("Additional", "Non-unique groups", optwdg.SingleChoiceOptionEntry(
+                self, "grouped_categories", ['None', 'Comma separated',
+                                             'Unique count'])),
+            ])
+
+    def on_value_change(self, code):
+        if code == 'filename':
+            if self.odata().filename[-5:] == '.xlsx':
+                self.set_odata_entry('format', 'xlsx')
+            elif self.odata().filename[-4:] == '.txt':
+                self.set_odata_entry('format', 'plain text')
+
+    def accept(self):
+        import pathlib
+        fn = self.odata().filename
+        if pathlib.Path(fn).is_file():
+            reply = QtWidgets.QMessageBox.question(
+                self, "Overwrite file?",
+                'The file "{}" already exists.\n'
+                'Do you want to overwrite it?'.format(fn),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No)
+            if reply != QtWidgets.QMessageBox.Yes:
+                return
+        super().accept()
+
+    def ret_value(self):
+        return copy.deepcopy(self.odata())
+
+    def check_input(self):
+        if not self.odata().filename:
+            raise Exception("Invalid filename")
 
 
 if __name__ == "__main__":

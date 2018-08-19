@@ -290,6 +290,12 @@ class DataTable(object):
         col = self.visible_columns[c]
         return [col.repr(x) if x is not None else None for x in vals]
 
+    def get_raw_value(self, r, c):
+        return self.tab.get_value(r, c)
+
+    def get_raw_subvalues(self, r, c):
+        return self.tab.get_subvalues(r, c)
+
     def row_definition(self, r):
         """ dictionary which uniquely defines the row (including grouping) """
         return self.tab.rows[r].definition
@@ -412,13 +418,13 @@ class ColumnInfo:
         ret.possible_values_short = category.possible_values_short
 
         # changing representation function for boolean and enum types
-        if category.dt_type == "ENUM":
+        if category.dt_type in ["ENUM", "BOOLEAN"]:
             ret.repr = lambda x: ret.possible_values_short[x]
             ret.from_repr = lambda x: next(
                 k for k, v in ret.possible_values_short.items() if v == x)
-        if category.dt_type == "BOOLEAN":
-            ret.repr = lambda x: bool(x)
-            ret.from_repr = lambda x: 1 if x else 0
+        # if category.dt_type == "BOOLEAN":
+        #     ret.repr = lambda x: bool(x)
+        #     ret.from_repr = lambda x: 1 if x else 0
 
         ret._build_status_column()
         return ret

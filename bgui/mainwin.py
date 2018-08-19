@@ -5,6 +5,7 @@ from bdata import projroot
 from bgui import dlgs
 from bgui import tmodel
 from bgui import tview
+from fileproc import export
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -28,11 +29,18 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # --- File
         self.filemenu = menubar.addMenu('File')
+        self.filemenu.aboutToShow.connect(self._filemenu_enabled)
         # Open db
         open_action = QtWidgets.QAction("Open database...", self)
         open_action.triggered.connect(self._act_open_database)
         self.filemenu.addAction(open_action)
+        # Exports
+        self.filemenu.addSeparator()
+        self.export_action = QtWidgets.QAction("Export tables...", self)
+        self.export_action.triggered.connect(self._act_export)
+        self.filemenu.addAction(self.export_action)
         # Exit
+        self.filemenu.addSeparator()
         exit_action = QtWidgets.QAction('Exit', self)
         exit_action.setShortcut(QtGui.QKeySequence.Close)
         exit_action.triggered.connect(QtWidgets.qApp.quit)
@@ -121,6 +129,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_database(proj)
 
     # =============== Actions
+    def _filemenu_enabled(self):
+        self.export_action.setEnabled(self.active_model is not None)
+
     def _rowsmenu_enabled(self):
         enabled = self.active_model is not None
         for m in self.rowsmenu.actions():
@@ -222,6 +233,11 @@ class MainWindow(QtWidgets.QMainWindow):
                 a.delimiter = r[1]
                 self.active_model.update()
 
+    def _act_export(self):
+        dialog = dlgs.ExportTablesDlg(self)
+        if dialog.exec_():
+            export.model_export(self.active_model.dt, dialog.ret_value())
+
     # ============== Procedures
     def _load_database(self, fname):
         self._close_database()
@@ -258,6 +274,3 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tabframes.append(tview.TableView(m, self.wtab))
         for f in self.tabframes:
             self.wtab.addTab(f, f.table_name())
-
-    # def _collapse_cats(self, what):
-    #     pass

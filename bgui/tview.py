@@ -2,6 +2,7 @@ import functools
 from PyQt5 import QtWidgets, QtGui, QtCore
 from bdata import dtab
 from bdata import bsqlproc
+import resources   # noqa
 
 
 class ViewConfig(object):
@@ -80,13 +81,16 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         self.view = None  # should be defined later
         self.model = mod
         self.conf = ViewConfig.get()
+        self.boolpics = [QtGui.QPixmap(':/red-minus'),
+                         QtGui.QPixmap(':/green-plus')]
 
     def _label(self, txt, font=None, fheight=None, align=None):
+        w = QtWidgets.QLabel(self.view)
         if isinstance(txt, float):
             txt = self.conf.ftos(txt)
         else:
             txt = str(txt)
-        w = QtWidgets.QLabel(txt, self.view)
+        w.setText(txt)
         w.setMargin(self.conf.margin())
         if font is not None:
             w.setFont(font)
@@ -95,9 +99,19 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         else:
             w.setAlignment(QtCore.Qt.AlignLeft)
         if fheight is not None:
-            w.setMaximumSize(QtCore.QSize(
-                16777215, fheight + 2*self.conf.margin()))
+            w.setMinimumSize(QtCore.QSize(0, fheight))
         return w
+
+    def _icon_label(self, val, fheight):
+        wdg = self._label('', align=QtCore.Qt.AlignCenter)
+        if val:
+            p = self.boolpics[0]
+        else:
+            p = self.boolpics[1]
+        wdg.setPixmap(p.scaled(fheight, fheight))
+        wdg.setMargin(self.conf.margin())
+        wdg.setMinimumSize(QtCore.QSize(0, fheight))
+        return wdg
 
     def _is_selected(self, option):
         "extract check state from QStyleOptionViewItem"
@@ -117,25 +131,38 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         # does this row is unfolded
         is_unfolded = self.model.is_unfolded(index)
         # data to show as main
+        lab, wdg = self._vert_layout_frame()
+        use_icons = self.model.dt_type(index) == 'BOOLEAN'
         dt0 = index.data()
         if dt0 is None and n_uni > 1:
             dt0 = bsqlproc.group_repr(n_uni)
-        # main label
-        lab, wdg = self._vert_layout_frame()
-        w = self._label(dt0, self.conf.data_font(),
-                        self.conf.data_font_height())
+        if use_icons and n_uni < 2:
+            a = index.data(QtCore.Qt.UserRole)
+            w = self._icon_label(a, self.conf.data_font_height())
+        else:
+            w = self._label(dt0, self.conf.data_font(),
+                            self.conf.data_font_height())
         lab.addWidget(w)
         # subdata labels
         if is_unfolded:
             lab.addStretch(1)
             if n_uni > 1:
-                sv = self.model.dt.get_subvalues(index.row()-2, index.column())
+                if use_icons:
+                    sv = self.model.dt.get_raw_subvalues(
+                            index.row()-2, index.column())
+                else:
+                    sv = self.model.dt.get_subvalues(
+                            index.row()-2, index.column())
             else:
                 sv = ['' for _ in range(self.model.group_size(index))]
             for v in sv:
-                w = self._label(v, self.conf.subdata_font(),
-                                self.conf.subdata_font_height())
-                w.setMargin(0)
+                if v and use_icons:
+                    w = self._icon_label(v, self.conf.subdata_font_height()-2)
+                    w.setMargin(1)
+                else:
+                    w = self._label(v, self.conf.subdata_font(),
+                                    self.conf.subdata_font_height())
+                    w.setMargin(0)
                 w.setIndent(3*self.conf.margin())
                 lab.addWidget(w)
         return wdg

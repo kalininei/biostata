@@ -38,7 +38,12 @@ class TabModel(QtCore.QAbstractTableModel):
         if not index.isValid():
             return None
 
-        if role == QtCore.Qt.DisplayRole:
+        if role == QtCore.Qt.UserRole:
+            if index.row() > 1:
+                return self.dt.get_raw_value(index.row()-2, index.column())
+            else:
+                return self.data(index, QtCore.QtDisplayRole)
+        elif role == QtCore.Qt.DisplayRole:
             rr, cr = self.row_role(index), self.column_role(index)
             if rr == 'C1':
                 if cr == 'I':
@@ -48,12 +53,9 @@ class TabModel(QtCore.QAbstractTableModel):
                 else:
                     return self.dt.table_name()
             elif rr == 'C2':
-                if self.dt.column_caption(index.column()) is None:
-                    print(self.dt.column_caption(index.column()))
                 return self.dt.column_caption(index.column())
             else:
-                v = self.dt.get_value(index.row()-2, index.column())
-                return v
+                return self.dt.get_value(index.row()-2, index.column())
 
         return None
 
@@ -117,6 +119,9 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def n_filters(self):
         return len(self.dt.filters)
+
+    def dt_type(self, index):
+        return self.dt.visible_columns[index.column()].dt_type
 
     # ------------------------ modification procedures
     def add_filters(self, flts):

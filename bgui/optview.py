@@ -14,6 +14,7 @@ Defined public classes:
 
 """
 import collections
+import functools
 from PyQt5 import QtGui, QtCore, QtWidgets
 
 _tmp = None
@@ -89,6 +90,7 @@ class OptionEntry(object):
         self.member_name = member_name
         self._check(self.get())
         self.conf = OptionWidgetConfigure.default()
+        self.on_set = functools.partial(data.on_value_change, member_name)
 
     def set_configuration(self, conf):
         "set OptionWidgetConfigure for the item"
@@ -132,6 +134,7 @@ class OptionEntry(object):
         'check value and pass it to data'
         self._check(val)
         self.data.__dict__[self.member_name] = val
+        self.on_set()
 
     def get_status(self):
         try:
@@ -503,8 +506,8 @@ class OptionsModel(QtCore.QAbstractItemModel):
     def __init__(self, opts, delegate):
         super(OptionsModel, self).__init__()
         self._root_item = TreeItem("Root")
-        self._setup_model_data(opts, self._root_item)
         self.is_active = lambda x: True
+        self._setup_model_data(opts, self._root_item)
         self.delegate = delegate
 
     def rowCount(self, parent):   # noqa
