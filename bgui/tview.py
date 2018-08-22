@@ -2,218 +2,163 @@ import functools
 from PyQt5 import QtWidgets, QtGui, QtCore
 from bdata import dtab
 from bdata import bsqlproc
-import resources   # noqa
+from bgui import cfg
+from bgui import tmodel
 
 
-class ViewConfig(object):
-    _conf = None
+def _is_selected(option):
+    "extract check state from QStyleOptionViewItem"
+    return bool(QtWidgets.QStyle.State_Selected & option.state)
 
-    @classmethod
-    def get(cls):
-        if cls._conf is None:
-            cls._conf = cls()
-        return cls._conf
 
-    def __init__(self):
-        self._main_font = QtGui.QFont()
-        self._main_font.setPointSize(10)
-        self._margin = 3
-
-        self.caption_color = QtGui.QColor(230, 250, 250)
-        self.bg_color = QtGui.QColor(255, 255, 255)
-
-        self.refresh()
-
-    def refresh(self):
-        self._caption_font = QtGui.QFont(self._main_font)
-        self._caption_font.setBold(True)
-        self._caption_font.setPointSize(self._main_font.pointSize() + 2)
-
-        self._subcaption_font = QtGui.QFont(self._main_font)
-        self._subcaption_font.setBold(True)
-
-        self._subdata_font = QtGui.QFont(self._main_font)
-        self._subdata_font.setItalic(True)
-        self._subdata_font.setPointSize(self._main_font.pointSize() - 2)
-
-        def font_height(fnt):
-            return QtGui.QFontMetrics(fnt).height()
-        self._data_font_height = font_height(self.data_font())
-        self._subdata_font_height = font_height(self.subdata_font())
-        self._caption_font_height = font_height(self.caption_font())
-        self._subcaption_font_height = font_height(self.subcaption_font())
-
-    @staticmethod
-    def ftos(v):
-        return format(v, '.6g')
-
-    def data_font(self):
-        return self._main_font
-
-    def caption_font(self):
-        return self._caption_font
-
-    def subcaption_font(self):
-        return self._subcaption_font
-
-    def subdata_font(self):
-        return self._subdata_font
-
-    def data_font_height(self):
-        return self._data_font_height
-
-    def subdata_font_height(self):
-        return self._subdata_font_height
-
-    def caption_font_height(self):
-        return self._caption_font_height
-
-    def subcaption_font_height(self):
-        return self._subcaption_font_height
-
-    def margin(self):
-        return self._margin
+def _vert_layout_frame():
+    wdg = QtWidgets.QFrame()
+    lab = QtWidgets.QVBoxLayout()
+    lab.setContentsMargins(0, 0, 0, 0)
+    lab.setSpacing(0)
+    wdg.setLayout(lab)
+    return wdg
 
 
 class TabDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, mod, parent):
         super().__init__(parent)
-        self.view = None  # should be defined later
-        self.model = mod
-        self.conf = ViewConfig.get()
-        self.boolpics = [QtGui.QPixmap(':/red-minus'),
-                         QtGui.QPixmap(':/green-plus')]
+        self.conf = cfg.ViewConfig.get()
+        self.display_widgets = []
+        self.row_heights = []
+        mod.representation_changed_subscribe(self._representation_changed)
 
-    def _label(self, txt, font=None, fheight=None, align=None):
-        w = QtWidgets.QLabel(self.view)
-        if isinstance(txt, float):
-            txt = self.conf.ftos(txt)
+    def _representation_changed(self, model, ir):
+        """ fired from model if smth changed in representation of ir-th row
+        """
+        self._nr, self._nc = model.rowCount(), model.columnCount()
+        if ir == -1:
+            self.display_widgets = [None] * (self._nr * self._nc)
+            self.row_heights = [None] * self._nr
         else:
-            txt = str(txt)
-        w.setText(txt)
-        w.setMargin(self.conf.margin())
-        if font is not None:
-            w.setFont(font)
-        if align is not None:
-            w.setAlignment(align)
-        else:
-            w.setAlignment(QtCore.Qt.AlignLeft)
-        if fheight is not None:
-            w.setMinimumSize(QtCore.QSize(0, fheight))
+            for i in range(self._linear_index(ir, 0),
+                           self._linear_index(ir+1, 0)):
+                self.display_widgets[i] = None
+            self.row_heights[ir] = None
+
+    def _linear_index(self, ir, ic):
+        return ir * self._nc + ic
+
+    def _label(self, txt, parent):
+        w = QtWidgets.QLabel(parent)
+        if txt is not None:
+            if isinstance(txt, float):
+                w.setText(self.conf.ftos(txt))
+            else:
+                w.setText(str(txt))
         return w
 
-    def _icon_label(self, val, fheight):
-        wdg = self._label('', align=QtCore.Qt.AlignCenter)
-        if val:
-            p = self.boolpics[0]
+    def _get_widget(self, index):
+        """ checks if widgets is already created, create it if needed
+            and return
+        """
+        li = self._linear_index(index.row(), index.column())
+        if self.display_widgets[li] is None:
+            w = self._build_widget(index)
+            self.display_widgets[li] = w
+        return self.display_widgets[li]
+
+    def _build_widget(self, index):
+        """ builds a widget, fills it with data, font, palette
+            and minimum height
+        """
+        # create widget frame
+        wdg = _vert_layout_frame()
+        self._set_palette(wdg, index)
+        # group count, does this group is unfolded, number of unique
+        n_tot, is_unfolded, n_uni = index.data(
+                tmodel.TabModel.GroupedStatusRole)
+        # an icon instead of data
+        use_icon = index.data(QtCore.Qt.DecorationRole)
+        # main data to display
+        dt0 = None
+        # if we do not need an icon
+        if use_icon is None:
+            dt0 = index.data(QtCore.Qt.DisplayRole)
+            if dt0 is None and n_uni > 1:
+                # if we do have a non-unique category group
+                dt0 = bsqlproc.group_repr(n_uni)
+        # add main value data
+        w = self._label(dt0, wdg)
+        w.setFont(index.data(QtCore.Qt.FontRole))
+        if use_icon:
+            w.setPixmap(use_icon)
+            w.setAlignment(QtCore.Qt.AlignCenter)
         else:
-            p = self.boolpics[1]
-        wdg.setPixmap(p.scaled(fheight, fheight))
-        wdg.setMargin(self.conf.margin())
-        wdg.setMinimumSize(QtCore.QSize(0, fheight))
-        return wdg
+            w.setAlignment(QtCore.Qt.Alignment(
+                index.data(QtCore.Qt.TextAlignmentRole)))
+        w.setMargin(self.conf.margin())
+        wdg.layout().addWidget(w)
 
-    def _is_selected(self, option):
-        "extract check state from QStyleOptionViewItem"
-        return bool(QtWidgets.QStyle.State_Selected & option.state)
-
-    def _vert_layout_frame(self):
-        wdg = QtWidgets.QFrame()
-        lab = QtWidgets.QVBoxLayout()
-        lab.setContentsMargins(0, 0, 0, 0)
-        lab.setSpacing(0)
-        wdg.setLayout(lab)
-        return lab, wdg
-
-    def _data_widget(self, index):
-        # does this row has groups?
-        n_uni = self.model.dt.n_subdata_unique(index.row()-2, index.column())
-        # does this row is unfolded
-        is_unfolded = self.model.is_unfolded(index)
-        # data to show as main
-        lab, wdg = self._vert_layout_frame()
-        use_icons = self.model.dt_type(index) == 'BOOLEAN'
-        dt0 = index.data()
-        if dt0 is None and n_uni > 1:
-            dt0 = bsqlproc.group_repr(n_uni)
-        if use_icons and n_uni < 2:
-            a = index.data(QtCore.Qt.UserRole)
-            w = self._icon_label(a, self.conf.data_font_height())
-        else:
-            w = self._label(dt0, self.conf.data_font(),
-                            self.conf.data_font_height())
-        lab.addWidget(w)
         # subdata labels
         if is_unfolded:
-            lab.addStretch(1)
+            # to have a stretchable distance between main value and subvalues
+            wdg.layout().addStretch(1)
+            # get subdata
+            dt1 = subicons = [None] * n_tot
             if n_uni > 1:
-                if use_icons:
-                    sv = self.model.dt.get_raw_subvalues(
-                            index.row()-2, index.column())
+                # if non-unique group
+                dt1 = index.data(tmodel.TabModel.SubDisplayRole)
+                subicons = index.data(tmodel.TabModel.SubDecorationRole)
+            # request font for subdata
+            fnt = index.data(tmodel.TabModel.SubFontRole)
+            # construct sublabels
+            for d, ic in zip(dt1, subicons):
+                w = self._label(d, wdg)
+                w.setFont(fnt)
+                w.setIndent(3 * self.conf.margin())
+                if n_uni > 1 and ic is not None:
+                    w.setPixmap(ic)
+                    w.setAlignment(QtCore.Qt.AlignCenter)
                 else:
-                    sv = self.model.dt.get_subvalues(
-                            index.row()-2, index.column())
-            else:
-                sv = ['' for _ in range(self.model.group_size(index))]
-            for v in sv:
-                if v and use_icons:
-                    w = self._icon_label(v, self.conf.subdata_font_height()-2)
-                    w.setMargin(1)
-                else:
-                    w = self._label(v, self.conf.subdata_font(),
-                                    self.conf.subdata_font_height())
-                    w.setMargin(0)
-                w.setIndent(3*self.conf.margin())
-                lab.addWidget(w)
+                    w.setAlignment(QtCore.Qt.AlignLeft)
+                wdg.layout().addWidget(w)
+        wdg.setAutoFillBackground(True)
         return wdg
 
-    def _label_widget(self, data, font, fontheight):
-        lab, wdg = self._vert_layout_frame()
-        w = self._label(data, font, fontheight, QtCore.Qt.AlignCenter)
-        lab.addWidget(w)
-        return wdg
+    def _set_palette(self, wdg, index):
+        p = QtGui.QPalette()
+        fg, bg = index.data(tmodel.TabModel.ColorsRole)
 
-    def _set_palette(self, wdg, cr, rr, is_selected):
-        p = QtGui.QPalette(self.view.palette())
-        if is_selected:
-            p.setColor(QtGui.QPalette.Window,
-                       p.color(QtGui.QPalette.Highlight))
-            p.setColor(QtGui.QPalette.WindowText,
-                       p.color(QtGui.QPalette.HighlightedText))
-        elif rr != 'D' or cr == 'I':
-            p.setColor(QtGui.QPalette.Window, self.conf.caption_color)
-        else:
-            p.setColor(QtGui.QPalette.Window, QtGui.QColor(0, 0, 0, 0))
+        p.setColor(QtGui.QPalette.Window, bg)
+        p.setColor(QtGui.QPalette.WindowText, fg)
+
         wdg.setPalette(p)
 
     def sizeHint(self, option, index):   # noqa
-        ret = super().sizeHint(option, index)
-        if self.model.is_unfolded(index):
-            srn = self.model.group_size(index)
-        else:
-            srn = 0
-        h = self.conf.caption_font_height() +\
-            srn * self.conf.subdata_font_height()
-        ret.setHeight(h+2*self.conf.margin())
-        return ret
+        if self.row_heights[index.row()] is None:
+            f1 = index.data(QtCore.Qt.FontRole)
+            # main data font
+            height = QtGui.QFontMetrics(f1).height()
+            # margins for main data
+            height += 2 * self.conf.margin()
+            n, unfolded, _ = index.data(tmodel.TabModel.GroupedStatusRole)
+            if unfolded:
+                f2 = index.data(tmodel.TabModel.SubFontRole)
+                # subrows data font
+                height += n * QtGui.QFontMetrics(f2).height()
+            # space between main data and subdata
+            if unfolded:
+                height += self.conf.margin()
+            self.row_heights[index.row()] = QtCore.QSize(-1, height)
+
+        return self.row_heights[index.row()]
 
     def paint(self, painter, option, index):   # noqa
-        rr, cr = self.model.row_role(index), self.model.column_role(index)
-        if rr == "D":
-            # table entries widget
-            wdg = self._data_widget(index)
-        elif rr == "C1":
-            # caption widgets
-            wdg = self._label_widget(index.data(),
-                                     self.conf.caption_font(),
-                                     self.conf.caption_font_height())
-        else:
-            wdg = self._label_widget(index.data(),
-                                     self.conf.subcaption_font(),
-                                     self.conf.subcaption_font_height())
+        wdg = self._get_widget(index)
 
-        # set cell color with respect to selection and role
-        self._set_palette(wdg, cr, rr, self._is_selected(option))
+        # switch to selected role if needed
+        if _is_selected(option):
+            wdg.setBackgroundRole(QtGui.QPalette.Highlight)
+            wdg.setForegroundRole(QtGui.QPalette.HighlightedText)
+        else:
+            wdg.setBackgroundRole(QtGui.QPalette.Window)
+            wdg.setForegroundRole(QtGui.QPalette.WindowText)
 
         # paint widget
         painter.save()
@@ -260,15 +205,12 @@ class TableView(QtWidgets.QTableView):
     def __init__(self, model, parent):
         super().__init__(parent)
         self.setModel(model)
-        self.setFont(ViewConfig.get().data_font())
-        self.delegate = TabDelegate(model, parent)
-        self.delegate.view = self
-        self.setItemDelegate(self.delegate)
-        self.model().table_changed_subscribe(self._tab_changed)
+        self.setItemDelegate(TabDelegate(model, parent))
+        self.model().representation_changed_subscribe(self._repr_changed)
 
         # header
         vh = self.verticalHeader()
-        vh.setSectionResizeMode(QtWidgets.QHeaderView.ResizeToContents)
+        vh.setSectionResizeMode(QtWidgets.QHeaderView.Fixed)
         self.setHorizontalHeader(HorizontalHeader(self))
         self.horizontalHeader().setSortIndicatorShown(True)
         self.horizontalHeader().sortIndicatorChanged.connect(
@@ -284,26 +226,32 @@ class TableView(QtWidgets.QTableView):
     def table_name(self):
         return self.model().table_name()
 
-    def _tab_changed(self):
+    def _repr_changed(self, model, ir):
         # ---------- spans
         self.clearSpans()
         # id span
         self.setSpan(0, 0, 2, 1)
         # category span
-        a = self.model().n_visible_categories()
+        a = model.n_visible_categories()
         if a > 1:
             self.setSpan(0, 1, 1, a)
         # data span
-        if self.model().columnCount()-a-1 > 0:
-            self.setSpan(0, a+1, 1, self.model().columnCount())
+        if model.columnCount()-a-1 > 0:
+            self.setSpan(0, a+1, 1, model.columnCount())
         # ---------- if cancelled ordering return v-sign to id column
-        if self.model().dt.ordering is None:
+        if model.dt.ordering is None:
             self.horizontalHeader().sortIndicatorChanged.disconnect(
                 self._act_sort_column)
             self.horizontalHeader().setSortIndicator(
                     0, QtCore.Qt.AscendingOrder)
             self.horizontalHeader().sortIndicatorChanged.connect(
                 self._act_sort_column)
+
+        # ---------- set vertical sizes
+        for i in range(model.rowCount()):
+            index = model.createIndex(i, 0)
+            h = self.itemDelegate().sizeHint(None, index).height()
+            self.verticalHeader().resizeSection(i, h)
 
     def _context_menu(self, pnt):
         index = self.indexAt(pnt)

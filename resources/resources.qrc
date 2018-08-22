@@ -2,6 +2,14 @@
 <qresource>
     <file alias="more16">more16.png</file>
     <file alias="green-plus">green-plus.svg</file>
+    <file alias="green-plus-border">green-plus-alter.svg</file>
     <file alias="red-minus">red-minus.svg</file>
+    <file alias="red-minus-border">red-minus-alter.svg</file>
+    <file alias="up-down">up-down.svg</file>
+    <file alias="next-item">next-item.svg</file>
+    <file alias="prev-item">previous-item.svg</file>
+    <file alias="activate-on">activate-on.svg</file>
+    <file alias="activate-off">activate-off.svg</file>
+    <file alias="settings">settings.svg</file>
 </qresource>
 </RCC>

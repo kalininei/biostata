@@ -1,21 +1,6 @@
 import collections
 
 
-class Signal:
-    def __init__(self):
-        self._subscribers = []
-
-    def add_subscriber(self, fun):
-        self._subscribers.append(fun)
-
-    def remove_subscriver(self, fun):
-        self._subscribers.remove(fun)
-
-    def emit(self):
-        for s in self._subscribers:
-            s()
-
-
 class DataTable(object):
     def __init__(self, name, proj):
         self.proj = proj
@@ -41,9 +26,6 @@ class DataTable(object):
         self.filters = []
         self.group_by = []
         self.ordering = None
-
-        # signal for data changed
-        self.updated = Signal()
 
         # data initialization
         self._init_columns()  # fills self.columns, self.visible columns
@@ -173,7 +155,6 @@ class DataTable(object):
         qr = self._compile_query(self.filters, self.group_by)
         self.query(qr)
         self.tab.fill(self.cursor.fetchall())
-        self.updated.emit()
 
     def merge_categories(self, categories):
         """ Creates new column build of merged list of categories,
@@ -323,6 +304,47 @@ class DataTable(object):
             ret += 1
         return ret
 
+    def get_raw_minmax(self, cname, is_global=False):
+        if cname == 'id' and is_global:
+            qr = 'SELECT COUNT(id) FROM "{}"'.format(self.ttab_name)
+            self.query(qr)
+            return (1, int(self.cursor.fetchone()[0]))
+        col = self.columns[cname]
+        if is_global:
+            qr = 'SELECT MIN({0}), MAX({0}) FROM "{1}"'.format(
+                    col.sql_fun, self.ttab_name)
+            self.query(qr)
+            return self.cursor.fetchall()[0]
+        else:
+            raise NotImplementedError
+
+    def get_raw_column_values(self, cname):
+        try:
+            # if cname in visibles no need to make a query
+            ind = [x.name for x in self.visible_columns].index(cname)
+            return self.tab.get_column_values(ind)
+        except ValueError:
+            # make a query
+            fltline = FilterByValue.nested_select(self.filters)
+            grlist, order = self._grouping_ordering(self.group_by)
+            # get result
+            qr = """ SELECT {} FROM "{}" {} {} {} """.format(
+                self.columns[cname].sql_fun,
+                self.ttab_name,
+                fltline,
+                grlist,
+                order)
+            self.query(qr)
+            return [x[0] for x in self.cursor.fetchall()]
+
+    def get_distinct_column_raw_vals(self, cname):
+        "gets distinct values from global table"
+        col = self.columns[cname]
+        qr = 'SELECT DISTINCT({0}) FROM "{1}"'.format(
+                col.sql_fun, self.ttab_name)
+        self.query(qr)
+        return [x[0] for x in self.cursor.fetchall()]
+
 
 # =================================== Additional classes
 # ------------ Filtration
@@ -422,9 +444,6 @@ class ColumnInfo:
             ret.repr = lambda x: ret.possible_values_short[x]
             ret.from_repr = lambda x: next(
                 k for k, v in ret.possible_values_short.items() if v == x)
-        # if category.dt_type == "BOOLEAN":
-        #     ret.repr = lambda x: bool(x)
-        #     ret.from_repr = lambda x: 1 if x else 0
 
         ret._build_status_column()
         return ret
@@ -590,3 +609,6 @@ class ViewedData:
 
     def get_substatus(self, i, j):
         return self.rows[i].substatus(j)
+
+    def get_column_values(self, j):
+        return [self.rows[i].values[j] for i in range(self.n_rows())]

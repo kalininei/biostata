@@ -2,11 +2,14 @@ from bdata import bsqlproc
 import openpyxl as pxl
 
 
-def model_export(model, opt):
+def model_export(datatab, opt, model=None, view=None):
+    """ model is not None => colors and fonts
+        view is not None => cell sizes
+    """
     if opt.format == 'plain text':
-        return plain_text_export(model, opt)
+        return plain_text_export(datatab, opt)
     elif opt.format == 'xlsx':
-        return xlsx_export(model, opt)
+        return xlsx_export(datatab, opt, model, view)
     else:
         raise NotImplementedError
 
@@ -28,7 +31,7 @@ def _get_data_lines(datatab, opt):
             if rvals[j] is None and col.is_category and\
                     datatab.n_subrows(i) > 1:
                 if opt.grouped_categories == 'Comma separated':
-                    vals = datatab.get_subvalues(i, j)
+                    vals = datatab.get_raw_subvalues(i, j)
                     if not opt.numeric_enums:
                         vals = map(col.repr, vals)
                     rvals[j] = ','.join(map(str, vals))
@@ -58,7 +61,7 @@ def plain_text_export(datatab, opt):
     fid.close()
 
 
-def xlsx_export(datatab, opt):
+def xlsx_export(datatab, opt, model, view):
     lines = _get_data_lines(datatab, opt)
 
     wb = pxl.Workbook()
@@ -66,4 +69,33 @@ def xlsx_export(datatab, opt):
     ws1.title = datatab.table_name()
     for line in lines:
         ws1.append(list(line))
+
+    if opt.with_formatting and model is not None:
+        from bgui import tmodel
+        from PyQt5 import QtCore
+        for i, row in enumerate(ws1.rows):
+            for j, cell in enumerate(row):
+                index = model.createIndex(i+1, j)
+                # 1) colors
+                fg, bg = model.data(index, tmodel.TabModel.ColorsRole)
+                clr = pxl.styles.colors.Color(rgb=bg.name()[1:])
+                my_fill = pxl.styles.fills.PatternFill(
+                        patternType='solid', fgColor=clr)
+                cell.fill = my_fill
+                # 2) fonts
+                ft = model.data(index, QtCore.Qt.FontRole)
+                pft = pxl.styles.Font(sz=ft.pointSize(), color=fg.name()[1:],
+                                      italic=ft.italic(), bold=ft.bold())
+                cell.font = pft
+
+        # 3) cell sizes
+        if view is not None:
+            for i, col in enumerate(ws1.iter_cols(max_row=1)):
+                n = col[0].column
+                w = view.horizontalHeader().sectionSize(i)
+                ws1.column_dimensions[n].width = w / 5.54
+            h = view.verticalHeader().sectionSize(1)
+            for i, row in enumerate(ws1.iter_rows(max_col=1)):
+                ws1.row_dimensions[i+1].height = h
+
     wb.save(opt.filename)

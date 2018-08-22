@@ -86,6 +86,8 @@ class SingleChoiceOptionEntry(SimpleOptionEntry):
         wdg = QtWidgets.QComboBox(parent)
         wdg.addItems(self.values)
         wdg.setCurrentIndex(self.values.index(self.get()))
+        if len(self.values) - wdg.maxVisibleItems() < 3:
+            wdg.setMaxVisibleItems(len(self.values))
         return wdg
 
     def set_from_widget(self, widget):
@@ -567,6 +569,71 @@ class SaveFileOptionEntry(SimpleOptionEntry):
         w = LineEditWithButton(self.get(), parent)
         w.button.triggered.connect(lambda: self.show_dialog(parent))
         return w
+
+
+class SingleChoiceWImgOptionEntry(SimpleOptionEntry):
+    max_pic_height = 15
+
+    "string value from combobox and a picture (QPixmap)"
+    def __init__(self, data, member_name, values_names, values_pics):
+        self.values = values_names
+        self.pics = values_pics
+        super().__init__(data, member_name)
+
+    def _check_proc(self, v):
+        return v in self.values
+
+    def display_widget(self, parent=None):
+        wdg = QtWidgets.QFrame(parent)
+        wdg.setLayout(QtWidgets.QHBoxLayout())
+        w1, w2 = QtWidgets.QLabel(wdg), QtWidgets.QLabel(wdg)
+        wdg.layout().addWidget(w1)
+        wdg.layout().addWidget(w2)
+        wdg.layout().setContentsMargins(5, 0, 0, 0)
+        wdg.layout().setSpacing(5)
+        wdg.layout().setStretch(0, 0)
+        wdg.layout().setStretch(1, 1)
+        return wdg
+
+    def fill_display_widget(self, wdg):
+        w1 = wdg.layout().itemAt(0).widget()
+        w2 = wdg.layout().itemAt(1).widget()
+        w1.setPixmap(self.pics[self.values.index(self.get())])
+        w2.setText(self.get())
+
+    class ComboBox(QtWidgets.QComboBox):
+        def __init__(self, parent, vals, pics):
+            super().__init__(parent)
+            self.addItems(vals)
+            maxw, maxh = 0, 0
+            for p in pics:
+                maxh = max(maxh, p.height())
+                maxw = max(maxw, p.width())
+            self.setIconSize(QtCore.QSize(maxw + 10, maxh))
+            for i in range(len(vals)):
+                self.setItemIcon(i, QtGui.QIcon(pics[i]))
+
+    def edit_widget(self, parent):
+        wdg = self.ComboBox(parent, self.values, self.pics)
+        wdg.setCurrentIndex(self.values.index(self.get()))
+        if len(self.values) - wdg.maxVisibleItems() < 3:
+            wdg.setMaxVisibleItems(len(self.values))
+        return wdg
+
+    def set_from_widget(self, widget):
+        self.set(widget.currentText())
+
+
+class SingleChoiceColorOptionEntry(SingleChoiceWImgOptionEntry):
+    "string value from combobox and a filled rectangle as icon"
+    def __init__(self, data, member_name, values_names, values_colors):
+        pics = []
+        for c in values_colors:
+            sz = SingleChoiceWImgOptionEntry.max_pic_height
+            pm = QtGui.QPixmap(sz, sz)
+            pm.fill(QtGui.QColor(*c))
+            pics.append(pm)
+        super().__init__(data, member_name, values_names, pics)
 
 # =================== Usage example
 if __name__ == "__main__":

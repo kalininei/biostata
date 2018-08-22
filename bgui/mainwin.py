@@ -5,6 +5,7 @@ from bdata import projroot
 from bgui import dlgs
 from bgui import tmodel
 from bgui import tview
+from bgui import docks
 from fileproc import export
 
 
@@ -68,6 +69,21 @@ class MainWindow(QtWidgets.QMainWindow):
         self.unfold_rows_action.setCheckable(True)
         self.unfold_rows_action.triggered.connect(self._act_unfold_all_rows)
         self.viewmenu.addAction(self.unfold_rows_action)
+        # color scheme
+        self.viewmenu.addSeparator()
+        self.apply_color_action = QtWidgets.QAction('Apply coloring', self)
+        self.apply_color_action.setCheckable(True)
+        self.apply_color_action.triggered.connect(self._act_apply_color)
+        self.viewmenu.addAction(self.apply_color_action)
+        self.set_color_action = QtWidgets.QAction('Set coloring...', self)
+        self.set_color_action.triggered.connect(self._act_set_coloring)
+        self.viewmenu.addAction(self.set_color_action)
+        # show dock windows
+        self.viewmenu.addSeparator()
+        winmenu = self.viewmenu.addMenu("Show")
+        self.dock_color = docks.ColorDockWidget(self, winmenu)
+        self.dock_filters = docks.FiltersDockWidget(self, winmenu)
+        self.dock_status = docks.StatusDockWidget(self, winmenu)
 
         # --- Columns
         self.columnsmenu = menubar.addMenu('Columns')
@@ -170,20 +186,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.unfold_rows_action.setChecked(
             self.active_model._unfolded_groups is True)
 
+        # set checks for coloring
+        self.apply_color_action.setChecked(self.active_model.use_coloring())
+
     def _act_open_database(self):
         flt = "Databases (*.db, *.sqlite)(*.db *.sqlite);;Any files(*)"
         filename = QtWidgets.QFileDialog.getOpenFileName(
                 self, "Open database", filter=flt)
-        if filename:
+        if filename[0]:
             self._load_database(fname=filename[0])
 
     def _act_zoom(self, delta):
-        conf = tview.ViewConfig.get()
-        conf._main_font.setPointSize(conf._main_font.pointSize()+delta)
-        conf.refresh()
         if self.active_model is not None:
-            self.active_model.beginResetModel()
-            self.active_model.endResetModel()
+            self.active_model.zoom_font(delta)
 
     def _act_fold_all_rows(self):
         self.active_model.unfold_all_rows(False)
@@ -236,15 +251,27 @@ class MainWindow(QtWidgets.QMainWindow):
     def _act_export(self):
         dialog = dlgs.ExportTablesDlg(self)
         if dialog.exec_():
-            export.model_export(self.active_model.dt, dialog.ret_value())
+            actview = self.tabframes[self.models.index(self.active_model)]
+            export.model_export(self.active_model.dt, dialog.ret_value(),
+                                self.active_model, actview)
+
+    def _act_set_coloring(self):
+        clist = self.active_model.all_column_names()
+        dialog = dlgs.RowColoringDlg(clist, self)
+        if dialog.exec_():
+            ret = dialog.ret_value()
+            self.active_model.set_coloring(ret[0], ret[1], ret[2])
+
+    def _act_apply_color(self):
+        self.active_model.switch_coloring_mode()
 
     # ============== Procedures
     def _load_database(self, fname):
-        self._close_database()
-        if fname is None:
+        if not fname:
             return
         try:
             proj = projroot.ProjectDB(fname)
+            self._close_database()
             self._init_project(proj)
         except Exception as e:
             print(traceback.format_exc())
@@ -265,8 +292,10 @@ class MainWindow(QtWidgets.QMainWindow):
         # models
         for t in self.proj.data_tables:
             self.models.append(tmodel.TabModel(t))
-        self.active_model = None if not self.models else self.models[0]
         self._init_widgets()
+        self.active_model = None
+        if self.models:
+            self._set_active_model(0)
 
     def _init_widgets(self):
         self.tabframes = []
@@ -274,3 +303,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tabframes.append(tview.TableView(m, self.wtab))
         for f in self.tabframes:
             self.wtab.addTab(f, f.table_name())
+
+    def _set_active_model(self, i):
+        if self.active_model is not None:
+            self.active_model.representation_changed_unsubscribe(
+                self.active_model_changed)
+        self.active_model = self.models[i]
+        self.dock_color.active_model_changed()
+        self.dock_filters.active_model_changed()
+        self.dock_status.active_model_changed()
+        self.active_model.representation_changed_subscribe(
+            self.active_model_repr_changed)
+
+    def active_model_repr_changed(self, model, ir):
+        if self.dock_color.isVisible():
+            self.dock_color.refill()

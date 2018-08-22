@@ -3,7 +3,7 @@ import sys
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
-from bgui import optview, optwdg
+from bgui import optview, optwdg, coloring
 
 
 class _BackGroundWorkerCB(QtCore.QThread):
@@ -311,13 +311,15 @@ class FilterRowsDlg(SimpleAbstractDialog):
         obj.emptycell = False
 
     def _odata_init(self):
-        for k in self.odata().__dict__:
-            if k[:3] == "cat":
-                self.odata().__dict__.pop(k)
-        for k in self.odata_status().__dict__:
-            if k[:3] == "cat":
-                self.odata_status().__dict__.pop(k)
+        # remove previous odata().cat entries
+        self.odata().__dict__ = {
+                k: v for k, v in self.odata().__dict__.items()
+                if k[:3] != "cat"}
+        self.odata_status().__dict__ = {
+                k: v for k, v in self.odata_status().__dict__.items()
+                if k[:3] != "cat"}
 
+        # add new odata().cat entries according to given categories
         for i, cat in enumerate(self.data.get_categories()):
             nm = "cat" + str(i)
             if cat.dt_type == "ENUM":
@@ -375,7 +377,10 @@ class FilterRowsDlg(SimpleAbstractDialog):
             vl = od.__dict__[nm]
             if self.odata_status().__dict__[nm]:
                 ret_nm.append(cat.name)
-                vl = cat.from_repr(vl)
+                if cat.dt_type == "BOOLEAN":
+                    vl = int(vl)
+                else:
+                    vl = cat.from_repr(vl)
                 ret_val.append(vl)
         if len(ret_nm) == 0:
             ret = []
@@ -405,6 +410,7 @@ class ExportTablesDlg(SimpleAbstractDialog):
         obj.format = "plain text"
         obj.numeric_enums = False
         obj.grouped_categories = 'None'
+        obj.with_formatting = True
 
     def olist(self):
         flt = [('Excel files', ('xlsx',))]
@@ -417,6 +423,8 @@ class ExportTablesDlg(SimpleAbstractDialog):
                 self, "with_caption")),
             ("Additional", "Include id column", optwdg.BoolOptionEntry(
                 self, "with_id")),
+            ("Additional", "Preserve formatting", optwdg.BoolOptionEntry(
+                self, "with_formatting")),
             ("Additional", "Enums as integers", optwdg.BoolOptionEntry(
                 self, "numeric_enums")),
             ("Additional", "Non-unique groups", optwdg.SingleChoiceOptionEntry(
@@ -430,6 +438,12 @@ class ExportTablesDlg(SimpleAbstractDialog):
                 self.set_odata_entry('format', 'xlsx')
             elif self.odata().filename[-4:] == '.txt':
                 self.set_odata_entry('format', 'plain text')
+
+    def _active_entries(self, entry):
+        if self.odata().format == "plain text":
+            if entry.member_name == "with_formatting":
+                return False
+        return True
 
     def accept(self):
         import pathlib
@@ -451,6 +465,87 @@ class ExportTablesDlg(SimpleAbstractDialog):
         if not self.odata().filename:
             raise Exception("Invalid filename")
 
+
+class RowColoringDlg(SimpleAbstractDialog):
+    _sz_x, _sz_y = 400, 300
+
+    def __init__(self, clist, parent=None):
+        # column list
+        self.clist = clist
+        # color schemes
+        self.schemes = coloring.ColorScheme.cs_list()
+        for k, v in self.schemes.items():
+            self.schemes[k] = v()
+        # pics will be set in _sync_schemes procedure
+        self.pics = [None] * len(self.schemes)
+        # none colors
+        self.defcolors = collections.OrderedDict([
+            ("black", (0, 0, 0)), ("white", (255, 255, 255)),
+            ("red", (255, 0, 0)), ("magenta", (255, 0, 255)),
+            ("yellow", (255, 255, 0)), ("aqua", (0, 255, 255))])
+        # init
+        super().__init__(parent)
+        self.setWindowTitle("Coloring")
+        self._sync_schemes()
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.column = "id"
+        obj.range = "Global"
+        obj.discrete = False
+        obj.reversed = False
+        obj.discrete_count = -1
+        obj.preset = next(iter(self.schemes.keys()))
+        obj.none_color = "black"
+
+    def _odata_init(self):
+        if self.odata().column not in self.clist:
+            self.set_odata_entry("column", self.clist[0])
+
+    def olist(self):
+        cshnames = list(self.schemes.keys())
+        return optview.OptionsList([
+            ("Source", "Column", optwdg.SingleChoiceOptionEntry(
+                self, "column", self.clist)),
+            ("Source", "Range", optwdg.SingleChoiceOptionEntry(
+                self, "range", ["Local", "Global"])),
+            ("Color scheme", "Preset", optwdg.SingleChoiceWImgOptionEntry(
+                self, "preset", cshnames, self.pics)),
+            ("Color scheme", "None color", optwdg.SingleChoiceColorOptionEntry(
+                self, "none_color",
+                list(self.defcolors.keys()), list(self.defcolors.values()))),
+            ("Color scheme", "Reversed", optwdg.BoolOptionEntry(
+                self, "reversed")),
+            ("Color scheme", "Discrete", optwdg.BoolOptionEntry(
+                self, "discrete")),
+            ("Color scheme", "Discrete count", optwdg.BoundedIntOptionEntry(
+                self, "discrete_count", minv=-1)),
+            ])
+
+    def on_value_change(self, code):
+        if code in ['discrete', 'reversed', 'discrete_count', "none_color"]:
+            self._sync_schemes()
+
+    def _active_entries(self, entry):
+        if entry.member_name == 'discrete_count':
+            if not self.odata().discrete:
+                return False
+        return True
+
+    def ret_value(self):
+        "-> column name, ColorScheme Entry, is_local_range"
+        cs = self.schemes[self.odata().preset]
+        is_local = self.odata().range == "Local"
+        return (self.odata().column, copy.deepcopy(cs), is_local)
+
+    def _sync_schemes(self):
+        for i, v in enumerate(self.schemes.values()):
+            v.set_discrete(self.odata().discrete, self.odata().discrete_count)
+            v.set_reversed(self.odata().reversed)
+            sw = 100
+            sh = optwdg.SingleChoiceWImgOptionEntry.max_pic_height
+            self.pics[i] = v.pic(sh, sw, True)
+            v.set_default_color(self.defcolors[self.odata().none_color])
 
 if __name__ == "__main__":
     from PyQt5.QtWidgets import QApplication

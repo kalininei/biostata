@@ -1,19 +1,64 @@
 import copy
+from PyQt5 import QtCore, QtGui
 from bdata import dtab
-from PyQt5 import QtCore
+from bgui import coloring
+from bgui import cfg
+
+
+class Signal:
+    def __init__(self):
+        self._subscribers = []
+
+    def add_subscriber(self, fun):
+        self._subscribers.append(fun)
+
+    def remove_subscriber(self, fun):
+        self._subscribers.remove(fun)
+
+    def emit(self, *args):
+        for s in self._subscribers:
+            s(*args)
 
 
 class TabModel(QtCore.QAbstractTableModel):
+    # additional roles for data(...) execution
+    RawValueRole = QtCore.Qt.UserRole
+    RawSubValuesRole = QtCore.Qt.UserRole+1
+    GroupedStatusRole = QtCore.Qt.UserRole+2
+    ColorsRole = QtCore.Qt.UserRole+3
+    SubFontRole = QtCore.Qt.UserRole+4
+    SubDisplayRole = QtCore.Qt.UserRole+5
+    SubDecorationRole = QtCore.Qt.UserRole+6
+
     def __init__(self, dt):
         super().__init__()
+        self.conf = cfg.ViewConfig.get()
         self.dt = dt
+        self.repr_updated = Signal()
         # False -- all are folded, True -- all are unfolded,
         # set() indicies of unfolded rows, which vanish at update()
         self._unfolded_groups = False
+        # color scheme
+        self.coloring = coloring.Coloring(self.dt)
+        self.representation_changed_subscribe(
+                lambda t, i: self.coloring.update(t.dt) if i == -1 else None)
 
-    def table_changed_subscribe(self, fun):
-        self.dt.updated.add_subscriber(fun)
+    # data changed signals
+    def representation_changed_subscribe(self, fun):
+        """ fun(tabmodel, ir) is fired when data in i-th row is somehow
+            changed including its color etc.
+            if ir = -1 then everything is changed
+        """
+        self.repr_updated.add_subscriber(fun)
 
+    def representation_changed_unsubscribe(self, fun):
+        """ fun(tabmodel, ir) is fired when data in i-th row is somehow
+            changed including its color etc.
+            if ir = -1 then everything is changed
+        """
+        self.repr_updated.remove_subscriber(fun)
+
+    # overwritten methods
     def rowCount(self, parent=None):    # noqa
         return self.dt.n_rows() + 2
 
@@ -37,14 +82,11 @@ class TabModel(QtCore.QAbstractTableModel):
     def data(self, index, role):   # noqa
         if not index.isValid():
             return None
+        r, c = index.row(), index.column()
+        rr, cr = self.row_role(index), self.column_role(index)
 
-        if role == QtCore.Qt.UserRole:
-            if index.row() > 1:
-                return self.dt.get_raw_value(index.row()-2, index.column())
-            else:
-                return self.data(index, QtCore.QtDisplayRole)
-        elif role == QtCore.Qt.DisplayRole:
-            rr, cr = self.row_role(index), self.column_role(index)
+        # --- displayed values
+        if role == QtCore.Qt.DisplayRole:
             if rr == 'C1':
                 if cr == 'I':
                     return "Id"
@@ -56,6 +98,86 @@ class TabModel(QtCore.QAbstractTableModel):
                 return self.dt.column_caption(index.column())
             else:
                 return self.dt.get_value(index.row()-2, index.column())
+        # --- colors: foreground, background
+        elif role == self.ColorsRole:
+            fg = QtGui.QPalette().color(QtGui.QPalette.WindowText)
+            if rr[0] == 'C' or cr == 'I':
+                bg = self.conf.caption_color
+            else:
+                bg = self.coloring.get_color(r-2)
+                if bg is None:
+                    bg = self.conf.bg_color
+                else:
+                    fg = coloring.get_foreground(bg)
+            return fg, bg
+        # --- Status of the group: (group size, is unfolded, unique size)
+        elif role == self.GroupedStatusRole:
+            if r < 2 or not self.has_groups():
+                return (0, False, 0)
+            else:
+                return (self.dt.n_subrows(r-2),
+                        self.is_unfolded(index),
+                        self.dt.n_subdata_unique(r-2, c))
+        # --- Show an icon instead of data
+        elif role == QtCore.Qt.DecorationRole:
+            if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOLEAN':
+                v = self.data(index, self.RawValueRole)
+                if v == 1:
+                    return self.conf.true_icon(self.use_coloring())
+                elif v == 0:
+                    return self.conf.false_icon(self.use_coloring())
+            return None
+        # --- font
+        elif role == QtCore.Qt.FontRole:
+            if rr == 'C1':
+                return self.conf.caption_font()
+            elif rr == 'C2':
+                return self.conf.subcaption_font()
+            else:
+                return self.conf.data_font()
+        # --- text alignment
+        elif role == QtCore.Qt.TextAlignmentRole:
+            if rr[0] == 'C':
+                return QtCore.Qt.AlignCenter
+            else:
+                return QtCore.Qt.AlignLeft
+        # --- raw values
+        elif role == self.RawValueRole:
+            if r > 1:
+                return self.dt.get_raw_value(r-2, c)
+            else:
+                return self.data(index, QtCore.QtDisplayRole)
+        # --- raw subvalues
+        elif role == self.RawSubValuesRole:
+            if r > 1:
+                return self.dt.get_raw_subvalues(r-2, c)
+            else:
+                return None
+        # --- font of subdata
+        elif role == self.SubFontRole:
+            return self.conf.subdata_font()
+        # --- subrows values
+        elif role == self.SubDisplayRole:
+            return self.dt.get_subvalues(r-2, c)
+        # --- subrows icons
+        elif role == self.SubDecorationRole:
+            ret = [None]*self.dt.n_subrows(r-2)
+            if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOLEAN':
+                for i, a in enumerate(index.data(self.RawSubValuesRole)):
+                    if a is not None:
+                        if a == 1:
+                            ret[i] = self.conf.true_subicon(
+                                    self.use_coloring())
+                        elif a == 0:
+                            ret[i] = self.conf.false_subicon(
+                                    self.use_coloring())
+            return ret
+        else:
+            if role not in [3, 4]:
+                import traceback
+                traceback.print_stack()
+                print(role)
+                raise NotImplementedError
 
         return None
 
@@ -66,6 +188,7 @@ class TabModel(QtCore.QAbstractTableModel):
         if not isinstance(self._unfolded_groups, bool):
             self._unfolded_groups = False
         self.endResetModel()
+        self.repr_updated.emit(self, -1)
 
     # ------------------------ information procedures
     def table_name(self):
@@ -108,6 +231,12 @@ class TabModel(QtCore.QAbstractTableModel):
     def n_visible_categories(self):
         return self.dt.n_visible_categories()
 
+    def visible_column_names(self):
+        return [c.name for c in self.dt.visible_columns]
+
+    def all_column_names(self):
+        return list(self.dt.columns.keys())
+
     def has_collapses(self):
         for c in self.dt.columns.values():
             if isinstance(c, dtab.CollapsedCategories):
@@ -122,6 +251,12 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def dt_type(self, index):
         return self.dt.visible_columns[index.column()].dt_type
+
+    def use_coloring(self):
+        return self.coloring.use
+
+    def get_color_scheme(self):
+        return self.coloring.color_scheme
 
     # ------------------------ modification procedures
     def add_filters(self, flts):
@@ -156,10 +291,12 @@ class TabModel(QtCore.QAbstractTableModel):
                 self._unfolded_groups.remove(ir)
         self.dataChanged.emit(self.createIndex(ir, 0),
                               self.createIndex(ir, self.columnCount()))
+        self.repr_updated.emit(self, ir)
 
     def unfold_all_rows(self, do_unfold):
         self._unfolded_groups = do_unfold
         self.modelReset.emit()
+        self.repr_updated.emit(self, -1)
 
     def set_sorting(self, colname, is_asc):
         self.dt.ordering = (colname, 'ASC' if is_asc else 'DESC')
@@ -208,3 +345,24 @@ class TabModel(QtCore.QAbstractTableModel):
             self.dt.visible_columns.append(c)
         self.dt.resort_visible_categories()
         return True
+
+    def zoom_font(self, delta):
+        self.conf._basic_font_size += delta
+        self.conf.refresh()
+        self.modelReset.emit()
+        self.repr_updated.emit(self, -1)
+
+    def switch_coloring_mode(self):
+        self.coloring.use = not self.coloring.use
+        self.modelReset.emit()
+        self.repr_updated.emit(self, -1)
+
+    def set_coloring(self, column=None, scheme=None, is_local=None):
+        if scheme is not None:
+            self.coloring.color_scheme = scheme
+        if column is not None:
+            self.coloring.set_column(self.dt, column)
+        if is_local is not None:
+            self.coloring.absolute_limits = not is_local
+        # here we call coloring.update()
+        self.repr_updated.emit(self, -1)
