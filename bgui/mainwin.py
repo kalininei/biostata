@@ -78,9 +78,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_color_action = QtWidgets.QAction('Set coloring...', self)
         self.set_color_action.triggered.connect(self._act_set_coloring)
         self.viewmenu.addAction(self.set_color_action)
-        # show dock windows
-        self.viewmenu.addSeparator()
-        winmenu = self.viewmenu.addMenu("Show")
+
+        # --- Show dock windows
+        winmenu = menubar.addMenu("Show")
         self.dock_color = docks.ColorDockWidget(self, winmenu)
         self.dock_filters = docks.FiltersDockWidget(self, winmenu)
         self.dock_status = docks.StatusDockWidget(self, winmenu)
@@ -318,3 +318,5 @@ class MainWindow(QtWidgets.QMainWindow):
     def active_model_repr_changed(self, model, ir):
         if self.dock_color.isVisible():
             self.dock_color.refill()
+        if self.dock_filters.isVisible():
+            self.dock_filters.refill()

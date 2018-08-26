@@ -75,7 +75,10 @@ def xlsx_export(datatab, opt, model, view):
         from PyQt5 import QtCore
         for i, row in enumerate(ws1.rows):
             for j, cell in enumerate(row):
-                index = model.createIndex(i+1, j)
+                if opt.with_caption:
+                    index = model.createIndex(i+1, j)
+                else:
+                    index = model.createIndex(i+2, j)
                 # 1) colors
                 fg, bg = model.data(index, tmodel.TabModel.ColorsRole)
                 clr = pxl.styles.colors.Color(rgb=bg.name()[1:])

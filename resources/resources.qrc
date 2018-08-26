@@ -11,5 +11,7 @@
     <file alias="activate-on">activate-on.svg</file>
     <file alias="activate-off">activate-off.svg</file>
     <file alias="settings">settings.svg</file>
+    <file alias="remove">remove.svg</file>
+    <file alias="add">add.svg</file>
 </qresource>
 </RCC>

@@ -53,12 +53,28 @@ class ProjectDB:
         for a in self.cursor.fetchall():
             self.data_types.append(Category(a[0], self))
 
+        # named filters
+        self.named_filters = []
+
         # data tables
         # (after data_types cause the latter is used in table constructors)
         self.data_tables = []
         self.cursor.execute("SELECT name FROM _DATA_TABLES_")
         for a in self.cursor.fetchall():
             self.data_tables.append(dtab.DataTable(a[0], self))
+
+    def set_named_filters(self, filtlist, useall=False):
+        # remove all existing filters
+        for dt in self.data_tables:
+            for f in self.named_filters:
+                dt.set_filter_usage(f, False)
+        self.named_filters.clear()
+        # add new
+        self.named_filters.extend([f for f in filtlist if f.name])
+        if useall:
+            for dt in self.data_tables:
+                for f in self.named_filters:
+                    dt.set_filter_usage(f, True)
 
     def get_category(self, name):
         for c in self.data_types:

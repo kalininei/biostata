@@ -1,4 +1,5 @@
 import collections
+from bdata import filt
 
 
 class DataTable(object):
@@ -26,6 +27,12 @@ class DataTable(object):
         self.filters = []
         self.group_by = []
         self.ordering = None
+
+        # filters: anon filters belong to current tables,
+        #          named filters are taked from self.proj.
+        #          used_filters contain both anon and named filters
+        self.all_anon_filters = []
+        self.used_filters = []
 
         # data initialization
         self._init_columns()  # fills self.columns, self.visible columns
@@ -235,6 +242,30 @@ class DataTable(object):
                 if view_index < ks.index(c.name):
                     self.visible_columns.insert(i, col)
                     break
+
+    def set_filter_usage(self, f, use):
+        if not use:
+            if f in self.used_filters:
+                self.used_filters.remove(f)
+        elif use and f not in self.used_filters:
+            if f.name and f in self.proj.named_filters:
+                self.used_filters.append(f)
+            if not f.name and f in self.all_anon_filters:
+                self.used_filters.append(f)
+
+    def set_named_filters(self, filtlist):
+        self.proj.set_named_filters(filtlist)
+
+    def set_anon_filters(self, filtlist):
+        self.all_anon_filters.clear()
+        for f in filtlist:
+            if f.is_applicable(self):
+                self.all_anon_filters.append(f)
+
+    def set_active_filters(self, filtlist):
+        self.used_filters.clear()
+        for f in filtlist:
+            self.set_filter_usage(f, True)
 
     # ------------------------ Data access procedures
     def table_name(self):
