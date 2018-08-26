@@ -6,6 +6,7 @@ from bgui import dlgs
 from bgui import tmodel
 from bgui import tview
 from bgui import docks
+from bgui import filtdlg
 from fileproc import export
 
 
@@ -79,12 +80,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.set_color_action.triggered.connect(self._act_set_coloring)
         self.viewmenu.addAction(self.set_color_action)
 
-        # --- Show dock windows
-        winmenu = menubar.addMenu("Show")
-        self.dock_color = docks.ColorDockWidget(self, winmenu)
-        self.dock_filters = docks.FiltersDockWidget(self, winmenu)
-        self.dock_status = docks.StatusDockWidget(self, winmenu)
-
         # --- Columns
         self.columnsmenu = menubar.addMenu('Columns')
         self.columnsmenu.aboutToShow.connect(self._columnsmenu_enabled)
@@ -120,23 +115,22 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # filtering
         self.rowsmenu.addSeparator()
-        filter_action = QtWidgets.QAction('Filter...', self)
+        filter_action = QtWidgets.QAction('Add Filter...', self)
         filter_action.triggered.connect(self._act_filter)
         self.rowsmenu.addAction(filter_action)
 
-        self.rem_last_filter_action = QtWidgets.QAction(
-                'Cancel last filter', self)
-        self.rem_last_filter_action.triggered.connect(
-                lambda: (self.active_model.rem_last_filter(),
-                         self.active_model.update()))
-        self.rowsmenu.addAction(self.rem_last_filter_action)
-
         self.rem_all_filter_action = QtWidgets.QAction(
-                'Cancel all filters', self)
+                'Remove all filters', self)
         self.rem_all_filter_action.triggered.connect(
                 lambda: (self.active_model.rem_all_filters(),
                          self.active_model.update()))
         self.rowsmenu.addAction(self.rem_all_filter_action)
+
+        # --- Show dock windows
+        winmenu = menubar.addMenu("Show")
+        self.dock_color = docks.ColorDockWidget(self, winmenu)
+        self.dock_filters = docks.FiltersDockWidget(self, winmenu)
+        self.dock_status = docks.StatusDockWidget(self, winmenu)
 
         # --- About
         self.aboutmenu = menubar.addMenu('About')
@@ -157,7 +151,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # remove filters visible
         has_flt = self.active_model.n_filters() > 0
-        self.rem_last_filter_action.setEnabled(has_flt)
         self.rem_all_filter_action.setEnabled(has_flt)
         # ungroup all visible
         has_groups = self.active_model.has_groups()
@@ -207,10 +200,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.active_model.unfold_all_rows(True)
 
     def _act_filter(self):
-        dialog = dlgs.FilterRowsDlg(self.active_model.dt, self)
+        dialog = filtdlg.EditFilterDialog(None, self.active_model.dt,
+                                          None, self)
         if dialog.exec_():
-            flts = dialog.ret_value()
-            self.active_model.add_filters(flts)
+            flt = dialog.ret_value()
+            self.active_model.add_filter(flt)
             self.active_model.update()
 
     def _act_group_rows(self):

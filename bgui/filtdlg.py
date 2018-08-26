@@ -173,6 +173,7 @@ class EditFilterDialog(QtWidgets.QDialog):
         gb.setLayout(QtWidgets.QVBoxLayout())
         cb = QtWidgets.QComboBox(gb)
         cb.addItems(["Remove", "Leave only"])
+        gb.layout().addWidget(QtWidgets.QLabel())
         gb.layout().addWidget(cb)
         parent.layout().addWidget(gb)
         parent.layout().setStretch(1, 0)

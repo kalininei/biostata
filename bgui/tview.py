@@ -1,7 +1,7 @@
 import functools
 from PyQt5 import QtWidgets, QtGui, QtCore
-from bdata import dtab
 from bdata import bsqlproc
+from bdata import filt
 from bgui import cfg
 from bgui import tmodel
 
@@ -276,10 +276,15 @@ class TableView(QtWidgets.QTableView):
         menu.popup(self.viewport().mapToGlobal(pnt))
 
     def _act_filter_row(self, index):
-        ir = index.row()
-        dc = self.model().dt.row_definition(ir-2)
-        flt = dtab.FilterByValue(dc.keys(), dc.values(), True)
-        self.model().add_filters([flt])
+        sel = self.selectionModel()
+        usedrows = set([index.row()])
+        for si in sel.selectedIndexes():
+            usedrows.add(si.row())
+        for ir in usedrows:
+            dc = self.model().dt.row_definition(ir-2)
+            f = filt.Filter.filter_by_values(self.model().dt, dc.keys(),
+                                             dc.values(), True, True)
+            self.model().add_filter(f)
         # preserve fold/unfold set which will be altered after update()
         bu = None
         if not isinstance(self.model()._unfolded_groups, bool):

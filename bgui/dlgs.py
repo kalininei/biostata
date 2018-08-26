@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
@@ -290,111 +289,6 @@ class CollapseColumnsDlg(SimpleAbstractDialog):
         return [od.do_hide, od.delim, ret]
 
 
-class FilterRowsDlg(SimpleAbstractDialog):
-    _sz_x, _sz_y = 350, 400
-
-    def __init__(self, data, parent):
-        " data - dt.dattab object "
-        self.data = data
-        super().__init__(parent)
-        self.setWindowTitle("Filter Rows")
-
-    def _default_odata(self, obj):
-        obj.algo = "Remove"
-        obj.operation = "AND"
-        obj.bv_group = False
-        obj.redstatus = "Any column"
-        obj.emptycell = "Any column"
-
-    def _default_odata_status(self, obj):
-        obj.redstatus = False
-        obj.emptycell = False
-
-    def _odata_init(self):
-        # remove previous odata().cat entries
-        self.odata().__dict__ = {
-                k: v for k, v in self.odata().__dict__.items()
-                if k[:3] != "cat"}
-        self.odata_status().__dict__ = {
-                k: v for k, v in self.odata_status().__dict__.items()
-                if k[:3] != "cat"}
-
-        # add new odata().cat entries according to given categories
-        for i, cat in enumerate(self.data.get_categories()):
-            nm = "cat" + str(i)
-            if cat.dt_type == "ENUM":
-                self.set_odata_entry(
-                    nm, next(iter(cat.possible_values_short.values())))
-            elif cat.dt_type == "INTEGER":
-                self.set_odata_entry(nm, 1)
-            elif cat.dt_type == "BOOLEAN":
-                self.set_odata_entry(nm, False)
-
-        for i, cat in enumerate(self.data.get_categories()):
-            nm = "cat" + str(i)
-            self.odata_status().__dict__[nm] = False
-
-    def olist(self):
-        oe_ch = optwdg.SingleChoiceOptionEntry
-        # Exclusion algorithm
-        op = [("Exclusion", "Algorithm", oe_ch(
-                self, "algo", ["Remove", "Leave only"])),
-              ("Exclusion", "Operation", oe_ch(
-                self, "operation", ["AND", "OR"]))]
-        # Categories
-        for i, cat in enumerate(self.data.get_categories()):
-            fnm = cat.name
-            nm = "cat" + str(i)
-            if cat.dt_type == "ENUM":
-                pv = cat.possible_values_short.values()
-                op.append(("Category", fnm, oe_ch(self, nm, list(pv))))
-            elif cat.dt_type == "INTEGER":
-                op.append(("Category", fnm, optwdg.BoundedIntOptionEntry(
-                        self, nm)))
-            elif cat.dt_type == "BOOLEAN":
-                op.append(("Category", fnm, optwdg.BoolOptionEntry(
-                    self, nm)))
-        # Other
-        op.append(("Bad Values", "Whole group", optwdg.BoolOptionEntry(
-                self, "bv_group")))
-        clist = ["Any column", "Any data column"]
-        op.append(("Bad Values", "Red Status", oe_ch(
-                self, "redstatus", clist)))
-        op.append(("Bad Values", "Empty Cells", oe_ch(
-                self, "emptycell", clist)))
-
-        return optview.OptionsList(op)
-
-    def ret_value(self):
-        """ -> Filters list """
-        from bdata import dtab
-        ret = []
-        od = self.odata()
-        # categories
-        ret_nm, ret_val = [], []
-        for i, cat in enumerate(self.data.get_categories()):
-            nm = "cat" + str(i)
-            vl = od.__dict__[nm]
-            if self.odata_status().__dict__[nm]:
-                ret_nm.append(cat.name)
-                if cat.dt_type == "BOOLEAN":
-                    vl = int(vl)
-                else:
-                    vl = cat.from_repr(vl)
-                ret_val.append(vl)
-        if len(ret_nm) == 0:
-            ret = []
-        else:
-            rem = od.algo == "Remove"
-            use_and = od.operation == 'AND'
-            ret = [dtab.FilterByValue(ret_nm, ret_val, rem, use_and)]
-
-        # red status, Empty Cells
-        # TODO
-
-        return ret
-
-
 class ExportTablesDlg(SimpleAbstractDialog):
     _sz_x, _sz_y = 400, 300
 
@@ -546,28 +440,3 @@ class RowColoringDlg(SimpleAbstractDialog):
             sh = optwdg.SingleChoiceWImgOptionEntry.max_pic_height
             self.pics[i] = v.pic(sh, sw, True)
             v.set_default_color(self.defcolors[self.odata().none_color])
-
-if __name__ == "__main__":
-    from PyQt5.QtWidgets import QApplication
-    app = QApplication(sys.argv)
-
-    # d = AddUnfRectGrid()
-    # d.exec_()
-    # s = ";".join(map(str, d.ret_value()))
-    # print(s)
-
-    # def tcfun(n, cb):
-    #     for i in range(n):
-    #         cb("proc1", "proc2", float(i)/n, 0.33)
-    #         time.sleep(0.1)
-    #     return 2*n
-
-    # e = ProgressProcedureDlg(tcfun, (30,), None)
-    # e.exec_()
-    # print(e.get_result())
-    # e.exec_()
-    # print(e.get_result())
-
-    # d = GroupLinesDlg(["AG", "BA", "CA"])
-    # d.exec_();
-    # print(d.ret_value())

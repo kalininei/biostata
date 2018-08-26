@@ -21,6 +21,12 @@ class Signal:
 
 
 class TabModel(QtCore.QAbstractTableModel):
+    """ This class contains representation options
+        for resulting table (presented as bdata.dtab.DataTable self.dt)
+        including color, folds etc.
+        It also connects directly to a View object and works as
+        a controller.
+    """
     # additional roles for data(...) execution
     RawValueRole = QtCore.Qt.UserRole
     RawSubValuesRole = QtCore.Qt.UserRole+1
@@ -247,7 +253,7 @@ class TabModel(QtCore.QAbstractTableModel):
         return len(self.dt.group_by) > 0
 
     def n_filters(self):
-        return len(self.dt.filters)
+        return len(self.dt.used_filters)
 
     def dt_type(self, index):
         return self.dt.visible_columns[index.column()].dt_type
@@ -259,14 +265,12 @@ class TabModel(QtCore.QAbstractTableModel):
         return self.coloring.color_scheme
 
     # ------------------------ modification procedures
-    def add_filters(self, flts):
-        self.dt.filters.extend(flts)
-
-    def rem_last_filter(self):
-        self.dt.filters.pop()
+    def add_filter(self, flt):
+        self.dt.add_filter(flt)
 
     def rem_all_filters(self):
-        self.dt.filters.clear()
+        self.dt.all_anon_filters.clear()
+        self.dt.used_filters.clear()
 
     def group_rows(self, catnames, method=None):
         self.dt.group_by = copy.deepcopy(catnames)

@@ -3,6 +3,10 @@ from bdata import filt
 
 
 class DataTable(object):
+    """ this class contains
+        modification options of a given table
+        with the results of these modification (self.tab)
+    """
     def __init__(self, name, proj):
         self.proj = proj
         # =========== data declaration
@@ -14,9 +18,6 @@ class DataTable(object):
         # additional rows representing status of each entry
         self.ttab_name = '_' + name + '_tmp'
 
-        # table data on python side: fetched data which should be shown.
-        self.tab = ViewedData(self)
-
         # columns information
         # original and user defined columns
         self.columns = collections.OrderedDict()
@@ -24,7 +25,6 @@ class DataTable(object):
         self.visible_columns = []
 
         # representation options
-        self.filters = []
         self.group_by = []
         self.ordering = None
 
@@ -33,6 +33,9 @@ class DataTable(object):
         #          used_filters contain both anon and named filters
         self.all_anon_filters = []
         self.used_filters = []
+
+        # table data on python side: fetched data which should be shown.
+        self.tab = ViewedData(self)
 
         # data initialization
         self._init_columns()  # fills self.columns, self.visible columns
@@ -140,7 +143,7 @@ class DataTable(object):
 
     def _compile_query(self, filters, group):
         # filtration
-        fltline = FilterByValue.nested_select(filters)
+        fltline = filt.Filter.compile_sql_line(filters)
 
         # grouping
         grlist, order = self._grouping_ordering(group)
@@ -159,7 +162,7 @@ class DataTable(object):
         self.cursor.execute(qr)
 
     def update(self):
-        qr = self._compile_query(self.filters, self.group_by)
+        qr = self._compile_query(self.used_filters, self.group_by)
         self.query(qr)
         self.tab.fill(self.cursor.fetchall())
 
@@ -242,6 +245,16 @@ class DataTable(object):
                 if view_index < ks.index(c.name):
                     self.visible_columns.insert(i, col)
                     break
+
+    def add_filter(self, f, use=True):
+        if f.name is None:
+            if f not in self.all_anon_filters:
+                self.all_anon_filters.append(f)
+        else:
+            if f not in self.proj.named_filters:
+                self.proj.named_filters.append(f)
+        if use and f not in self.used_filters:
+            self.used_filters.append(f)
 
     def set_filter_usage(self, f, use):
         if not use:
@@ -356,7 +369,7 @@ class DataTable(object):
             return self.tab.get_column_values(ind)
         except ValueError:
             # make a query
-            fltline = FilterByValue.nested_select(self.filters)
+            fltline = filt.Filter.compile_sql_line(self.used_filters)
             grlist, order = self._grouping_ordering(self.group_by)
             # get result
             qr = """ SELECT {} FROM "{}" {} {} {} """.format(
@@ -378,34 +391,6 @@ class DataTable(object):
 
 
 # =================================== Additional classes
-# ------------ Filtration
-class FilterByValue(object):
-    def __init__(self, nm, val, do_remove, use_and=True):
-        leave = "NOT " if do_remove else ""
-        if not isinstance(val, collections.Iterable):
-            s = '{0} "{1}"={2}'
-            self.q = s.format(leave, nm, val)
-        else:
-            s = []
-            for i, j in zip(nm, val):
-                s.append('"{0}"={1}'.format(i, j))
-            if len(s) == 0:
-                self.q = ""
-            else:
-                cnc = ' AND ' if use_and else ' OR '
-                self.q = "{0}({1})".format(leave, cnc.join(s))
-
-    @classmethod
-    def nested_select(cls, filterlist):
-        flt = list(filter(lambda x: isinstance(x, FilterByValue) and x.q,
-                          filterlist))
-        if not flt:
-            return ""
-        else:
-            return "WHERE " +\
-                ' AND '.join([x.q for x in flt])
-
-
 # -------------------- Column information
 class ColumnInfo:
     def __init__(self):
@@ -423,8 +408,8 @@ class ColumnInfo:
         self.possible_values = None
         self.possible_values_short = None
         # defined delegates
-        self.repr = lambda x: x
-        self.from_repr = lambda x: x
+        self.repr = lambda x: "" if x is None else x
+        self.from_repr = lambda x: None if x == "" else x
 
     def short_caption(self):
         return self.shortname
@@ -472,8 +457,9 @@ class ColumnInfo:
 
         # changing representation function for boolean and enum types
         if category.dt_type in ["ENUM", "BOOLEAN"]:
-            ret.repr = lambda x: ret.possible_values_short[x]
-            ret.from_repr = lambda x: next(
+            ret.repr = lambda x: "" if x is None else\
+                    ret.possible_values_short[x]
+            ret.from_repr = lambda x: None if x == "" else next(
                 k for k, v in ret.possible_values_short.items() if v == x)
 
         ret._build_status_column()
@@ -488,7 +474,7 @@ class ColumnInfo:
         ret.is_category = True
         ret.dt_type = "INTEGER"
         ret.sql_group_fun = 'category_group(id)'
-        ret.sql_fun = "id"
+        ret.sql_fun = '"id"'
         ret.sql_data_type = "INTEGER"
         ret._long_caption = "id"
         ret._build_status_column()
@@ -603,10 +589,10 @@ class ViewedData:
             else:
                 vc = len(self.model.visible_columns)
                 # add additional filters defining this group
-                flt = self.model.filters[:]
-                flt.append(FilterByValue(
-                    self.definition.keys(), self.definition.values(),
-                    False, True))
+                flt = self.model.used_filters[:]
+                flt.append(filt.Filter.filter_by_values(
+                        self.model, self.definition.keys(),
+                        self.definition.values(), False, True))
                 # build query
                 qr = self.model._compile_query(flt, [])
                 self.model.query(qr)

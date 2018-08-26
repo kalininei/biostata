@@ -9,8 +9,9 @@ def possible_values_list(column, operation, datatab):
             if c is not column and c.dt_type == tp:
                 ret.append('"{}"'.format(c.name))
 
-    if column.dt_type == "INTEGER" and operation != "one of":
-        append_col_names("INTEGER")
+    if column.dt_type == "INTEGER":
+        if operation != "one of":
+            append_col_names("INTEGER")
     elif column.dt_type == "REAL":
         append_col_names("REAL")
     elif column.dt_type == "ENUM":
@@ -40,7 +41,7 @@ def factions(dt_type):
         raise NotImplementedError
     return copy.deepcopy(a0 + a + ae)
 
-fconcat = ["AND", "OR", "AND NOT", "OR NOT"]
+fconcat = ["AND", "OR"]
 
 fopenparen = ["", "(", "( (", "( ( ("]
 
@@ -66,6 +67,7 @@ class Filter:
 
     def copy_from(self, flt):
         self.name = flt.name
+        self.do_remove = flt.do_remove
         self.entries = [FilterEntry() for _ in flt.entries]
         for l1, l2 in zip(self.entries, flt.entries):
             l1.copyfrom(l2)
@@ -96,6 +98,81 @@ class Filter:
         if not self.do_remove:
             ret3 = "NOT ({})".format(ret3)
         return ret3
+
+    def to_sqlline(self):
+        from bdata import dtab
+        iparen = 0
+        line = ""
+        for e in self.entries:
+            ret = []
+            if e is not self.entries[0]:
+                ret.append(e.concat)
+            # opening bracket
+            ret.append(e.paren1)
+            iparen += e.paren1.count('(')
+            # first operand
+            ret.append(e.column.sql_fun)
+            # action
+            if e.action == "==":
+                ret.append("=")
+            elif e.action in ["!=", ">", "<", ">=", "<="]:
+                ret.append(e.action)
+            elif e.action == "one of":
+                ret.append("IN")
+            elif e.action == "NULL":
+                ret.append("IS NULL")
+            elif e.action == "not NULL":
+                ret.append("IS NOT NULL")
+            else:
+                raise NotImplementedError
+            # second operand
+            if e.action not in ["NULL", "not NULL"]:
+                if isinstance(e.value, dtab.ColumnInfo):
+                    ret.append(e.value.sql_fun)
+                elif isinstance(e.value, list):
+                    ret.append('(' + ", ".join(map(str, e.value)) + ')')
+                else:
+                    ret.append(str(e.value))
+            # closing bracket
+            if e.paren2 == ')...)':
+                ret.append(')'*iparen)
+                iparen = 0
+            else:
+                ret.append(e.paren2)
+                iparen -= e.paren2.count(')')
+
+            line += " ".join(ret)
+        if self.do_remove:
+            line = "NOT (" + line + ")"
+        return line
+
+    @classmethod
+    def compile_sql_line(cls, filters):
+        if len(filters) < 1:
+            return ""
+        else:
+            r = ['(' + f.to_sqlline() + ')' for f in filters]
+            return "WHERE " + " AND ".join(r)
+
+    @classmethod
+    def filter_by_values(cls, datatab, cnames, cvals, do_remove, use_and):
+        ret = cls()
+        ret.do_remove = do_remove
+        for k, v in zip(cnames, cvals):
+            e = FilterEntry()
+            e.concat = "AND" if use_and else "OR"
+            e.column = datatab.columns[k]
+            e.action = "=="
+            e.value = v
+            ret.entries.append(e)
+        return ret
+
+    def add_conditions(self, f):
+        if self.do_remove != f.do_remove:
+            raise Exception("Cannot concatenate opposite filters")
+        for e in f.entries:
+            self.entries.append(FilterEntry())
+            self.entries[-1].copyfrom(e)
 
 
 class FilterEntry:
