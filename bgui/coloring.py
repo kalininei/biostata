@@ -104,7 +104,14 @@ class Coloring:
         elif self.dt_type in ["BOOLEAN", "ENUM", "TEXT"]:
             dd = set([x for x in self._row_values if x is not None])
             if not dd:
-                dd = set([0])
+                anyval = next(iter(self._global_values_dictionary.keys()),
+                              None)
+                if anyval is not None:
+                    dd.add(anyval)
+                else:
+                    # Just in case. We should not get here.
+                    # Maybe only if a whole column is None or smth.
+                    dd = set([None])
             # limits
             if not self.absolute_limits:
                 self._values_dictionary = collections.OrderedDict()
@@ -121,8 +128,8 @@ class Coloring:
             col = datatab.columns[self.color_by]
             for v in sorted(dd):
                 if v not in self._values_dictionary:
-                    self._values_dictionary[v] = (len(self._values_dictionary),
-                                                  col.repr(v))
+                    self._values_dictionary[v] = (
+                            len(self._values_dictionary), col.repr(v))
 
             # normalize self._row_values
             self.limits[0] = 0

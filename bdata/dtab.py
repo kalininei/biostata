@@ -21,8 +21,13 @@ class DataTable(object):
         # columns information
         # original and user defined columns
         self.columns = collections.OrderedDict()
+        # self columns in order they should be viewed
+        self.all_columns = []
         # columns which are visible for user
         self.visible_columns = []
+
+        # method for data grouping
+        self.__default_group_method = "AVG"
 
         # representation options
         self.group_by = []
@@ -43,6 +48,7 @@ class DataTable(object):
 
     def _init_columns(self):
         self.columns = collections.OrderedDict()
+        self.all_columns = []
         self.visible_columns = []
         self.query("""PRAGMA TABLE_INFO("{}")""".format(self.otab_name))
         cid, ccat, cdt = [], [], []
@@ -65,6 +71,7 @@ class DataTable(object):
         for c in cid + ccat + cdt:
             self.columns[c.name] = c
             self.visible_columns.append(c)
+            self.all_columns.append(c)
 
     def _init_ttab(self):
         collist = []
@@ -180,7 +187,7 @@ class DataTable(object):
         # check if this merge was already done
         if col.name in self.columns.keys():
             return None
-        self.add_category_column(col)
+        self.add_column(col)
         # place to the visible columns list
         for i, c in enumerate(self.visible_columns):
             if not c.is_category:
@@ -189,62 +196,100 @@ class DataTable(object):
         return col
 
     # ------------------------ Data modification procedures
-    def set_data_group_function(self, method):
-        if method == 'amean':
-            m = "AVG"
-        elif method == 'max':
-            m = "MAX"
-        elif method == 'min':
-            m = "MIN"
-        elif method == 'median':
-            m = "median"
-        elif method == 'median+':
-            m = "medianp"
-        elif method == 'median-':
-            m = "medianm"
+    def set_data_group_function(self, method=None):
+        if method is not None:
+            if method == 'amean':
+                m = "AVG"
+            elif method == 'max':
+                m = "MAX"
+            elif method == 'min':
+                m = "MIN"
+            elif method == 'median':
+                m = "median"
+            elif method == 'median+':
+                m = "medianp"
+            elif method == 'median-':
+                m = "medianm"
+            else:
+                raise NotImplementedError
+            self.__default_group_method = m
         else:
-            raise NotImplementedError
+            m = self.__default_group_method
         for c in self.columns.values():
             if not c.is_category:
                 c.sql_group_fun = '{}("{}")'.format(m, c.name)
 
     def remove_column(self, col):
-        self.columns.pop(col.name)
-        self.visible_columns.remove(col)
+        if col.is_original:
+            raise Exception(
+                "Can not remove original column {}".format(col.name))
+        try:
+            self.columns.pop(col.name)
+        except:
+            pass
+        try:
+            self.all_columns.remove(col)
+        except:
+            pass
+        try:
+            self.visible_columns.remove(col)
+        except:
+            pass
 
-    def add_category_column(self, col):
-        self.columns[col.name] = col
-        # move all data column after the newly added one
-        ks = [k for k, v in self.columns.items() if not v.is_category]
-        for k in ks[::-1]:
-            self.columns.move_to_end(k)
-
-    def add_data_column(self, col):
-        self.columns[col.name] = col
-
-    def resort_visible_categories(self):
-        """ Sets visible_columns categories in order:
-              id -> original categories -> derived categories
-        """
-        vis = []
-        for c in self.columns.values():
-            if c.is_category and c in self.visible_columns:
-                vis.append(c)
-        for c in self.visible_columns:
-            if not c.is_category:
-                vis.append(c)
-        self.visible_columns = vis
+    def add_column(self, col, pos=None, is_visible=False):
+        if col.name not in self.columns:
+            self.columns[col.name] = col
+            if not col.is_category:
+                self.set_data_group_function()
+            if pos is None:
+                pos = len(self.columns)
+        else:
+            # if column already presents in current data
+            if pos is None:
+                pos = self.all_columns.index(col)
+            # temporary remove column from lists
+            try:
+                self.all_columns.remove(col)
+            except:
+                pass
+            try:
+                self.visible_columns.remove(col)
+            except:
+                pass
+        # maximum position for category column
+        # or minimum for data column
+        limpos = 0
+        while limpos < len(self.all_columns) and\
+                self.all_columns[limpos].is_category:
+            limpos += 1
+        # add to all_columns
+        if col.is_category:
+            pos = min(pos, limpos)
+        else:
+            pos = max(pos, limpos)
+        self.all_columns.insert(pos, col)
+        # visibles
+        vis_set = set(self.visible_columns)
+        if is_visible:
+            vis_set.add(col)
+        self._assemble_visibles(vis_set)
 
     def set_visibility(self, col, do_show):
+        is_visible = col in self.visible_columns
+        if is_visible == do_show:
+            return
         if not do_show:
             self.visible_columns.remove(col)
         else:
-            ks = self.columns.keys()
-            view_index = ks.index(col.name)
-            for i, c in enumerate(self.visible_columns):
-                if view_index < ks.index(c.name):
-                    self.visible_columns.insert(i, col)
-                    break
+            assert col in self.all_columns
+            vis_set = set(self.visible_columns + [col])
+            self._assemble_visibles(vis_set)
+
+    def _assemble_visibles(self, vis_set):
+        self.visible_columns.clear()
+        for c in self.all_columns:
+            if c in vis_set:
+                self.visible_columns.append(c)
 
     def add_filter(self, f, use=True):
         if f.name is None:

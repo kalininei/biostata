@@ -346,8 +346,7 @@ class TabModel(QtCore.QAbstractTableModel):
                 showthis.add(c2)
             self.dt.remove_column(c)
         for c in showthis:
-            self.dt.visible_columns.append(c)
-        self.dt.resort_visible_categories()
+            self.dt.set_visibility(c, True)
         return True
 
     def zoom_font(self, delta):

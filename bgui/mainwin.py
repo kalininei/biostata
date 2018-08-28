@@ -130,7 +130,7 @@ class MainWindow(QtWidgets.QMainWindow):
         winmenu = menubar.addMenu("Show")
         self.dock_color = docks.ColorDockWidget(self, winmenu)
         self.dock_filters = docks.FiltersDockWidget(self, winmenu)
-        self.dock_status = docks.StatusDockWidget(self, winmenu)
+        self.dock_colinfo = docks.ColumnInfoDockWidget(self, winmenu)
 
         # --- About
         self.aboutmenu = menubar.addMenu('About')
@@ -305,7 +305,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.active_model = self.models[i]
         self.dock_color.active_model_changed()
         self.dock_filters.active_model_changed()
-        self.dock_status.active_model_changed()
+        self.dock_colinfo.active_model_changed()
         self.active_model.representation_changed_subscribe(
             self.active_model_repr_changed)
 
@@ -314,3 +314,5 @@ class MainWindow(QtWidgets.QMainWindow):
             self.dock_color.refill()
         if self.dock_filters.isVisible():
             self.dock_filters.refill()
+        if self.dock_colinfo.isVisible():
+            self.dock_colinfo.refill()
