@@ -96,6 +96,16 @@ class MainWindow(QtWidgets.QMainWindow):
                 'Collapse ...', self)
         collapse_menu_action.triggered.connect(self._act_collapse)
         self.columnsmenu.addAction(collapse_menu_action)
+        # add columns
+        self.columnsmenu.addSeparator()
+        column_by_filter_action = QtWidgets.QAction(
+                'New boolean category...', self)
+        column_by_filter_action.triggered.connect(self._act_new_bool_column)
+        self.columnsmenu.addAction(column_by_filter_action)
+        enum_column_action = QtWidgets.QAction(
+                'New enum category...', self)
+        enum_column_action.triggered.connect(self._act_new_enum_column)
+        self.columnsmenu.addAction(enum_column_action)
 
         # --- Rows
         self.rowsmenu = menubar.addMenu('Rows')
@@ -258,6 +268,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _act_apply_color(self):
         self.active_model.switch_coloring_mode()
+
+    def _act_new_bool_column(self):
+        dialog = dlgs.NewBoolColumn(self.active_model.dt, self)
+        if dialog.exec_():
+            newcol = dialog.ret_value()
+            self.active_model.dt.add_column(newcol, None, True)
+            self.active_model.update()
+
+    def _act_new_enum_column(self):
+        pass
 
     # ============== Procedures
     def _load_database(self, fname):

@@ -76,6 +76,9 @@ class ProjectDB:
                 for f in self.named_filters:
                     dt.set_filter_usage(f, True)
 
+    def get_named_filter(self, name):
+        return next((x for x in self.named_filters if x.name == name), None)
+
     def get_category(self, name):
         for c in self.data_types:
             if c.name == name:

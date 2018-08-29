@@ -325,7 +325,7 @@ class DataTable(object):
         for f in filtlist:
             self.set_filter_usage(f, True)
 
-    # ------------------------ Data access procedures
+    # ------------------------ info and checks
     def table_name(self):
         return self.otab_name
 
@@ -350,6 +350,60 @@ class DataTable(object):
         """ -> [str category.name] (excluding id)"""
         return [x.name for x in self.get_categories()]
 
+    def n_cols(self):
+        return len(self.visible_columns)
+
+    def n_rows(self):
+        try:
+            return self.tab.n_rows()
+        except:
+            return 0
+
+    def applicable_named_filters(self):
+        return [f for f in self.proj.named_filters if f.is_applicable(self)]
+
+    def n_subrows(self, ir):
+        return self.tab.rows[ir].n_sub_values
+
+    def n_subdata_unique(self, ir, ic):
+        return self.tab.rows[ir].n_unique_sub_values[ic]
+
+    def n_visible_categories(self):
+        ret = 0
+        for c in self.visible_columns[1:]:
+            if not c.is_category:
+                break
+            ret += 1
+        return ret
+
+    def is_valid_column_name(self, nm, shortnm='valid'):
+        """ checks if nm could be used as a new column name for this tab
+            raises Exception if negative
+        """
+        # name
+        if not isinstance(nm, str) or not nm.strip():
+            raise Exception("Column name should be a valid string")
+        if nm[0] == '_':
+            raise Exception("Column name should not start with '_'")
+        cnames = list(map(lambda x: x.upper(), self.columns.keys()))
+        if nm.upper() in cnames:
+            raise Exception("Column name already exists in present table")
+        for c in ['&', '"', "'"]:
+            if nm.find(c) >= 0:
+                raise Exception("Column name should not contain "
+                                "ampersand or quotes signs")
+        # short name
+        if not isinstance(shortnm, str) or not shortnm.strip():
+            raise Exception("Column short name should be a valid string")
+        if shortnm[0] == '_':
+            raise Exception("Column short name should not start with '_'")
+        for c in ['&', '"', "'"]:
+            if shortnm.find(c) >= 0:
+                raise Exception("Column short name should not contain "
+                                "ampersand or quotes signs")
+        return True
+
+    # ------------------------ Data access procedures
     def get_value(self, r, c):
         col = self.visible_columns[c]
         v = self.tab.get_value(r, c)
@@ -370,28 +424,12 @@ class DataTable(object):
         """ dictionary which uniquely defines the row (including grouping) """
         return self.tab.rows[r].definition
 
-    def n_cols(self):
-        return len(self.visible_columns)
-
-    def n_rows(self):
-        try:
-            return self.tab.n_rows()
-        except:
-            return 0
-
-    def n_subrows(self, ir):
-        return self.tab.rows[ir].n_sub_values
-
-    def n_subdata_unique(self, ir, ic):
-        return self.tab.rows[ir].n_unique_sub_values[ic]
-
-    def n_visible_categories(self):
-        ret = 0
-        for c in self.visible_columns[1:]:
-            if not c.is_category:
-                break
-            ret += 1
-        return ret
+    def ids_by_row(self, r):
+        id0 = self.get_raw_value(r, 0)
+        if id0 is not None:
+            return [id0]
+        else:
+            return self.get_raw_subvalues(r, 0)
 
     def get_raw_minmax(self, cname, is_global=False):
         if cname == 'id' and is_global:
@@ -507,6 +545,26 @@ class ColumnInfo:
             ret.from_repr = lambda x: None if x == "" else next(
                 k for k, v in ret.possible_values_short.items() if v == x)
 
+        ret._build_status_column()
+        return ret
+
+    @classmethod
+    def build_bool_category(cls, name, shortname, yesno, sql_fun):
+        ret = cls()
+        ret.name = name
+        ret.shortname = shortname
+        ret._long_caption = name
+        ret.is_original = False
+        ret.is_category = True
+        ret.dt_type = "BOOLEAN"
+        ret.sql_fun = sql_fun
+        ret.sql_group_fun = 'category_group({})'.format(ret.sql_fun)
+        ret.sql_data_type = "INTEGER"
+        ret.possible_values = {0: yesno[1], 1: yesno[0]}
+        ret.possible_values_short = ret.possible_values
+        ret.repr = lambda x: "" if x is None else ret.possible_values_short[x]
+        ret.from_repr = lambda x: None if x == "" else next(
+            k for k, v in ret.possible_values_short.items() if v == x)
         ret._build_status_column()
         return ret
 

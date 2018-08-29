@@ -33,9 +33,10 @@ _tmp = None
 # option entries types
 class SimpleOptionEntry(optview.OptionEntry):
     "simple str, int, float option entries "
-    def __init__(self, data, member_name):
+    def __init__(self, data, member_name, dostrip=False):
         super().__init__(data, member_name)
         self.tp = type(self.get())
+        self.dostrip = dostrip
 
     def display_widget(self):
         return self.conf._label(str(self))
@@ -49,7 +50,10 @@ class SimpleOptionEntry(optview.OptionEntry):
         wdg.setText(str(self))
 
     def set_from_widget(self, widget):
-        self.set(self.tp(widget.text()))
+        txt = widget.text()
+        if self.dostrip:
+            txt = txt.strip()
+        self.set(self.tp(txt))
 
 
 class BoundedIntOptionEntry(SimpleOptionEntry):

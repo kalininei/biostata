@@ -167,6 +167,58 @@ class Filter:
             ret.entries.append(e)
         return ret
 
+    @staticmethod
+    def simplify_integer_list(ilist, minrange):
+        """ (1,2,3,4,5, 8, 12,13,14) -> [1,5], 8, [12,14]
+        """
+        srt = sorted(set(ilist))
+        if len(ilist) == 0:
+            return []
+        ret = []
+        i, istart = 0, 0
+        while i < len(srt):
+            while i < len(srt) and srt[i] - srt[istart] == i - istart:
+                i += 1
+            if i - istart >= minrange:
+                ret.append([srt[istart], srt[i-1]])
+            else:
+                ret.extend(srt[istart:i])
+            istart = i
+        return ret
+
+    @classmethod
+    def filter_by_datalist(cls, datatab, cname, vals, do_remove):
+        ret = cls()
+        ret.do_remove = do_remove
+        col = datatab.columns[cname]
+        if len(vals) == 0:
+            return cls()
+        if col.dt_type == "INTEGER":
+            slist = cls.simplify_integer_list(vals, 4)
+            dist_ints = list(filter(lambda x: isinstance(x, int), slist))
+            range_ints = list(filter(lambda x: isinstance(x, list), slist))
+            # distinct integers
+            if dist_ints:
+                e = FilterEntry()
+                e.column = col
+                e.action = "one of"
+                e.value = dist_ints
+                ret.entries.append(e)
+            # ranges
+            for [r1, r2] in range_ints:
+                e1, e2 = FilterEntry(), FilterEntry()
+                e1.column = e2.column = col
+                e1.concat = "OR" if do_remove else "AND"
+                e2.concat = "AND"
+                e1.paren1, e2.paren2 = '(', ')'
+                e1.action, e2.action = ">=", "<="
+                e1.value, e2.value = r1, r2
+                ret.entries.extend([e1, e2])
+            return ret
+        else:
+            return cls.filter_by_values(datatab, [cname]*len(vals), vals,
+                                        do_remove, do_remove)
+
     def add_conditions(self, f):
         if self.do_remove != f.do_remove:
             raise Exception("Cannot concatenate opposite filters")

@@ -259,6 +259,12 @@ class TableView(QtWidgets.QTableView):
             return
         menu = QtWidgets.QMenu(self)
         rr = self.model().row_role(index)
+
+        # copy to clipboard
+        if rr == 'D':
+            act = QtWidgets.QAction("Copy", self)
+            act.triggered.connect(self._act_copy_to_clipboard)
+            menu.addAction(act)
         # fold/unfold action
         if rr == 'D' and self.model().group_size(index) > 1:
             act = QtWidgets.QAction("Fold/Unfold", self)
@@ -268,23 +274,29 @@ class TableView(QtWidgets.QTableView):
 
         # filter out the row
         if rr == 'D':
-            act = QtWidgets.QAction("Filter row", self)
+            act = QtWidgets.QAction("Filter rows", self)
             act.triggered.connect(functools.partial(
-                self._act_filter_row, index))
+                self._act_filter_row, index, True))
+            menu.addAction(act)
+            act = QtWidgets.QAction("Leave only rows", self)
+            act.triggered.connect(functools.partial(
+                self._act_filter_row, index, False))
             menu.addAction(act)
 
         menu.popup(self.viewport().mapToGlobal(pnt))
 
-    def _act_filter_row(self, index):
+    def _act_filter_row(self, index, do_remove):
         sel = self.selectionModel()
         usedrows = set([index.row()])
         for si in sel.selectedIndexes():
             usedrows.add(si.row())
+        used_ids = []
         for ir in usedrows:
-            dc = self.model().dt.row_definition(ir-2)
-            f = filt.Filter.filter_by_values(self.model().dt, dc.keys(),
-                                             dc.values(), True, True)
-            self.model().add_filter(f)
+            a = self.model().dt.ids_by_row(ir-2)
+            used_ids.extend(a)
+        f = filt.Filter.filter_by_datalist(
+                self.model().dt, 'id', used_ids, do_remove)
+        self.model().add_filter(f)
         # preserve fold/unfold set which will be altered after update()
         bu = None
         if not isinstance(self.model()._unfolded_groups, bool):
@@ -318,3 +330,31 @@ class TableView(QtWidgets.QTableView):
                 if self.model().row_min_id(i) in bu:
                     index = self.model().createIndex(i, 0)
                     self.model().unfold_row(index, True)
+
+    def _act_copy_to_clipboard(self):
+        sel = self.selectionModel()
+        si = sel.selectedIndexes()
+        maxr = max([x.row() for x in si])
+        minr = min([x.row() for x in si])
+        maxc = max([x.column() for x in si])
+        minc = min([x.column() for x in si])
+        nx = maxc - minc + 1
+        ny = maxr - minr + 1
+        tab = [[""]*nx for _ in range(ny)]
+        # fill tab
+        for ind in si:
+            r, c = ind.row(), ind.column()
+            v = self.model().dt.get_value(r-2, c)
+            if v is None:
+                v = ""
+            if self.model().dt.n_subdata_unique(r-2, c) > 1:
+                sv = self.model().dt.get_subvalues(r-2, c)
+                sv = ", ".join(map(str, sv))
+                v = "{}({})".format(v, sv)
+            tab[r-minr][c-minc] = v
+        # convert into text and place to the clipboard
+        txt = []
+        for row in tab:
+            txt.append('\t'.join(map(str, row)))
+        txt = '\n'.join(txt)
+        QtWidgets.QApplication.clipboard().setText(txt)
