@@ -1,6 +1,6 @@
 import functools
 import traceback
-from PyQt5 import QtWidgets, QtGui
+from PyQt5 import QtWidgets, QtGui, QtCore
 from bdata import projroot
 from bgui import dlgs
 from bgui import tmodel
@@ -12,6 +12,8 @@ from fileproc import export
 
 class MainWindow(QtWidgets.QMainWindow):
     "application main window"
+    active_model_changed = QtCore.pyqtSignal()
+    active_model_repr_changed = QtCore.pyqtSignal()
 
     def __init__(self, proj=None):
         super().__init__()
@@ -23,6 +25,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # =========== central widget
         self.wtab = QtWidgets.QTabWidget(self)
+        self.wtab.currentChanged.connect(self._tab_changed)
         self.tabframes = []
         self.setCentralWidget(self.wtab)
 
@@ -136,6 +139,28 @@ class MainWindow(QtWidgets.QMainWindow):
                          self.active_model.update()))
         self.rowsmenu.addAction(self.rem_all_filter_action)
 
+        # --- Tables
+        self.tablesmenu = menubar.addMenu('Tables')
+        self.tablesmenu.aboutToShow.connect(self._tablesmenu_enabled)
+
+        # new table
+        table_from_visible = QtWidgets.QAction(
+                'New table from visible...', self)
+        table_from_visible.triggered.connect(self._act_table_from_visible)
+        self.tablesmenu.addAction(table_from_visible)
+
+        # join tables
+        join_tables = QtWidgets.QAction("Join tables...", self)
+        join_tables.triggered.connect(self._act_join_tables)
+        self.tablesmenu.addAction(join_tables)
+
+        # remove active table
+        self.tablesmenu.addSeparator()
+        self.rem_cur_table = QtWidgets.QAction("Remove active table", self)
+        self.rem_cur_table.triggered.connect(
+                lambda: self._act_remove_table(self.active_index()))
+        self.tablesmenu.addAction(self.rem_cur_table)
+
         # --- Show dock windows
         winmenu = menubar.addMenu("Show")
         self.dock_color = docks.ColorDockWidget(self, winmenu)
@@ -149,6 +174,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._load_database(proj)
 
     # =============== Actions
+    def _tab_changed(self, index):
+        if index >= 0:
+            self._set_active_model(index)
+        else:
+            self._set_active_model(None)
+
     def _filemenu_enabled(self):
         self.export_action.setEnabled(self.active_model is not None)
 
@@ -165,6 +196,14 @@ class MainWindow(QtWidgets.QMainWindow):
         # ungroup all visible
         has_groups = self.active_model.has_groups()
         self.ungroup_rows_action.setEnabled(has_groups)
+
+    def _tablesmenu_enabled(self):
+        enabled = self.active_model is not None
+        for m in self.tablesmenu.actions():
+            m.setEnabled(enabled)
+        if not enabled:
+            return
+        self.rem_cur_table.setEnabled(not self.active_model.is_original())
 
     def _columnsmenu_enabled(self):
         enabled = self.active_model is not None
@@ -277,6 +316,27 @@ class MainWindow(QtWidgets.QMainWindow):
             self.active_model.update()
 
     def _act_new_enum_column(self):
+        # TODO
+        pass
+
+    def _act_table_from_visible(self):
+        dialog = dlgs.NewTableFromVisible(self.active_model, self)
+        if dialog.exec_():
+            newmodel = dialog.ret_value()
+            index = self.add_model(newmodel)
+            self.wtab.setCurrentIndex(index)
+
+    def _act_remove_table(self, i):
+        mod = self.models[i]
+        try:
+            self.proj.remove_table(mod.table_name())
+            self.models.pop(i)
+            self.wtab.removeTab(i)
+        except Exception as e:
+            QtWidgets.QMessageBox.critical(self, 'Error', str(e))
+
+    def _act_join_tables(self):
+        # TODO
         pass
 
     # ============== Procedures
@@ -306,10 +366,9 @@ class MainWindow(QtWidgets.QMainWindow):
         # models
         for t in self.proj.data_tables:
             self.models.append(tmodel.TabModel(t))
-        self._init_widgets()
-        self.active_model = None
         if self.models:
-            self._set_active_model(0)
+            self.active_model = self._set_active_model(0)
+        self._init_widgets()
 
     def _init_widgets(self):
         self.tabframes = []
@@ -318,21 +377,30 @@ class MainWindow(QtWidgets.QMainWindow):
         for f in self.tabframes:
             self.wtab.addTab(f, f.table_name())
 
+    def active_index(self):
+        return self.models.index(self.active_model)
+
+    def add_model(self, newmodel):
+        self.models.append(newmodel)
+        self.tabframes.append(tview.TableView(newmodel, self.wtab))
+        # add {} to show that this is a derived model
+        self.wtab.addTab(self.tabframes[-1],
+                         '{' + self.tabframes[-1].table_name() + '}')
+        return len(self.models) - 1
+
+    def _forward_repr_changed(self, a, b):
+        self.active_model_repr_changed.emit()
+
     def _set_active_model(self, i):
         if self.active_model is not None:
-            self.active_model.representation_changed_unsubscribe(
-                self.active_model_changed)
-        self.active_model = self.models[i]
-        self.dock_color.active_model_changed()
-        self.dock_filters.active_model_changed()
-        self.dock_colinfo.active_model_changed()
-        self.active_model.representation_changed_subscribe(
-            self.active_model_repr_changed)
-
-    def active_model_repr_changed(self, model, ir):
-        if self.dock_color.isVisible():
-            self.dock_color.refill()
-        if self.dock_filters.isVisible():
-            self.dock_filters.refill()
-        if self.dock_colinfo.isVisible():
-            self.dock_colinfo.refill()
+            self.active_model.repr_updated.disconnect(
+                    self._forward_repr_changed)
+        if i is not None:
+            self.active_model = self.models[i]
+            self.active_model_changed.emit()
+            self.active_model.repr_updated.connect(
+                    self._forward_repr_changed)
+            self.active_model.update()
+        else:
+            self.active_model = None
+            self.active_model_changed.emit()

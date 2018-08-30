@@ -93,11 +93,32 @@ class MedianMDataGrouping(_Grouping1):
 
 
 def category_merge(*args):
-    return tech_splitter.join(map(str, args))
+    try:
+        return tech_splitter.join(map(str, args))
+    except Exception as e:
+        print('category merge', args, str(e))
 
 
 def max_per_list(*args):
-    return max(args)
+    try:
+        return max(args)
+    except Exception as e:
+        print('max_per_list', args, str(e))
+
+
+_i_txt_to_enumcode = 1
+
+
+def build_txt_to_enum(int_to_txt_dict, connection):
+    global _i_txt_to_enumcode
+    txt_to_int_dict = {v: k for k, v in int_to_txt_dict.items()}
+
+    def txt_to_enum(txt):
+        return txt_to_int_dict[txt]
+    nm = "txt_to_enumcode_{}".format(_i_txt_to_enumcode)
+    connection.create_function(nm, 1, txt_to_enum)
+    _i_txt_to_enumcode += 1
+    return nm
 
 # those functions will be added to each connection passed to TabModel
 registered_aggregate_functions = [

@@ -21,23 +21,21 @@ class Category:
 
         # possible values for enum and boolean data
         # integers to strings converter
-        self.possible_values_short = collections.OrderedDict()
         self.possible_values = collections.OrderedDict()
+        self.values_comments = collections.OrderedDict()
         if self.dt_type in ["ENUM", "BOOLEAN"]:
             tnm = '"_DATA_TYPE {}"'.format(self.name)
             qr = """
-                SELECT value, shortname, name FROM {}
+                SELECT value, name, comments FROM {}
             """.format(tnm)
             proj.cursor.execute(qr)
             f = proj.cursor.fetchall()
             vls = [x[0] for x in f]
-            snm = [x[1] for x in f]
-            nm = [x[2] for x in f]
-            for i, s, n in zip(vls, snm, nm):
-                if s is None:
-                    s = n
-                self.possible_values_short[i] = s
-                self.possible_values[i] = n
+            nm = [x[1] for x in f]
+            com = [x[2] for x in f]
+            for i, s, c in zip(vls, nm, com):
+                self.possible_values[i] = s
+                self.values_comments[i] = c
 
 
 class ProjectDB:
@@ -61,8 +59,9 @@ class ProjectDB:
         self.data_tables = []
         self.cursor.execute("SELECT name FROM _DATA_TABLES_")
         for a in self.cursor.fetchall():
-            self.data_tables.append(dtab.DataTable(a[0], self))
+            self.data_tables.append(dtab.OriginalTable(a[0], self))
 
+    # ================= Modificators
     def set_named_filters(self, filtlist, useall=False):
         # remove all existing filters
         for dt in self.data_tables:
@@ -76,8 +75,51 @@ class ProjectDB:
                 for f in self.named_filters:
                     dt.set_filter_usage(f, True)
 
+    def add_table(self, newdt):
+        self.data_tables.append(newdt)
+
+    def remove_table(self, tablename):
+        tab = self.get_table(tablename)
+        if tab.is_original():
+            raise Exception("Can not remove original table.")
+        tab.destruct()
+        self.data_tables.remove(tab)
+        # remove from dependency list
+        for t in self.data_tables:
+            if not t.is_original() and tab in t.dependencies:
+                t.dependencies.remove(tab)
+
+    # ================= Info and data access
+    def is_valid_table_name(self, nm):
+        """ checks if nm could be used as a new table name
+            raises Exception if negative
+        """
+        if not isinstance(nm, str) or not nm.strip():
+            raise Exception("Table name should be a valid string")
+        if nm[0] == '_':
+            raise Exception("Table name should not start with '_'")
+        cnames = list(map(lambda x: x.upper(), self.get_table_names()))
+        if nm.upper() in cnames:
+            raise Exception("Table name already exists in present project")
+        for c in ['&', '"', "'"]:
+            if nm.find(c) >= 0:
+                raise Exception("Table name should not contain "
+                                "ampersand or quotes signs")
+
+    def get_table_names(self):
+        return [x.table_name() for x in self.data_tables]
+
     def get_named_filter(self, name):
-        return next((x for x in self.named_filters if x.name == name), None)
+        try:
+            return next(x for x in self.named_filters if x.name == name)
+        except StopIteration:
+            raise KeyError
+
+    def get_table(self, name):
+        try:
+            return next(x for x in self.data_tables if x.table_name() == name)
+        except StopIteration:
+            raise KeyError
 
     def get_category(self, name):
         for c in self.data_types:

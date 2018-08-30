@@ -1,5 +1,8 @@
+import itertools
 import collections
 from bdata import filt
+from bdata import bcol
+from bdata import bsqlproc
 
 
 class DataTable(object):
@@ -13,7 +16,7 @@ class DataTable(object):
         # sql data
         self.connection = proj.connection
         self.cursor = self.connection.cursor()
-        self.otab_name = name
+        self.name = name
         # sql data table name: containes tabname data and
         # additional rows representing status of each entry
         self.ttab_name = '_' + name + '_tmp'
@@ -27,7 +30,7 @@ class DataTable(object):
         self.visible_columns = []
 
         # method for data grouping
-        self.__default_group_method = "AVG"
+        self._default_group_method = "AVG"
 
         # representation options
         self.group_by = []
@@ -44,78 +47,65 @@ class DataTable(object):
 
         # data initialization
         self._init_columns()  # fills self.columns, self.visible columns
-        self._init_ttab()     # create aux sql table for red status info
+        self._assemble_ttab()     # create aux sql table for red status info
 
-    def _init_columns(self):
-        self.columns = collections.OrderedDict()
-        self.all_columns = []
-        self.visible_columns = []
-        self.query("""PRAGMA TABLE_INFO("{}")""".format(self.otab_name))
-        cid, ccat, cdt = [], [], []
-        for v in self.cursor.fetchall():
-            nm = v[1]
-            if nm == 'id':
-                col = ColumnInfo.build_id_category()
-                cid.append(col)
-            else:
-                col = ColumnInfo.build_from_category(
-                    self.proj.get_category(nm))
-                if col.is_category:
-                    ccat.append(col)
-                else:
-                    cdt.append(col)
-        if len(cid) != 1:
-            raise Exception("unique id column was not found")
+    def destruct(self):
+        qr = 'DROP TABLE "{}"'.format(self.ttab_name)
+        self.query(qr)
 
-        # sort columns in order: id->categories->real data
-        for c in cid + ccat + cdt:
-            self.columns[c.name] = c
-            self.visible_columns.append(c)
-            self.all_columns.append(c)
+    def _assemble_ttab(self):
+        self._create_ttab()
+        self._fill_ttab()
 
-    def _init_ttab(self):
+    def _create_ttab(self):
         collist = []
         for c in self.columns.values():
             if c.name != 'id':
                 collist.append("{} {}".format(c.sql_fun, c.sql_data_type))
             else:
                 collist.append("id INTEGER PRIMARY KEY AUTOINCREMENT")
-            collist.append("{} INTEGER DEFAULT 0".format(
-                self.columns[c.name].status_column.sql_fun))
+            if c.is_original:
+                collist.append("{} INTEGER DEFAULT 0".format(
+                    self.columns[c.name].status_column.sql_fun))
 
         qr = """CREATE TEMPORARY TABLE "{0}" ({1})
         """.format(self.ttab_name, ', '.join(collist))
         self.query(qr)
 
-        qr = 'INSERT INTO "{0}" ({1}) SELECT {1} from "{2}"'.format(
-            self.ttab_name,
-            ", ".join([x.sql_fun for x in self.columns.values()]),
-            self.otab_name)
-        self.query(qr)
+    def _fill_ttab(self):
+        raise NotImplementedError
 
-    def _output_columns_list(self, use_groups):
-        vc = len(self.visible_columns)
+    def _init_columns(self):
+        raise NotImplementedError
+
+    def is_original(self):
+        return False
+
+    def _output_columns_list(self, cols, status_adds, use_groups, group_adds):
         ret = []
-        # viewed columns
-        for c in self.visible_columns:
+        for c in cols:
+            # viewed columns
             ret.append(c.sql_fun)
-        # status columns
-        for c in self.visible_columns:
-            ret.append(self.columns[c.name].status_column.sql_fun)
+        if status_adds:
+            # status columns
+            for c in cols:
+                ret.append(c.status_column.sql_fun)
 
         if use_groups:
             # change property name to its specific function
-            for i in range(vc):
-                nm = self.visible_columns[i].name
-                ret[i] = self.columns[nm].sql_group_fun
-                ret[i + vc] = self.columns[nm].status_column.sql_group_fun
-            # add distinct counts from categories data
-            for v in self.visible_columns:
-                if v.is_category:
-                    ret.append('COUNT(DISTINCT {})'.format(v.sql_fun))
-            # add total group length and resulting id column
-            ret.append("MIN(id)")
-            ret.append("COUNT(id)")
+            for i, c in enumerate(cols):
+                ret[i] = c.sql_group_fun
+            if status_adds:
+                for i, c in zip(itertools.count(len(cols)), cols):
+                    ret[i] = c.status_column.sql_group_fun
+            if group_adds:
+                # add distinct counts from categories data
+                for v in self.visible_columns:
+                    if v.is_category:
+                        ret.append('COUNT(DISTINCT {})'.format(v.sql_fun))
+                # add total group length and resulting id column
+                ret.append("MIN(id)")
+                ret.append("COUNT(id)")
 
         return ', '.join(ret)
 
@@ -148,16 +138,25 @@ class DataTable(object):
 
         return grlist, order
 
-    def _compile_query(self, filters, group):
+    def _compile_query(self, cols=None, status_adds=True,
+                       filters=None, group=None, group_adds=True):
+        if cols is None:
+            cols = self.visible_columns
+        if filters is None:
+            filters = self.used_filters
+        if group is None:
+            group = self.group_by
         # filtration
         fltline = filt.Filter.compile_sql_line(filters)
 
         # grouping
         grlist, order = self._grouping_ordering(group)
 
+        collist = self._output_columns_list(cols, status_adds,
+                                            bool(group), group_adds)
         # get result
         qr = """ SELECT {} FROM "{}" {} {} {} """.format(
-            self._output_columns_list(bool(group)),
+            collist,
             self.ttab_name,
             fltline,
             grlist,
@@ -169,8 +168,7 @@ class DataTable(object):
         self.cursor.execute(qr)
 
     def update(self):
-        qr = self._compile_query(self.used_filters, self.group_by)
-        self.query(qr)
+        self.query(self._compile_query())
         self.tab.fill(self.cursor.fetchall())
 
     def merge_categories(self, categories):
@@ -183,7 +181,7 @@ class DataTable(object):
         if len(categories) < 2:
             return None
         # create column
-        col = CollapsedCategories(categories)
+        col = bcol.CollapsedCategories(categories)
         # check if this merge was already done
         if col.name in self.columns.keys():
             return None
@@ -212,9 +210,9 @@ class DataTable(object):
                 m = "medianm"
             else:
                 raise NotImplementedError
-            self.__default_group_method = m
+            self._default_group_method = m
         else:
-            m = self.__default_group_method
+            m = self._default_group_method
         for c in self.columns.values():
             if not c.is_category:
                 c.sql_group_fun = '{}("{}")'.format(m, c.name)
@@ -327,7 +325,7 @@ class DataTable(object):
 
     # ------------------------ info and checks
     def table_name(self):
-        return self.otab_name
+        return self.name
 
     def column_role(self, icol):
         """ I - id, C - Category, D - Data """
@@ -451,21 +449,13 @@ class DataTable(object):
             ind = [x.name for x in self.visible_columns].index(cname)
             return self.tab.get_column_values(ind)
         except ValueError:
-            # make a query
-            fltline = filt.Filter.compile_sql_line(self.used_filters)
-            grlist, order = self._grouping_ordering(self.group_by)
-            # get result
-            qr = """ SELECT {} FROM "{}" {} {} {} """.format(
-                self.columns[cname].sql_fun,
-                self.ttab_name,
-                fltline,
-                grlist,
-                order)
+            qr = self._compile_query([self.columns[cname]], False)
             self.query(qr)
             return [x[0] for x in self.cursor.fetchall()]
 
     def get_distinct_column_raw_vals(self, cname):
-        "gets distinct values from global table"
+        """ -> distinct vals in global scope (ignores filters, groups etc)
+        """
         col = self.columns[cname]
         qr = 'SELECT DISTINCT({0}) FROM "{1}"'.format(
                 col.sql_fun, self.ttab_name)
@@ -473,167 +463,143 @@ class DataTable(object):
         return [x[0] for x in self.cursor.fetchall()]
 
 
+class OriginalTable(DataTable):
+    """ table built from database table """
+    def __init__(self, tab_name, proj):
+        super().__init__(tab_name, proj)
+
+    def is_original(self):
+        return True
+
+    def _init_columns(self):
+        self.columns = collections.OrderedDict()
+        self.all_columns = []
+        self.visible_columns = []
+        self.query("""PRAGMA TABLE_INFO("{}")""".format(self.name))
+        cid, ccat, cdt = [], [], []
+        for v in self.cursor.fetchall():
+            nm = v[1]
+            if nm == 'id':
+                col = bcol.ColumnInfo.build_id_category()
+                cid.append(col)
+            else:
+                col = bcol.ColumnInfo.build_from_category(
+                    self.proj.get_category(nm))
+                if col.is_category:
+                    ccat.append(col)
+                else:
+                    cdt.append(col)
+        if len(cid) != 1:
+            raise Exception("unique id column was not found")
+
+        # sort columns in order: id->categories->real data
+        for c in cid + ccat + cdt:
+            self.columns[c.name] = c
+            self.visible_columns.append(c)
+            self.all_columns.append(c)
+
+    def _fill_ttab(self):
+        qr = 'INSERT INTO "{0}" ({1}) SELECT {1} from "{2}"'.format(
+            self.ttab_name,
+            ", ".join([x.sql_fun for x in self.columns.values()]),
+            self.name)
+        self.query(qr)
+
+
+class DerivedTable(DataTable):
+    """ Table derived from a set of other tables """
+    def __init__(self, name, origtables, proj):
+        self.dependencies = origtables
+        super().__init__(name, proj)
+
+
+class CopyViewTable(DerivedTable):
+    """ Table derived as a copy of a current view of another table
+    """
+    def __init__(self, name, origtab, cols, proj):
+        """ origtab - DataTable
+            cols - OrderedDict {origname: newname}
+        """
+        self._given_cols_names = list(cols.values())
+        self._given_cols_list = [origtab.columns[x] for x in cols.keys()]
+        super().__init__(name, [origtab], proj)
+
+        # explicit copies
+        self._default_group_method = self.dependencies[0]._default_group_method
+
+    def _init_columns(self):
+        self.__merged_valdata = {}
+        self.columns = collections.OrderedDict()
+        self.columns['id'] = bcol.ColumnInfo.build_id_category()
+        for k, v in zip(self._given_cols_names, self._given_cols_list):
+            try:
+                self.columns[k] = v.build_deep_copy(k)
+            except bcol.CollapsedCategories.InvalidDeepCopy:
+                # we cannot make a deep copy of a collapsed column
+                # so we convert it to ENUM type
+                dv = self.dependencies[0].get_raw_column_values(v.name)
+                dv2 = sorted(set(dv))
+                col = bcol.ColumnInfo.build_enum_category(k, v.shortname, dv2)
+                self.columns[k] = col
+
+        self.all_columns = []
+        self.visible_columns = []
+        for v in self.columns.values():
+            self.all_columns.append(v)
+            self.visible_columns.append(v)
+
+    def _fill_ttab(self):
+        # here we substitude sql codes for merged columns to
+        # convert them to enums
+        _bu = []
+        for (txtcol, nm) in zip(self._given_cols_list, self._given_cols_names):
+            if isinstance(txtcol, bcol.CollapsedCategories):
+                dfun = bsqlproc.build_txt_to_enum(
+                        self.columns[nm].possible_values, self.connection)
+                _bu.append(txtcol.sql_fun)
+                _bu.append(txtcol.sql_group_fun)
+                txtcol.sql_fun = "{}({})".format(dfun, txtcol.sql_fun)
+                txtcol.sql_group_fun = "{}({})".format(
+                        dfun, txtcol.sql_group_fun)
+
+        # build a query to the original table
+        origquery = self.dependencies[0]._compile_query(
+                cols=self._given_cols_list,
+                status_adds=True,
+                group_adds=False)
+
+        # place sql codes for merged columns back
+        # modify resulting column dictinary: 1 -> '1 & 2' -> 'code1-code2'
+        it = iter(_bu)
+        for (txtcol, nm) in zip(self._given_cols_list, self._given_cols_names):
+            if isinstance(txtcol, bcol.CollapsedCategories):
+                txtcol.sql_fun = next(it)
+                txtcol.sql_group_fun = next(it)
+                for k, v in self.columns[nm].possible_values.items():
+                    self.columns[nm].possible_values[k] = txtcol.repr(v)
+
+        # insert query
+        sqlcols, sqlcols2 = [], []
+        for c in itertools.islice(self.columns.values(), 1, None):
+            sqlcols.append(c.sql_fun)
+            sqlcols2.append(c.status_column.sql_fun)
+        qr = 'INSERT INTO "{tabname}" ({collist}) {select_from_orig}'.format(
+                tabname=self.ttab_name,
+                collist=", ".join(itertools.chain(sqlcols, sqlcols2)),
+                select_from_orig=origquery)
+        self.query(qr)
+
+
 # =================================== Additional classes
-# -------------------- Column information
-class ColumnInfo:
-    def __init__(self):
-        self.name = None
-        self.shortname = None
-        self.is_original = None
-        self.is_category = None
-        self.dt_type = None
-        self.sql_group_fun = None
-        self.sql_fun = None
-        self.sql_data_type = None
-        self._long_caption = None
-        self.status_column = None
-        # this is not None only for enum and boolean types
-        self.possible_values = None
-        self.possible_values_short = None
-        # defined delegates
-        self.repr = lambda x: "" if x is None else x
-        self.from_repr = lambda x: None if x == "" else x
-
-    def short_caption(self):
-        return self.shortname
-
-    def long_caption(self):
-        return self._long_caption
-
-    def _build_status_column(self):
-        ret = ColumnInfo()
-        ret.name = '_status_' + self.name
-        ret.shortname = ret.name
-        ret.is_original = False
-        ret.is_category = False
-        ret.dt_type = "BOOLEAN"
-        ret.sql_fun = '"{}"'.format(ret.name)
-        ret.sql_group_fun = 'MAX({})'.format(ret.sql_fun)
-        ret.sql_data_type = "INTEGER"
-        self.status_column = ret
-
-    # --------------- constructors
-    @classmethod
-    def build_from_category(cls, category):
-        ret = cls()
-        ret.name = category.name
-        ret.shortname = category.shortname
-        ret.is_original = True
-        ret.is_category = category.is_category
-        if ret.is_category:
-            ret.sql_group_fun = 'category_group("{}")'.format(ret.name)
-        else:
-            ret.sql_group_fun = 'AVG("{}")'.format(ret.name)
-        ret.sql_fun = '"' + ret.name + '"'
-        ret.dt_type = category.dt_type
-        if category.dt_type != "REAL":
-            ret.sql_data_type = "INTEGER"
-        else:
-            ret.sql_data_type = "REAL"
-        if category.dim:
-            ret._long_caption = "{0}".format(ret.name, category.dim)
-        else:
-            ret._long_caption = ret.name
-
-        ret.possible_values = category.possible_values
-        ret.possible_values_short = category.possible_values_short
-
-        # changing representation function for boolean and enum types
-        if category.dt_type in ["ENUM", "BOOLEAN"]:
-            ret.repr = lambda x: "" if x is None else\
-                    ret.possible_values_short[x]
-            ret.from_repr = lambda x: None if x == "" else next(
-                k for k, v in ret.possible_values_short.items() if v == x)
-
-        ret._build_status_column()
-        return ret
-
-    @classmethod
-    def build_bool_category(cls, name, shortname, yesno, sql_fun):
-        ret = cls()
-        ret.name = name
-        ret.shortname = shortname
-        ret._long_caption = name
-        ret.is_original = False
-        ret.is_category = True
-        ret.dt_type = "BOOLEAN"
-        ret.sql_fun = sql_fun
-        ret.sql_group_fun = 'category_group({})'.format(ret.sql_fun)
-        ret.sql_data_type = "INTEGER"
-        ret.possible_values = {0: yesno[1], 1: yesno[0]}
-        ret.possible_values_short = ret.possible_values
-        ret.repr = lambda x: "" if x is None else ret.possible_values_short[x]
-        ret.from_repr = lambda x: None if x == "" else next(
-            k for k, v in ret.possible_values_short.items() if v == x)
-        ret._build_status_column()
-        return ret
-
-    @classmethod
-    def build_id_category(cls):
-        ret = cls()
-        ret.name = 'id'
-        ret.shortname = 'id'
-        ret.is_original = True
-        ret.is_category = True
-        ret.dt_type = "INTEGER"
-        ret.sql_group_fun = 'category_group(id)'
-        ret.sql_fun = '"id"'
-        ret.sql_data_type = "INTEGER"
-        ret._long_caption = "id"
-        ret._build_status_column()
-        return ret
-
-
-class CollapsedCategories(ColumnInfo):
-    def __init__(self, categories):
-        super().__init__()
-        self.parent = categories
-        self.name = '-'.join([c.shortname for c in categories])
-        self.shortname = self.name
-        self.is_original = False
-        self.is_category = True
-        self.dt_type = "TEXT"
-        self.sql_fun = 'category_merge({})'.format(
-                ', '.join([c.sql_fun for c in categories]))
-        self.sql_group_fun = "merged_group({})".format(
-                ', '.join([c.sql_fun for c in categories]))
-        self.sql_data_type = "TEXT"
-        self._long_caption = self.name
-        self._build_status_column()
-        self.delimiter = '/'
-
-        # representation
-        def r(x):
-            sp = x.split(' & ')
-            ret = []
-            for c, x in zip(self.parent, sp):
-                try:
-                    if c.dt_type != "BOOLEAN":
-                            ret.append(c.repr(int(x)))
-                    else:
-                        ret.append(c.possible_values_short[int(x)])
-                except ValueError:
-                    ret.append(x)
-            return self.delimiter.join(map(str, ret))
-
-        self.repr = r
-        self.rrepr = None
-
-    def _build_status_column(self):
-        super()._build_status_column()
-        self.status_column.sql_fun = 'max_per_list({})'.format(
-            ','.join([x.status_column.sql_fun for x in self.parent]))
-
-
 # ------------ Visible table
 class ViewedData:
     class Row:
         def __init__(self, inp, model):
             self.model = model
             vc = len(model.visible_columns)
-            self.values = list(inp[:vc])
+            self.values = inp[:vc]
+            self.status = inp[vc:2*vc]
             self.id = self.values[0]
-            self.status = list(inp[vc:2*vc])
             self.sub_values_requested = False
             self.sub_values = self.sub_status = [[] for _ in range(vc)]
             self.n_unique_sub_values = [1] * vc
@@ -697,12 +663,12 @@ class ViewedData:
                         self.model, self.definition.keys(),
                         self.definition.values(), False, True))
                 # build query
-                qr = self.model._compile_query(flt, [])
+                qr = self.model._compile_query(filters=flt, group=[])
                 self.model.query(qr)
                 # fill data
                 f = self.model.cursor.fetchall()
-                self.sub_values = [list(x[:vc]) for x in f]
-                self.sub_status = [list(x[vc:2*vc]) for x in f]
+                self.sub_values = [x[:vc] for x in f]
+                self.sub_status = [x[vc:2*vc] for x in f]
 
             self.sub_values_requested = True
 

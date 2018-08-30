@@ -8,13 +8,6 @@ def luminocity(rgb):
     return 0.2126*rgb[0] + 0.7151*rgb[1] + 0.0721*rgb[2]
 
 
-def guarantee_luminocity(lum, rgb):
-    r, g, b = rgb
-    coef = max(lum/luminocity(rgb), 255/r, 255/g, 255/b)
-    r, g, b = int(coef*r), int(coef*g), int(coef*b)
-    return (r, g, b)
-
-
 def get_foreground(background):
     """ calculate best fit foreground color from given background
         background (QColor)

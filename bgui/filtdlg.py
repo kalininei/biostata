@@ -3,7 +3,7 @@
 import copy
 from PyQt5 import QtWidgets, QtCore
 from bdata import filt
-from bdata import dtab
+from bdata import bcol
 
 
 class FilterRow:
@@ -14,7 +14,7 @@ class FilterRow:
         self.cb[4].setEditable(True)
         # use all columns except Collapsed
         self.columns = [v for v in dlg.datatab.columns.values()
-                        if not isinstance(v, dtab.CollapsedCategories)]
+                        if not isinstance(v, bcol.CollapsedCategories)]
         self.current_column = 0
         self.current_action = 0
 
@@ -88,7 +88,7 @@ class FilterRow:
         self.cb[1].setCurrentText(e.paren1)
         self.cb[2].setCurrentText('"'+e.column.name+'"')
         self.cb[3].setCurrentText(e.action)
-        if isinstance(e.value, dtab.ColumnInfo):
+        if isinstance(e.value, bcol.ColumnInfo):
             self.cb[4].setCurrentText('"' + e.value.name + '"')
         elif e.action == "one of":
             self.cb[4].setCurrentText(",".join(map(str, e.value)))

@@ -1,4 +1,5 @@
 import copy
+from bdata import bcol
 
 
 def possible_values_list(column, operation, datatab):
@@ -15,10 +16,10 @@ def possible_values_list(column, operation, datatab):
     elif column.dt_type == "REAL":
         append_col_names("REAL")
     elif column.dt_type == "ENUM":
-        ret.extend(column.possible_values_short.values())
+        ret.extend(column.possible_values.values())
     elif column.dt_type == "BOOLEAN":
-        ret.append(column.possible_values_short[0] + " (False)")
-        ret.append(column.possible_values_short[1] + " (True) ")
+        ret.append(column.possible_values[0] + " (False)")
+        ret.append(column.possible_values[1] + " (True) ")
         append_col_names("BOOLEAN")
     else:
         raise NotImplementedError
@@ -55,12 +56,11 @@ class Filter:
         self.entries = []
 
     def is_applicable(self, dt):
-        from bdata import dtab
         for ln in self.entries:
-            if isinstance(ln.column, dtab.ColumnInfo):
+            if isinstance(ln.column, bcol.ColumnInfo):
                 if ln.column.name not in dt.columns:
                     return False
-            if isinstance(ln.value, dtab.ColumnInfo):
+            if isinstance(ln.value, bcol.ColumnInfo):
                 if ln.value.name not in dt.columns:
                     return False
         return True
@@ -77,7 +77,6 @@ class Filter:
         return ret.replace('\n', '')
 
     def to_multiline(self):
-        from bdata import dtab
         ret2 = []
         for e in self.entries:
             ret = []
@@ -86,7 +85,7 @@ class Filter:
             ret.append(e.paren1)
             ret.append(e.column.name)
             ret.append(e.action)
-            if isinstance(e.value, dtab.ColumnInfo):
+            if isinstance(e.value, bcol.ColumnInfo):
                 ret.append(e.value.name)
             elif isinstance(e.value, list):
                 ret.append(str(e.value))
@@ -100,7 +99,6 @@ class Filter:
         return ret3
 
     def to_sqlline(self):
-        from bdata import dtab
         iparen = 0
         line = ""
         for e in self.entries:
@@ -127,7 +125,7 @@ class Filter:
                 raise NotImplementedError
             # second operand
             if e.action not in ["NULL", "not NULL"]:
-                if isinstance(e.value, dtab.ColumnInfo):
+                if isinstance(e.value, bcol.ColumnInfo):
                     ret.append(e.value.sql_fun)
                 elif isinstance(e.value, list):
                     ret.append('(' + ", ".join(map(str, e.value)) + ')')
@@ -208,7 +206,7 @@ class Filter:
             for [r1, r2] in range_ints:
                 e1, e2 = FilterEntry(), FilterEntry()
                 e1.column = e2.column = col
-                e1.concat = "OR" if do_remove else "AND"
+                e1.concat = "OR"
                 e2.concat = "AND"
                 e1.paren1, e2.paren2 = '(', ')'
                 e1.action, e2.action = ">=", "<="

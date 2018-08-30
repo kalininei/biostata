@@ -26,7 +26,7 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         self.conf = cfg.ViewConfig.get()
         self.display_widgets = []
         self.row_heights = []
-        mod.representation_changed_subscribe(self._representation_changed)
+        mod.repr_updated.connect(self._representation_changed)
 
     def _representation_changed(self, model, ir):
         """ fired from model if smth changed in representation of ir-th row
@@ -206,7 +206,7 @@ class TableView(QtWidgets.QTableView):
         super().__init__(parent)
         self.setModel(model)
         self.setItemDelegate(TabDelegate(model, parent))
-        self.model().representation_changed_subscribe(self._repr_changed)
+        self.model().repr_updated.connect(self._repr_changed)
 
         # header
         vh = self.verticalHeader()
@@ -219,9 +219,6 @@ class TableView(QtWidgets.QTableView):
         # context menu
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
-
-        # here we fill model with original data
-        self.model().update()
 
     def table_name(self):
         return self.model().table_name()

@@ -1,23 +1,8 @@
 import copy
 from PyQt5 import QtCore, QtGui
-from bdata import dtab
+from bdata import bcol
 from bgui import coloring
 from bgui import cfg
-
-
-class Signal:
-    def __init__(self):
-        self._subscribers = []
-
-    def add_subscriber(self, fun):
-        self._subscribers.append(fun)
-
-    def remove_subscriber(self, fun):
-        self._subscribers.remove(fun)
-
-    def emit(self, *args):
-        for s in self._subscribers:
-            s(*args)
 
 
 class TabModel(QtCore.QAbstractTableModel):
@@ -27,6 +12,7 @@ class TabModel(QtCore.QAbstractTableModel):
         It also connects directly to a View object and works as
         a controller.
     """
+    repr_updated = QtCore.pyqtSignal(QtCore.QAbstractTableModel, int)
     # additional roles for data(...) execution
     RawValueRole = QtCore.Qt.UserRole
     RawSubValuesRole = QtCore.Qt.UserRole+1
@@ -40,29 +26,13 @@ class TabModel(QtCore.QAbstractTableModel):
         super().__init__()
         self.conf = cfg.ViewConfig.get()
         self.dt = dt
-        self.repr_updated = Signal()
         # False -- all are folded, True -- all are unfolded,
         # set() indicies of unfolded rows, which vanish at update()
         self._unfolded_groups = False
         # color scheme
         self.coloring = coloring.Coloring(self.dt)
-        self.representation_changed_subscribe(
+        self.repr_updated.connect(
                 lambda t, i: self.coloring.update(t.dt) if i == -1 else None)
-
-    # data changed signals
-    def representation_changed_subscribe(self, fun):
-        """ fun(tabmodel, ir) is fired when data in i-th row is somehow
-            changed including its color etc.
-            if ir = -1 then everything is changed
-        """
-        self.repr_updated.add_subscriber(fun)
-
-    def representation_changed_unsubscribe(self, fun):
-        """ fun(tabmodel, ir) is fired when data in i-th row is somehow
-            changed including its color etc.
-            if ir = -1 then everything is changed
-        """
-        self.repr_updated.remove_subscriber(fun)
 
     # overwritten methods
     def rowCount(self, parent=None):    # noqa
@@ -200,6 +170,9 @@ class TabModel(QtCore.QAbstractTableModel):
     def table_name(self):
         return self.dt.table_name()
 
+    def is_original(self):
+        return self.dt.is_original()
+
     def group_size(self, index):
         ir = index.row()
         if ir < 2:
@@ -245,7 +218,7 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def has_collapses(self):
         for c in self.dt.columns.values():
-            if isinstance(c, dtab.CollapsedCategories):
+            if isinstance(c, bcol.CollapsedCategories):
                 return True
         return False
 
@@ -318,7 +291,7 @@ class TabModel(QtCore.QAbstractTableModel):
         cols = [self.dt.columns[w] for w in what]
         ret = self.dt.merge_categories(cols)
         if ret and do_hide:
-            for c in ret.parent:
+            for c in ret.dependencies:
                 self.dt.set_visibility(c, False)
         return ret
 
@@ -334,7 +307,7 @@ class TabModel(QtCore.QAbstractTableModel):
         if what == 'all':
             cats = []
             for c in self.dt.columns.values():
-                if isinstance(c, dtab.CollapsedCategories):
+                if isinstance(c, bcol.CollapsedCategories):
                     cats.append(c.name)
             return self.remove_collapsed(cats, do_show)
         if len(what) == 0:
@@ -342,8 +315,9 @@ class TabModel(QtCore.QAbstractTableModel):
         cols = [self.dt.columns[w] for w in what]
         showthis = set()
         for c in cols:
-            for c2 in c.parent:
-                showthis.add(c2)
+            for c2 in c.dependencies:
+                if c2 in self.dt.all_columns:
+                    showthis.add(c2)
             self.dt.remove_column(c)
         for c in showthis:
             self.dt.set_visibility(c, True)

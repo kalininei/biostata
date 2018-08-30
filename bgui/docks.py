@@ -10,6 +10,8 @@ class DockWidget(QtWidgets.QDockWidget):
         super().__init__(name, parent)
         parent.addDockWidget(QtCore.Qt.RightDockWidgetArea, self)
         self.setVisible(False)
+        parent.active_model_changed.connect(self.active_model_changed)
+        parent.active_model_repr_changed.connect(self.repr_changed)
 
         menu_action = QtWidgets.QAction(name, self)
         menu_action.setCheckable(True)
@@ -17,8 +19,15 @@ class DockWidget(QtWidgets.QDockWidget):
         self.visibilityChanged.connect(menu_action.setChecked)
         menu.addAction(menu_action)
 
+    def refill(self):
+        pass
+
     def active_model_changed(self):
         pass
+
+    def repr_changed(self):
+        if self.isVisible():
+            self.refill()
 
 
 # ======================= Color legend

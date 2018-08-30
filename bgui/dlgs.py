@@ -2,7 +2,10 @@
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
-from bgui import optview, optwdg, coloring
+from bgui import optview, optwdg, coloring, tmodel
+from bdata import filt
+from bdata import dtab
+from bdata import bcol
 
 
 class _BackGroundWorkerCB(QtCore.QThread):
@@ -515,8 +518,6 @@ class NewBoolColumn(SimpleAbstractDialog):
 
     def ret_value(self):
         "-> new ColumnInfo"
-        from bdata import dtab
-        from bdata import filt
         if self.odata().type == "from named filters":
             f_names = [k for k, v in self.odata().used_filters.items() if v]
             flts = [self.dt.proj.get_named_filter(name) for name in f_names]
@@ -531,8 +532,65 @@ class NewBoolColumn(SimpleAbstractDialog):
             sql_fun = sql_fun[6:]
         else:
             sql_fun = '1'
-        return dtab.ColumnInfo.build_bool_category(
+        return bcol.ColumnInfo.build_bool_category(
                 self.odata().colname,
                 self.odata().colshortname,
                 [self.odata().true_name, self.odata().false_name],
                 sql_fun)
+
+
+class NewTableFromVisible(SimpleAbstractDialog):
+    _sz_x, _sz_y = 400, 300
+
+    def __init__(self, tabmodel, parent=None):
+        # data
+        self.tabmodel = tabmodel
+        self.dt = tabmodel.dt
+        super().__init__(parent)
+        self.setWindowTitle("New table from {}".format(self.dt.table_name()))
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.tablename = ""
+        obj.include_source_id = False
+
+    def _odata_init(self):
+        i = 1
+        while True:
+            nm = "Table {}".format(i)
+            try:
+                self.dt.proj.is_valid_table_name(nm)
+                break
+            except:
+                i += 1
+        self.set_odata_entry("tablename", nm)
+
+    def olist(self):
+        return optview.OptionsList([
+            ("New table", "Source table name", optwdg.SimpleOptionEntry(
+                self, 'tablename', dostrip=True)),
+            ("New table", "Include source id", optwdg.BoolOptionEntry(
+                self, 'include_source_id')),
+            ])
+
+    def check_input(self):
+        self.dt.proj.is_valid_table_name(self.odata().tablename)
+
+    def ret_value(self):
+        "-> TabModel"
+        od = self.odata()
+        cols = collections.OrderedDict()
+        for c in self.dt.visible_columns:
+            if c.name == 'id':
+                if not od.include_source_id:
+                    continue
+                else:
+                    cols['id'] = "id ({})".format(self.dt.table_name())
+            else:
+                cols[c.name] = c.name
+        # data table
+        newdt = dtab.CopyViewTable(od.tablename, self.dt, cols, self.dt.proj)
+        self.dt.proj.add_table(newdt)
+        # view model
+        newmodel = tmodel.TabModel(newdt)
+        return newmodel
