@@ -344,7 +344,8 @@ class TableView(QtWidgets.QTableView):
             v = self.model().dt.get_value(r-2, c)
             if v is None:
                 v = ""
-            if self.model().dt.n_subdata_unique(r-2, c) > 1:
+            if self.model().is_unfolded(ind) and\
+                    self.model().dt.n_subdata_unique(r-2, c) > 1:
                 sv = self.model().dt.get_subvalues(r-2, c)
                 sv = ", ".join(map(str, sv))
                 v = "{}({})".format(v, sv)

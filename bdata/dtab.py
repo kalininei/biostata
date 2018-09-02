@@ -2,7 +2,6 @@ import itertools
 import collections
 from bdata import filt
 from bdata import bcol
-from bdata import bsqlproc
 
 
 class DataTable(object):
@@ -81,7 +80,10 @@ class DataTable(object):
     def is_original(self):
         return False
 
-    def _output_columns_list(self, cols, status_adds, use_groups, group_adds):
+    def _output_columns_list(self, cols, status_adds=False, use_groups=None,
+                             group_adds=False, auto_alias=""):
+        if use_groups is None:
+            use_groups = bool(self.group_by)
         ret = []
         for c in cols:
             # viewed columns
@@ -106,6 +108,10 @@ class DataTable(object):
                 # add total group length and resulting id column
                 ret.append("MIN(id)")
                 ret.append("COUNT(id)")
+
+        if auto_alias:
+            for i in range(len(ret)):
+                ret[i] = ret[i] + ' AS {}{}'.format(auto_alias, i+1)
 
         return ', '.join(ret)
 
@@ -139,7 +145,17 @@ class DataTable(object):
         return grlist, order
 
     def _compile_query(self, cols=None, status_adds=True,
-                       filters=None, group=None, group_adds=True):
+                       filters=None, group=None, group_adds=True,
+                       auto_alias=""):
+        """ cols([ColumnInfo]) -- list of columns to be included,
+                    if None -> all visible columns
+            status_adds -- whether to add status columns to query
+            filters([Filter]) -- list of filters. If none -> all used_fileters
+            group([col names]) -- list of column names at which to provide
+                    grouping. If none => self.group_by
+            group_adds -- whether to add grouping info column like COUNT etc.
+            auto_alias(str) --  adds "AS ...{1,2,3}" to each column
+        """
         if cols is None:
             cols = self.visible_columns
         if filters is None:
@@ -153,9 +169,10 @@ class DataTable(object):
         grlist, order = self._grouping_ordering(group)
 
         collist = self._output_columns_list(cols, status_adds,
-                                            bool(group), group_adds)
+                                            bool(group), group_adds,
+                                            auto_alias)
         # get result
-        qr = """ SELECT {} FROM "{}" {} {} {} """.format(
+        qr = """SELECT {} FROM "{}" {} {} {}""".format(
             collist,
             self.ttab_name,
             fltline,
@@ -214,8 +231,7 @@ class DataTable(object):
         else:
             m = self._default_group_method
         for c in self.columns.values():
-            if not c.is_category:
-                c.sql_group_fun = '{}("{}")'.format(m, c.name)
+            c.set_realdata_group_func(m)
 
     def remove_column(self, col):
         if col.is_original:
@@ -341,8 +357,17 @@ class DataTable(object):
 
     def get_categories(self):
         """ -> [ColumnInfo] (excluding id)"""
-        f = lambda x: x.is_category and x.is_original
-        return list(filter(f, self.columns.values()))[1:]
+        return list(filter(lambda x: x.is_category,
+                           self.columns.values()))[1:]
+
+    def column_dependencies(self, colname):
+        ret = set([colname])
+        col = self.column[colname]
+        for c in filter(lambda x: isinstance(x, bcol.DerivedColumnInfo)):
+            if col in c.dependencies:
+                ret.intersection_update(
+                        self.column_dependencies(c.name))
+        return ret
 
     def get_category_names(self):
         """ -> [str category.name] (excluding id)"""
@@ -379,26 +404,14 @@ class DataTable(object):
             raises Exception if negative
         """
         # name
-        if not isinstance(nm, str) or not nm.strip():
-            raise Exception("Column name should be a valid string")
-        if nm[0] == '_':
-            raise Exception("Column name should not start with '_'")
+        self.proj.is_possible_column_name(nm)
         cnames = list(map(lambda x: x.upper(), self.columns.keys()))
         if nm.upper() in cnames:
-            raise Exception("Column name already exists in present table")
-        for c in ['&', '"', "'"]:
-            if nm.find(c) >= 0:
-                raise Exception("Column name should not contain "
-                                "ampersand or quotes signs")
+            raise Exception(
+                'Column name "{}" already exists in the table'.format(nm))
         # short name
-        if not isinstance(shortnm, str) or not shortnm.strip():
-            raise Exception("Column short name should be a valid string")
-        if shortnm[0] == '_':
-            raise Exception("Column short name should not start with '_'")
-        for c in ['&', '"', "'"]:
-            if shortnm.find(c) >= 0:
-                raise Exception("Column short name should not contain "
-                                "ampersand or quotes signs")
+        if shortnm != 'valid':
+            self.proj.is_possible_column_name(shortnm)
         return True
 
     # ------------------------ Data access procedures
@@ -453,12 +466,18 @@ class DataTable(object):
             self.query(qr)
             return [x[0] for x in self.cursor.fetchall()]
 
-    def get_distinct_column_raw_vals(self, cname):
+    def get_distinct_column_raw_vals(self, cname, is_global=True):
         """ -> distinct vals in global scope (ignores filters, groups etc)
+               or local scope (including all settings)
         """
         col = self.columns[cname]
-        qr = 'SELECT DISTINCT({0}) FROM "{1}"'.format(
-                col.sql_fun, self.ttab_name)
+        if is_global:
+            qr = 'SELECT DISTINCT({0}) FROM "{1}"'.format(
+                    col.sql_fun, self.ttab_name)
+        else:
+            qr = self._compile_query([col], status_adds=False,
+                                     group_adds=False)
+            qr = qr.replace("SELECT", "SELECT DISTINCT", 1)
         self.query(qr)
         return [x[0] for x in self.cursor.fetchall()]
 
@@ -503,90 +522,6 @@ class OriginalTable(DataTable):
             self.ttab_name,
             ", ".join([x.sql_fun for x in self.columns.values()]),
             self.name)
-        self.query(qr)
-
-
-class DerivedTable(DataTable):
-    """ Table derived from a set of other tables """
-    def __init__(self, name, origtables, proj):
-        self.dependencies = origtables
-        super().__init__(name, proj)
-
-
-class CopyViewTable(DerivedTable):
-    """ Table derived as a copy of a current view of another table
-    """
-    def __init__(self, name, origtab, cols, proj):
-        """ origtab - DataTable
-            cols - OrderedDict {origname: newname}
-        """
-        self._given_cols_names = list(cols.values())
-        self._given_cols_list = [origtab.columns[x] for x in cols.keys()]
-        super().__init__(name, [origtab], proj)
-
-        # explicit copies
-        self._default_group_method = self.dependencies[0]._default_group_method
-
-    def _init_columns(self):
-        self.__merged_valdata = {}
-        self.columns = collections.OrderedDict()
-        self.columns['id'] = bcol.ColumnInfo.build_id_category()
-        for k, v in zip(self._given_cols_names, self._given_cols_list):
-            try:
-                self.columns[k] = v.build_deep_copy(k)
-            except bcol.CollapsedCategories.InvalidDeepCopy:
-                # we cannot make a deep copy of a collapsed column
-                # so we convert it to ENUM type
-                dv = self.dependencies[0].get_raw_column_values(v.name)
-                dv2 = sorted(set(dv))
-                col = bcol.ColumnInfo.build_enum_category(k, v.shortname, dv2)
-                self.columns[k] = col
-
-        self.all_columns = []
-        self.visible_columns = []
-        for v in self.columns.values():
-            self.all_columns.append(v)
-            self.visible_columns.append(v)
-
-    def _fill_ttab(self):
-        # here we substitude sql codes for merged columns to
-        # convert them to enums
-        _bu = []
-        for (txtcol, nm) in zip(self._given_cols_list, self._given_cols_names):
-            if isinstance(txtcol, bcol.CollapsedCategories):
-                dfun = bsqlproc.build_txt_to_enum(
-                        self.columns[nm].possible_values, self.connection)
-                _bu.append(txtcol.sql_fun)
-                _bu.append(txtcol.sql_group_fun)
-                txtcol.sql_fun = "{}({})".format(dfun, txtcol.sql_fun)
-                txtcol.sql_group_fun = "{}({})".format(
-                        dfun, txtcol.sql_group_fun)
-
-        # build a query to the original table
-        origquery = self.dependencies[0]._compile_query(
-                cols=self._given_cols_list,
-                status_adds=True,
-                group_adds=False)
-
-        # place sql codes for merged columns back
-        # modify resulting column dictinary: 1 -> '1 & 2' -> 'code1-code2'
-        it = iter(_bu)
-        for (txtcol, nm) in zip(self._given_cols_list, self._given_cols_names):
-            if isinstance(txtcol, bcol.CollapsedCategories):
-                txtcol.sql_fun = next(it)
-                txtcol.sql_group_fun = next(it)
-                for k, v in self.columns[nm].possible_values.items():
-                    self.columns[nm].possible_values[k] = txtcol.repr(v)
-
-        # insert query
-        sqlcols, sqlcols2 = [], []
-        for c in itertools.islice(self.columns.values(), 1, None):
-            sqlcols.append(c.sql_fun)
-            sqlcols2.append(c.status_column.sql_fun)
-        qr = 'INSERT INTO "{tabname}" ({collist}) {select_from_orig}'.format(
-                tabname=self.ttab_name,
-                collist=", ".join(itertools.chain(sqlcols, sqlcols2)),
-                select_from_orig=origquery)
         self.query(qr)
 
 

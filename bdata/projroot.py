@@ -90,21 +90,33 @@ class ProjectDB:
                 t.dependencies.remove(tab)
 
     # ================= Info and data access
+    def valid_tech_string(self, descr, nm):
+        if not isinstance(nm, str) or not nm.strip():
+            raise Exception("{} should be a valid string.".format(descr))
+        if nm[0] == '_':
+            raise Exception("{} should not start with '_'.".format(descr))
+        for c in ['&', '"', "'"]:
+            if nm.find(c) >= 0:
+                raise Exception("{} should not contain "
+                                "ampersand or quotes signs.".format(descr))
+
     def is_valid_table_name(self, nm):
         """ checks if nm could be used as a new table name
             raises Exception if negative
         """
-        if not isinstance(nm, str) or not nm.strip():
-            raise Exception("Table name should be a valid string")
-        if nm[0] == '_':
-            raise Exception("Table name should not start with '_'")
+        m = 'Table name "{}"'.format(nm)
+        self.valid_tech_string(m, nm)
         cnames = list(map(lambda x: x.upper(), self.get_table_names()))
         if nm.upper() in cnames:
-            raise Exception("Table name already exists in present project")
-        for c in ['&', '"', "'"]:
-            if nm.find(c) >= 0:
-                raise Exception("Table name should not contain "
-                                "ampersand or quotes signs")
+            raise Exception("{} already exists in present project.".format(m))
+
+    def is_possible_column_name(self, nm):
+        """ checks if nm could be used as a new column name
+            raises Exception if negative
+        """
+        m = 'Column name "{}"'.format(nm)
+        self.valid_tech_string(m, nm)
+        return True
 
     def get_table_names(self):
         return [x.table_name() for x in self.data_tables]

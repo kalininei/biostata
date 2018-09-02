@@ -2,9 +2,9 @@
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
-from bgui import optview, optwdg, coloring, tmodel
+from bgui import optview, optwdg, coloring
 from bdata import filt
-from bdata import dtab
+from bdata import derived_tabs
 from bdata import bcol
 
 
@@ -265,7 +265,7 @@ class CollapseColumnsDlg(SimpleAbstractDialog):
 
     def _default_odata(self, obj):
         "-> options struct with default values"
-        obj.delim = '/'
+        obj.delim = '-'
         obj.do_hide = True
 
     def _odata_init(self):
@@ -542,10 +542,9 @@ class NewBoolColumn(SimpleAbstractDialog):
 class NewTableFromVisible(SimpleAbstractDialog):
     _sz_x, _sz_y = 400, 300
 
-    def __init__(self, tabmodel, parent=None):
+    def __init__(self, dt, parent=None):
         # data
-        self.tabmodel = tabmodel
-        self.dt = tabmodel.dt
+        self.dt = dt
         super().__init__(parent)
         self.setWindowTitle("New table from {}".format(self.dt.table_name()))
 
@@ -589,8 +588,6 @@ class NewTableFromVisible(SimpleAbstractDialog):
             else:
                 cols[c.name] = c.name
         # data table
-        newdt = dtab.CopyViewTable(od.tablename, self.dt, cols, self.dt.proj)
-        self.dt.proj.add_table(newdt)
-        # view model
-        newmodel = tmodel.TabModel(newdt)
-        return newmodel
+        newdt = derived_tabs.CopyViewTable(
+                od.tablename, self.dt, cols, self.dt.proj)
+        return newdt

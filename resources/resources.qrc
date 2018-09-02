@@ -13,5 +13,7 @@
     <file alias="settings">settings.svg</file>
     <file alias="remove">remove.svg</file>
     <file alias="add">add.svg</file>
+    <file alias="link">link.svg</file>
+    <file alias="new-row">new-row.svg</file>
 </qresource>
 </RCC>

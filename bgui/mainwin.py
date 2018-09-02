@@ -6,7 +6,6 @@ from bgui import dlgs
 from bgui import tmodel
 from bgui import tview
 from bgui import docks
-from bgui import filtdlg
 from fileproc import export
 
 
@@ -249,6 +248,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.active_model.unfold_all_rows(True)
 
     def _act_filter(self):
+        from bgui import filtdlg
         dialog = filtdlg.EditFilterDialog(None, self.active_model.dt,
                                           None, self)
         if dialog.exec_():
@@ -320,9 +320,11 @@ class MainWindow(QtWidgets.QMainWindow):
         pass
 
     def _act_table_from_visible(self):
-        dialog = dlgs.NewTableFromVisible(self.active_model, self)
+        dialog = dlgs.NewTableFromVisible(self.active_model.dt, self)
         if dialog.exec_():
-            newmodel = dialog.ret_value()
+            dt = dialog.ret_value()
+            self.proj.add_table(dt)
+            newmodel = tmodel.TabModel(dt)
             index = self.add_model(newmodel)
             self.wtab.setCurrentIndex(index)
 
@@ -336,8 +338,16 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.critical(self, 'Error', str(e))
 
     def _act_join_tables(self):
-        # TODO
-        pass
+        from bgui import joindlg
+        from bdata import derived_tabs
+        dialog = joindlg.JoinTablesDialog(self.active_model.dt, self)
+        if dialog.exec_():
+            name, tabentries = dialog.ret_value()
+            dt = derived_tabs.JoinTable(name, tabentries, self.proj)
+            self.proj.add_table(dt)
+            newmodel = tmodel.TabModel(dt)
+            index = self.add_model(newmodel)
+            self.wtab.setCurrentIndex(index)
 
     # ============== Procedures
     def _load_database(self, fname):

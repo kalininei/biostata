@@ -1,4 +1,5 @@
 import copy
+from bdata import bsqlproc
 
 
 # -------------------- Column information
@@ -14,10 +15,16 @@ class ColumnInfo:
         self.sql_data_type = None
         self._long_caption = None
         self.status_column = None
+        self._realdata_group_func = "AVG"
         # this is not None only for enum and boolean types
         self.possible_values = None
         # defined delegates
         self._assign_representation_funs()
+
+    def set_realdata_group_func(self, func):
+        self._realdata_group_func = func
+        if not self.is_category:
+            self.sql_group_fun = '{}({})'.format(func, self.sql_fun)
 
     def short_caption(self):
         return self.shortname
@@ -60,9 +67,10 @@ class ColumnInfo:
         ret.is_category = self.is_category
         ret.dt_type = self.dt_type
         ret.sql_fun = '"{}"'.format(ret.name)
-        pos = self.sql_group_fun.find('(')
-        ret.sql_group_fun = "{}({})".format(
-                self.sql_group_fun[:pos], ret.sql_fun)
+        if ret.is_category:
+            ret.sql_group_fun = "category_group({})".format(ret.sql_fun)
+        else:
+            ret.set_realdata_group_func(self._realdata_group_func)
         ret.sql_data_type = self.sql_data_type
         ret._long_caption = ret.name
         ret.possible_values = copy.deepcopy(self.possible_values)
@@ -81,7 +89,7 @@ class ColumnInfo:
         if ret.is_category:
             ret.sql_group_fun = 'category_group({})'.format(ret.sql_fun)
         else:
-            ret.sql_group_fun = 'AVG({})'.format(ret.sql_fun)
+            ret.set_realdata_group_func(ret._realdata_group_func)
         ret.dt_type = category.dt_type
         if category.dt_type != "REAL":
             ret.sql_data_type = "INTEGER"
@@ -162,6 +170,40 @@ class DerivedColumnInfo(ColumnInfo):
     def __init__(self, deps):
         super().__init__()
         self.dependencies = deps
+
+
+class FunctionColumn(DerivedColumnInfo):
+    def __init__(self, name, deps_names, tab, func, before_group, dt_type):
+        super().__init__([tab.columns[x] for x in deps_names])
+        self.name = name
+        self.shortname = name
+        self.is_original = False
+        self.is_category = dt_type != "REAL"
+        self.func_code = bsqlproc.build_lambda_func(func, tab.connection)
+        collist = [c.sql_fun for c in self.dependencies]
+        self.sql_fun = "{}({})".format(self.func_code, ", ".join(collist))
+        self.use_before_grouping(before_group)
+        self.dt_type = dt_type
+        if dt_type != "REAL":
+            self.sql_data_type = "INTEGER"
+        else:
+            self.sql_data_type = "REAL"
+        self._long_caption = self.name
+        # changing representation function for boolean and enum types
+        self._assign_representation_funs()
+        self._build_status_column()
+
+    def use_before_grouping(self, yes):
+        self._before_grouping = yes
+        self.set_realdata_group_func(self._realdata_group_func)
+
+    def set_realdata_group_func(self, func):
+        if self._before_grouping:
+            super().set_realdata_group_func(func)
+        else:
+            collist = [c.sql_group_fun for c in self.dependencies]
+            self.sql_group_fun = "{}({})".format(self.func_code,
+                                                 ", ".join(collist))
 
 
 class CollapsedCategories(DerivedColumnInfo):

@@ -106,18 +106,29 @@ def max_per_list(*args):
         print('max_per_list', args, str(e))
 
 
-_i_txt_to_enumcode = 1
+_i_sql_functions = 1
 
 
 def build_txt_to_enum(int_to_txt_dict, connection):
-    global _i_txt_to_enumcode
+    global _i_sql_functions
     txt_to_int_dict = {v: k for k, v in int_to_txt_dict.items()}
 
     def txt_to_enum(txt):
         return txt_to_int_dict[txt]
-    nm = "txt_to_enumcode_{}".format(_i_txt_to_enumcode)
+    nm = "txt_to_enumcode_{}".format(_i_sql_functions)
     connection.create_function(nm, 1, txt_to_enum)
-    _i_txt_to_enumcode += 1
+    _i_sql_functions += 1
+    return nm
+
+
+def build_lambda_func(lambda_func, connection):
+    global _i_sql_functions
+
+    def sql_func(*args):
+        return lambda_func(*args)
+    nm = "sql_custom_func_{}".format(_i_sql_functions)
+    connection.create_function(nm, -1, sql_func)
+    _i_sql_functions += 1
     return nm
 
 # those functions will be added to each connection passed to TabModel

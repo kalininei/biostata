@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-""" Filtration dialogs """
 import copy
 from PyQt5 import QtWidgets, QtCore
 from bdata import filt
