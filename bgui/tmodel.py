@@ -1,6 +1,5 @@
 import copy
 from PyQt5 import QtCore, QtGui
-from bdata import bcol
 from bgui import coloring
 from bgui import cfg
 
@@ -96,7 +95,7 @@ class TabModel(QtCore.QAbstractTableModel):
                         self.dt.n_subdata_unique(r-2, c))
         # --- Show an icon instead of data
         elif role == QtCore.Qt.DecorationRole:
-            if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOLEAN':
+            if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOL':
                 v = self.data(index, self.RawValueRole)
                 if v == 1:
                     return self.conf.true_icon(self.use_coloring())
@@ -138,7 +137,7 @@ class TabModel(QtCore.QAbstractTableModel):
         # --- subrows icons
         elif role == self.SubDecorationRole:
             ret = [None]*self.dt.n_subrows(r-2)
-            if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOLEAN':
+            if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOL':
                 for i, a in enumerate(index.data(self.RawSubValuesRole)):
                     if a is not None:
                         if a == 1:
@@ -218,7 +217,7 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def has_collapses(self):
         for c in self.dt.columns.values():
-            if isinstance(c, bcol.CollapsedCategories):
+            if hasattr(c, "_collapsed_categories"):
                 return True
         return False
 
@@ -278,20 +277,20 @@ class TabModel(QtCore.QAbstractTableModel):
     def set_sorting(self, colname, is_asc):
         self.dt.ordering = (colname, 'ASC' if is_asc else 'DESC')
 
-    def collapse_categories(self, what, do_hide=True):
+    def collapse_categories(self, what, do_hide, delim):
         """ what - list of column names or "all" special word
             returns newly created column or None
         """
         if what == 'all':
             cats = []
             for c in self.dt.columns.values():
-                if c.is_category and c.is_original and c.name != 'id':
+                if c.is_category() and c.is_original() and c.name != 'id':
                     cats.append(c.name)
-            return self.collapse_categories(cats, do_hide)
+            return self.collapse_categories(cats, do_hide, delim)
         cols = [self.dt.columns[w] for w in what]
-        ret = self.dt.merge_categories(cols)
+        ret = self.dt.merge_categories(cols, delim)
         if ret and do_hide:
-            for c in ret.dependencies:
+            for c in ret.deps:
                 self.dt.set_visibility(c, False)
         return ret
 
@@ -307,7 +306,7 @@ class TabModel(QtCore.QAbstractTableModel):
         if what == 'all':
             cats = []
             for c in self.dt.columns.values():
-                if isinstance(c, bcol.CollapsedCategories):
+                if hasattr(c, "_collapsed_categories"):
                     cats.append(c.name)
             return self.remove_collapsed(cats, do_show)
         if len(what) == 0:
@@ -315,7 +314,7 @@ class TabModel(QtCore.QAbstractTableModel):
         cols = [self.dt.columns[w] for w in what]
         showthis = set()
         for c in cols:
-            for c2 in c.dependencies:
+            for c2 in c.deps:
                 if c2 in self.dt.all_columns:
                     showthis.add(c2)
             self.dt.remove_column(c)

@@ -1,4 +1,3 @@
-import itertools
 import collections
 from bdata import filt
 from bdata import bcol
@@ -58,18 +57,31 @@ class DataTable(object):
 
     def _create_ttab(self):
         collist = []
-        for c in self.columns.values():
+        for c in filter(lambda x: x.is_original(), self.columns.values()):
             if c.name != 'id':
-                collist.append("{} {}".format(c.sql_fun, c.sql_data_type))
+                collist.append("{} {}".format(c.sql_line(False),
+                                              c.sql_data_type()))
             else:
                 collist.append("id INTEGER PRIMARY KEY AUTOINCREMENT")
-            if c.is_original:
-                collist.append("{} INTEGER DEFAULT 0".format(
-                    self.columns[c.name].status_column.sql_fun))
+            collist.append("{} INTEGER DEFAULT 0".format(
+                self.columns[c.name].status_column.sql_line(False)))
 
         qr = """CREATE TEMPORARY TABLE "{0}" ({1})
         """.format(self.ttab_name, ', '.join(collist))
         self.query(qr)
+
+    def _complete_columns_lists(self):
+        self.all_columns = []
+        self.visible_columns = []
+        for v in filter(lambda x: x.is_category(), self.columns.values()):
+            self.all_columns.append(v)
+            self.visible_columns.append(v)
+        for v in filter(lambda x: not x.is_category(), self.columns.values()):
+            self.all_columns.append(v)
+            self.visible_columns.append(v)
+        self.columns.clear()
+        for c in self.all_columns:
+            self.columns[c.name] = c
 
     def _fill_ttab(self):
         raise NotImplementedError
@@ -87,27 +99,20 @@ class DataTable(object):
         ret = []
         for c in cols:
             # viewed columns
-            ret.append(c.sql_fun)
+            ret.append(c.sql_line(use_groups))
         if status_adds:
             # status columns
             for c in cols:
-                ret.append(c.status_column.sql_fun)
+                ret.append(c.status_column.sql_line(use_groups))
 
-        if use_groups:
-            # change property name to its specific function
-            for i, c in enumerate(cols):
-                ret[i] = c.sql_group_fun
-            if status_adds:
-                for i, c in zip(itertools.count(len(cols)), cols):
-                    ret[i] = c.status_column.sql_group_fun
-            if group_adds:
-                # add distinct counts from categories data
-                for v in self.visible_columns:
-                    if v.is_category:
-                        ret.append('COUNT(DISTINCT {})'.format(v.sql_fun))
-                # add total group length and resulting id column
-                ret.append("MIN(id)")
-                ret.append("COUNT(id)")
+        if use_groups and group_adds:
+            # add distinct counts from categories data
+            for v in self.visible_columns:
+                if v.is_category():
+                    ret.append('COUNT(DISTINCT {})'.format(v.sql_line()))
+            # add total group length and resulting id column
+            ret.append("MIN(id)")
+            ret.append("COUNT(id)")
 
         if auto_alias:
             for i in range(len(ret)):
@@ -123,22 +128,22 @@ class DataTable(object):
                 self.ordering = None
         if group:
             gc = [self.columns[x] for x in group]
-            grlist = 'GROUP BY ' + ', '.join([x.sql_fun for x in gc])
+            grlist = 'GROUP BY ' + ', '.join([x.sql_line() for x in gc])
             order = ['MIN(id) ASC']
             if self.ordering:
-                if not oc.is_category:
+                if not oc.is_category():
                     a = oc.sql_group_fun
                     order.insert(0, '{} {}'.format(a, self.ordering[1]))
                 elif self.ordering[1] == 'ASC':
-                    order.insert(0, 'MIN({}) ASC'.format(oc.sql_fun))
+                    order.insert(0, 'MIN({}) ASC'.format(oc.sql_line()))
                 else:
-                    order.insert(0, 'MAX({}) DESC'.format(oc.sql_fun))
+                    order.insert(0, 'MAX({}) DESC'.format(oc.sql_line()))
             order = 'ORDER BY ' + ', '.join(order)
         else:
             grlist = ''
             if self.ordering:
                 order = 'ORDER BY {} {}, id ASC'.format(
-                        oc.sql_fun, self.ordering[1])
+                        oc.sql_line(), self.ordering[1])
             else:
                 order = 'ORDER BY id ASC'
 
@@ -188,7 +193,7 @@ class DataTable(object):
         self.query(self._compile_query())
         self.tab.fill(self.cursor.fetchall())
 
-    def merge_categories(self, categories):
+    def merge_categories(self, categories, delim):
         """ Creates new column build of merged list of categories,
                places it after the last visible category column
             categories -- list of ColumnInfo entries
@@ -198,14 +203,14 @@ class DataTable(object):
         if len(categories) < 2:
             return None
         # create column
-        col = bcol.CollapsedCategories(categories)
+        col = bcol.collapsed_categories(categories, delim)
         # check if this merge was already done
         if col.name in self.columns.keys():
             return None
         self.add_column(col)
         # place to the visible columns list
         for i, c in enumerate(self.visible_columns):
-            if not c.is_category:
+            if not c.is_category():
                 break
         self.visible_columns.insert(i, col)
         return col
@@ -231,10 +236,11 @@ class DataTable(object):
         else:
             m = self._default_group_method
         for c in self.columns.values():
-            c.set_realdata_group_func(m)
+            if not c.is_category():
+                c._sql_group_fun = m
 
     def remove_column(self, col):
-        if col.is_original:
+        if col.is_original():
             raise Exception(
                 "Can not remove original column {}".format(col.name))
         try:
@@ -253,7 +259,7 @@ class DataTable(object):
     def add_column(self, col, pos=None, is_visible=False):
         if col.name not in self.columns:
             self.columns[col.name] = col
-            if not col.is_category:
+            if not col.is_category():
                 self.set_data_group_function()
             if pos is None:
                 pos = len(self.columns)
@@ -274,10 +280,10 @@ class DataTable(object):
         # or minimum for data column
         limpos = 0
         while limpos < len(self.all_columns) and\
-                self.all_columns[limpos].is_category:
+                self.all_columns[limpos].is_category():
             limpos += 1
         # add to all_columns
-        if col.is_category:
+        if col.is_category():
             pos = min(pos, limpos)
         else:
             pos = max(pos, limpos)
@@ -347,17 +353,17 @@ class DataTable(object):
         """ I - id, C - Category, D - Data """
         if icol == 0:
             return 'I'
-        elif self.visible_columns[icol].is_category:
+        elif self.visible_columns[icol].is_category():
             return 'C'
         else:
             return 'D'
 
     def column_caption(self, icol):
-        return self.visible_columns[icol].long_caption()
+        return self.visible_columns[icol].name
 
     def get_categories(self):
         """ -> [ColumnInfo] (excluding id)"""
-        return list(filter(lambda x: x.is_category,
+        return list(filter(lambda x: x.is_category(),
                            self.columns.values()))[1:]
 
     def column_dependencies(self, colname):
@@ -394,7 +400,7 @@ class DataTable(object):
     def n_visible_categories(self):
         ret = 0
         for c in self.visible_columns[1:]:
-            if not c.is_category:
+            if not c.is_category():
                 break
             ret += 1
         return ret
@@ -450,7 +456,7 @@ class DataTable(object):
         col = self.columns[cname]
         if is_global:
             qr = 'SELECT MIN({0}), MAX({0}) FROM "{1}"'.format(
-                    col.sql_fun, self.ttab_name)
+                    col.sql_line(), self.ttab_name)
             self.query(qr)
             return self.cursor.fetchall()[0]
         else:
@@ -473,7 +479,7 @@ class DataTable(object):
         col = self.columns[cname]
         if is_global:
             qr = 'SELECT DISTINCT({0}) FROM "{1}"'.format(
-                    col.sql_fun, self.ttab_name)
+                    col.sql_line(), self.ttab_name)
         else:
             qr = self._compile_query([col], status_adds=False,
                                      group_adds=False)
@@ -495,32 +501,22 @@ class OriginalTable(DataTable):
         self.all_columns = []
         self.visible_columns = []
         self.query("""PRAGMA TABLE_INFO("{}")""".format(self.name))
-        cid, ccat, cdt = [], [], []
+        id_found = False
         for v in self.cursor.fetchall():
-            nm = v[1]
-            if nm == 'id':
-                col = bcol.ColumnInfo.build_id_category()
-                cid.append(col)
+            if v[1] == 'id':
+                id_found = True
+                col = bcol.build_id()
             else:
-                col = bcol.ColumnInfo.build_from_category(
-                    self.proj.get_category(nm))
-                if col.is_category:
-                    ccat.append(col)
-                else:
-                    cdt.append(col)
-        if len(cid) != 1:
+                col = bcol.build_from_db(self.proj, self.table_name(), v[1])
+            self.columns[col.name] = col
+        if not id_found:
             raise Exception("unique id column was not found")
-
-        # sort columns in order: id->categories->real data
-        for c in cid + ccat + cdt:
-            self.columns[c.name] = c
-            self.visible_columns.append(c)
-            self.all_columns.append(c)
+        self._complete_columns_lists()
 
     def _fill_ttab(self):
         qr = 'INSERT INTO "{0}" ({1}) SELECT {1} from "{2}"'.format(
             self.ttab_name,
-            ", ".join([x.sql_fun for x in self.columns.values()]),
+            ", ".join([x.sql_line() for x in self.columns.values()]),
             self.name)
         self.query(qr)
 
@@ -542,7 +538,7 @@ class ViewedData:
                 self.n_sub_values = inp[-1]
                 self.id = inp[-2]
                 for i in range(vc):
-                    if model.visible_columns[i].is_category:
+                    if model.visible_columns[i].is_category():
                         self.n_unique_sub_values[i] = inp[2*vc+i]
                     else:
                         self.n_unique_sub_values[i] = inp[-1]
@@ -579,7 +575,7 @@ class ViewedData:
                         # grouped value does not present in the data
                         # hence we make a query through the id
                         qr = 'SELECT {} from "{}" WHERE id={}'.format(
-                            self.model.columns[n].sql_fun,
+                            self.model.columns[n].sql_line(),
                             self.model.ttab_name,
                             self.id)
                         self.model.query(qr)

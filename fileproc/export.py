@@ -28,7 +28,7 @@ def _get_data_lines(datatab, opt):
             if rvals[j] is not None and not opt.numeric_enums:
                 rvals[j] = col.repr(rvals[j])
 
-            if rvals[j] is None and col.is_category and\
+            if rvals[j] is None and col.is_category() and\
                     datatab.n_subrows(i) > 1:
                 if opt.grouped_categories == 'Comma separated':
                     vals = datatab.get_raw_subvalues(i, j)

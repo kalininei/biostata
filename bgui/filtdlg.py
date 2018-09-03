@@ -11,9 +11,7 @@ class FilterRow:
         self._ret_value = None
         self.cb = [QtWidgets.QComboBox(dlg.ff) for _ in range(6)]
         self.cb[4].setEditable(True)
-        # use all columns except Collapsed
-        self.columns = [v for v in dlg.datatab.columns.values()
-                        if not isinstance(v, bcol.CollapsedCategories)]
+        self.columns = list(dlg.datatab.columns.values())
         self.current_column = 0
         self.current_action = 0
 
@@ -58,7 +56,7 @@ class FilterRow:
         self.cb[3].addItems(filt.factions(self.columns[i].dt_type))
         self.cb[3].setCurrentIndex(-1)
         self.cb[4].setCurrentIndex(-1)
-        if self.current_column.dt_type in ["BOOLEAN", "ENUM"]:
+        if self.current_column.dt_type in ["BOOL", "ENUM"]:
             self.cb[4].setEditable(False)
         else:
             self.cb[4].setEditable(True)
@@ -267,15 +265,17 @@ class EditFilterDialog(QtWidgets.QDialog):
                         raise Exception("No such data column: {}".format(atxt))
                 elif e.column.dt_type in ["ENUM"]:
                     e.value = e.column.from_repr(atxt)
-                elif e.column.dt_type in ["BOOLEAN"]:
+                elif e.column.dt_type in ["BOOL"]:
                     e.value = e.column.from_repr(atxt[:-8])
-                elif e.column.dt_type in ["INTEGER"]:
+                elif e.column.dt_type in ["INT"]:
                     if e.action != "one of":
                         e.value = int(atxt)
                     else:
                         e.value = list(map(int, atxt.split(',')))
                 elif e.column.dt_type in ["REAL"]:
                     e.value = float(atxt)
+                elif e.value.dt_type in ["TEXT"]:
+                    e.value = atxt
             ret.entries.append(e)
         self._ret_value = ret
 

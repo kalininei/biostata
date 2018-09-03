@@ -3,6 +3,7 @@ import copy
 from PyQt5 import QtWidgets, QtCore, QtGui
 import resource   # noqa
 from bdata import derived_tabs
+from bdata import bcol
 from bgui import coloring
 
 
@@ -239,7 +240,7 @@ class TabColumnsChoice(QtWidgets.QGroupBox):
         for i, c in enumerate(tab.columns.values()):
             itm1 = QtWidgets.QTableWidgetItem(c.name)
             itm1.setCheckState(QtCore.Qt.Unchecked)
-            itm2 = QtWidgets.QTableWidgetItem(c.dt_type)
+            itm2 = QtWidgets.QTableWidgetItem(c.col_type())
             nn = c.name
             if nn == 'id':
                 nn = 'id ({})'.format(tab.table_name())
@@ -307,13 +308,21 @@ class TabKeysRow:
             self.wid[-1].setCurrentText('')
             self.wid[-1].currentIndexChanged.connect(
                     functools.partial(self.index_changed, i))
+        self.wid.append(QtWidgets.QLabel(parent))
         self.wid.append(QtWidgets.QPushButton(parent))
         self.wid.append(QtWidgets.QPushButton(parent))
         self.wid.append(QtWidgets.QPushButton(parent))
-        self.cb_col = self.wid[:-3]
+        self.cb_col = self.wid[:-4]
+        self.w_label = self.wid[-4]
         self.b_link = self.wid[-3]
         self.b_rem = self.wid[-2]
         self.b_add = self.wid[-1]
+        self.w_label.setToolTip("Non-trivial mapping")
+        self.w_label.setPixmap(QtGui.QPixmap(":/warning"))
+        self.w_label.setVisible(False)
+        self.w_label.setScaledContents(True)
+        self.w_label.setMaximumWidth(20)
+        self.w_label.setMaximumHeight(20)
         self.b_link.setFixedWidth(30)
         self.b_link.setIcon(QtGui.QIcon(":/link"))
         self.b_link.setEnabled(False)
@@ -336,9 +345,10 @@ class TabKeysRow:
         for w in self.cb_col:
             cbframe.layout().addWidget(w)
         parent.layout().addWidget(cbframe, irow, 0)
-        parent.layout().addWidget(self.b_link, irow, 1)
-        parent.layout().addWidget(self.b_rem, irow, 2)
-        parent.layout().addWidget(self.b_add, irow, 3)
+        parent.layout().addWidget(self.w_label, irow, 1)
+        parent.layout().addWidget(self.b_link, irow, 2)
+        parent.layout().addWidget(self.b_rem, irow, 3)
+        parent.layout().addWidget(self.b_add, irow, 4)
 
         for j, w in enumerate(self.wid):
             w.setFocusPolicy(QtCore.Qt.NoFocus)
@@ -367,8 +377,16 @@ class TabKeysRow:
         self.b_link.setEnabled(self.has_all_data())
         self.parent.new_key_column.emit(
                 ntab, self.irow, self.cb_col[ntab].currentText())
+        show_warning = False
         if self.has_all_data():
             self.prebuild_mapping()
+            # warning sign
+            itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
+            colnames = [self.wid[itab].currentText() for itab in itabs]
+            tabs = [self.proj.data_tables[itab] for itab in itabs]
+            cols = [t.columns[c] for t, c in zip(tabs, colnames)]
+            show_warning = not bcol.ColumnInfo.are_same(cols)
+        self.w_label.setVisible(show_warning)
 
     def prebuild_mapping(self):
         itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
@@ -379,8 +397,8 @@ class TabKeysRow:
             tab = self.proj.data_tables[itab]
             colname = self.wid[itab].currentText()
             col = tab.columns[colname]
-            if col.dt_type in ["ENUM", "BOOLEAN"]:
-                pv1 = col.possible_values.keys()
+            if col.dt_type in ["ENUM", "BOOL"]:
+                pv1 = col.dict.possible_values.keys()
             else:
                 pv1 = tab.get_distinct_column_raw_vals(colname, False)
             possible_values.append(pv1)
@@ -518,7 +536,7 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
             v = self.totrows[index.row()][index.column()]
             if v is not None and index.column() >= 1:
                 col = self.columns[index.column() - 1]
-                if col.dt_type == "BOOLEAN":
+                if col.dt_type == "BOOL":
                     v = "{} ({})".format(col.repr(v), True if v else False)
                 elif col.dt_type == "ENUM":
                     v = col.repr(v)

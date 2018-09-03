@@ -53,9 +53,9 @@ class Coloring:
         self.color_by = cname
         self.dt_type = datatab.columns[cname].dt_type
 
-        if self.dt_type in ["REAL", "INTEGER"]:
+        if self.dt_type in ["REAL", "INT"]:
             self._global_limits = list(datatab.get_raw_minmax(cname, True))
-        elif self.dt_type in ["BOOLEAN", "TEXT", "ENUM"]:
+        elif self.dt_type in ["BOOL", "TEXT", "ENUM"]:
             # raw_value -> (index, representation value)
             posible_values = sorted(
                     datatab.get_distinct_column_raw_vals(cname))
@@ -77,7 +77,7 @@ class Coloring:
         self._row_colors = [None] * datatab.n_rows()
         self._row_values = datatab.get_raw_column_values(self.color_by)
 
-        if self.dt_type in ["REAL", "INTEGER"]:
+        if self.dt_type in ["REAL", "INT"]:
             # limits
             if not self.absolute_limits:
                 dd = [x for x in self._row_values if x is not None]
@@ -99,7 +99,7 @@ class Coloring:
                 else:
                     return (a - self.limits[0])/fl
             self._row_values = list(map(nrm, self._row_values))
-        elif self.dt_type in ["BOOLEAN", "ENUM", "TEXT"]:
+        elif self.dt_type in ["BOOL", "ENUM", "TEXT"]:
             dd = set([x for x in self._row_values if x is not None])
             if not dd:
                 anyval = next(iter(self._global_values_dictionary.keys()),
@@ -173,7 +173,7 @@ class Coloring:
 
         rheight = height - cur_y - margin
         painter.setFont(self.conf.data_font())
-        if self.dt_type in ["REAL", "INTEGER"]:
+        if self.dt_type in ["REAL", "INT"]:
             # rectangle
             pm = self.color_scheme.pic(rheight, rwidth, False)
             painter.drawPixmap(QtCore.QPoint(margin, cur_y), pm)
@@ -190,7 +190,7 @@ class Coloring:
                 sd = int(margin/2)
                 painter.drawLine(QtCore.QPoint(margin-sd, py),
                                  QtCore.QPoint(margin+rwidth+sd, py))
-        elif self.dt_type in ["BOOLEAN", "TEXT", "ENUM"]:
+        elif self.dt_type in ["BOOL", "TEXT", "ENUM"]:
             # temporary equidistant colorscheme for drawing
             w = list(range(self.limits[0], self.limits[1]+1))
             nrm = [x/self.limits[1] for x in w] if self.limits[1] > 0 else [0]
@@ -230,7 +230,7 @@ class Coloring:
         comf_margin = 0.8 * fh
         # how many records can we draw
         num_records = ht/(fh+comf_margin) + 1
-        if self.dt_type == 'INTEGER':
+        if self.dt_type == 'INT':
             # we dont't want steps lower than 1 for integer data
             num_records = min(num_records, lims[1] - lims[0] + 1)
         # get best values

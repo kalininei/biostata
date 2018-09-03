@@ -4,36 +4,35 @@ from bdata import dtab
 from bdata import bsqlproc
 
 
-class Category:
+class Dictionary:
     def __init__(self, name, proj):
         self.proj = proj
         self.name = name
         qr = """
-            SELECT shortname, iscategory, type, dim
-                FROM _DATA_TYPES_ WHERE name="{}"
+            SELECT type, comment FROM _DICTIONARIES_ WHERE name="{}"
         """.format(self.name)
         proj.cursor.execute(qr)
         f = proj.cursor.fetchone()
-        self.shortname = f[0] if f[0] else self.name
-        self.is_category = f[1]
-        self.dt_type = f[2]
-        self.dim = f[3]
+        self.dt_type = f[0]
+        self.comment = f[1]
 
         # possible values for enum and boolean data
         # integers to strings converter
         self.possible_values = collections.OrderedDict()
         self.values_comments = collections.OrderedDict()
-        if self.dt_type in ["ENUM", "BOOLEAN"]:
-            tnm = '"_DATA_TYPE {}"'.format(self.name)
-            qr = """
-                SELECT value, name, comments FROM {}
-            """.format(tnm)
+        if self.dt_type in ["ENUM", "BOOL"]:
+            tnm = '"_DICTIONARY {}"'.format(self.name)
+            qr = "SELECT key, value, comment FROM {}".format(tnm)
             proj.cursor.execute(qr)
             f = proj.cursor.fetchall()
-            vls = [x[0] for x in f]
-            nm = [x[1] for x in f]
+            k = [x[0] for x in f]
+            v = [x[1] for x in f]
             com = [x[2] for x in f]
-            for i, s, c in zip(vls, nm, com):
+            if self.dt_type == "BOOL":
+                if len(k) != 2 or 0 not in k or 1 not in k:
+                    raise Exception("BOOL dictionary keys should equal"
+                                    " 0 and 1")
+            for i, s, c in zip(k, v, com):
                 self.possible_values[i] = s
                 self.values_comments[i] = c
 
@@ -46,16 +45,16 @@ class ProjectDB:
         self.cursor = self.connection.cursor()
 
         # data types
-        self.data_types = []
-        self.cursor.execute("SELECT name FROM _DATA_TYPES_")
+        self.dictionaries = collections.OrderedDict()
+        self.cursor.execute("SELECT name FROM _DICTIONARIES_")
         for a in self.cursor.fetchall():
-            self.data_types.append(Category(a[0], self))
+            self.dictionaries[a[0]] = Dictionary(a[0], self)
 
         # named filters
         self.named_filters = []
 
         # data tables
-        # (after data_types cause the latter is used in table constructors)
+        # (after data_types because the latter is used in table constructors)
         self.data_tables = []
         self.cursor.execute("SELECT name FROM _DATA_TABLES_")
         for a in self.cursor.fetchall():
@@ -133,11 +132,8 @@ class ProjectDB:
         except StopIteration:
             raise KeyError
 
-    def get_category(self, name):
-        for c in self.data_types:
-            if c.name == name:
-                return c
-        raise KeyError(name)
+    def get_dictionary(self, name):
+        return self.dictionaries[name]
 
     def close_connection(self):
         self.connection.close()

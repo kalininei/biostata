@@ -10,17 +10,19 @@ def possible_values_list(column, operation, datatab):
             if c is not column and c.dt_type == tp:
                 ret.append('"{}"'.format(c.name))
 
-    if column.dt_type == "INTEGER":
+    if column.dt_type == "INT":
         if operation != "one of":
-            append_col_names("INTEGER")
+            append_col_names("INT")
     elif column.dt_type == "REAL":
         append_col_names("REAL")
     elif column.dt_type == "ENUM":
-        ret.extend(column.possible_values.values())
-    elif column.dt_type == "BOOLEAN":
-        ret.append(column.possible_values[0] + " (False)")
-        ret.append(column.possible_values[1] + " (True) ")
-        append_col_names("BOOLEAN")
+        ret.extend(column.dict.possible_values.values())
+    elif column.dt_type == "BOOL":
+        ret.append(column.dict.possible_values[0] + " (False)")
+        ret.append(column.dict.possible_values[1] + " (True) ")
+        append_col_names("BOOL")
+    elif column.dt_type == "TEXT":
+        append_col_names("TEXT")
     else:
         raise NotImplementedError
     return ret
@@ -30,13 +32,15 @@ def factions(dt_type):
     a0 = ["==", "!="]
     ae = ["NULL", "not NULL"]
     a1 = [">", "<", ">=", "<="]
-    if dt_type == "INTEGER":
+    if dt_type == "INT":
         a = a1 + ["one of"]
     elif dt_type == "REAL":
         a = a1
-    elif dt_type == "BOOLEAN":
+    elif dt_type == "BOOL":
         a = []
     elif dt_type == "ENUM":
+        a = []
+    elif dt_type == "TEXT":
         a = []
     else:
         raise NotImplementedError
@@ -109,7 +113,7 @@ class Filter:
             ret.append(e.paren1)
             iparen += e.paren1.count('(')
             # first operand
-            ret.append(e.column.sql_fun)
+            ret.append(e.column.sql_line())
             # action
             if e.action == "==":
                 ret.append("=")
@@ -126,7 +130,7 @@ class Filter:
             # second operand
             if e.action not in ["NULL", "not NULL"]:
                 if isinstance(e.value, bcol.ColumnInfo):
-                    ret.append(e.value.sql_fun)
+                    ret.append(e.value.sql_line())
                 elif isinstance(e.value, list):
                     ret.append('(' + ", ".join(map(str, e.value)) + ')')
                 else:
@@ -191,7 +195,7 @@ class Filter:
         col = datatab.columns[cname]
         if len(vals) == 0:
             return cls()
-        if col.dt_type == "INTEGER":
+        if col.dt_type == "INT":
             slist = cls.simplify_integer_list(vals, 4)
             dist_ints = list(filter(lambda x: isinstance(x, int), slist))
             range_ints = list(filter(lambda x: isinstance(x, list), slist))

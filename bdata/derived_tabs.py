@@ -1,7 +1,6 @@
 import collections
 import itertools
 from bdata import dtab
-from bdata import bsqlproc
 from bdata import bcol
 
 
@@ -11,23 +10,13 @@ class DerivedTable(dtab.DataTable):
         self.dependencies = origtables
         super().__init__(name, proj)
 
-    def _complete_columns_lists(self):
-        self.all_columns = []
-        self.visible_columns = []
-        for v in filter(lambda x: x.is_category, self.columns.values()):
-            self.all_columns.append(v)
-            self.visible_columns.append(v)
-        for v in filter(lambda x: not x.is_category, self.columns.values()):
-            self.all_columns.append(v)
-            self.visible_columns.append(v)
-
     def _insert_query(self, origquery):
         """ called after self.columns was built
         """
         sqlcols, sqlcols2 = [], []
         for c in itertools.islice(self.columns.values(), 1, None):
-            sqlcols.append(c.sql_fun)
-            sqlcols2.append(c.status_column.sql_fun)
+            sqlcols.append(c.sql_line())
+            sqlcols2.append(c.status_column.sql_line())
         qr = 'INSERT INTO "{tabname}" ({collist}) {select_from_orig}'.format(
                 tabname=self.ttab_name,
                 collist=", ".join(itertools.chain(sqlcols, sqlcols2)),
@@ -52,49 +41,18 @@ class CopyViewTable(DerivedTable):
     def _init_columns(self):
         self.__merged_valdata = {}
         self.columns = collections.OrderedDict()
-        self.columns['id'] = bcol.ColumnInfo.build_id_category()
+        self.columns['id'] = bcol.build_id()
         for k, v in zip(self._given_cols_names, self._given_cols_list):
-            try:
-                self.columns[k] = v.build_deep_copy(k)
-            except bcol.CollapsedCategories.InvalidDeepCopy:
-                # we cannot make a deep copy of a collapsed column
-                # so we convert it to ENUM type
-                dv = self.dependencies[0].get_raw_column_values(v.name)
-                dv2 = sorted(set(dv))
-                col = bcol.ColumnInfo.build_enum_category(k, v.shortname, dv2)
-                self.columns[k] = col
-
+            col = bcol.build_deep_copy(v, k)
+            self.columns[k] = col
         self._complete_columns_lists()
 
     def _fill_ttab(self):
-        # here we substitude sql codes for merged columns to
-        # convert them to enums
-        _bu = []
-        for (txtcol, nm) in zip(self._given_cols_list, self._given_cols_names):
-            if isinstance(txtcol, bcol.CollapsedCategories):
-                dfun = bsqlproc.build_txt_to_enum(
-                        self.columns[nm].possible_values, self.connection)
-                _bu.append(txtcol.sql_fun)
-                _bu.append(txtcol.sql_group_fun)
-                txtcol.sql_fun = "{}({})".format(dfun, txtcol.sql_fun)
-                txtcol.sql_group_fun = "{}({})".format(
-                        dfun, txtcol.sql_group_fun)
-
         # build a query to the original table
         origquery = self.dependencies[0]._compile_query(
                 cols=self._given_cols_list,
                 status_adds=True,
                 group_adds=False)
-
-        # place sql codes for merged columns back
-        # modify resulting column dictinary: 1 -> '1 & 2' -> 'code1-code2'
-        it = iter(_bu)
-        for (txtcol, nm) in zip(self._given_cols_list, self._given_cols_names):
-            if isinstance(txtcol, bcol.CollapsedCategories):
-                txtcol.sql_fun = next(it)
-                txtcol.sql_group_fun = next(it)
-                for k, v in self.columns[nm].possible_values.items():
-                    self.columns[nm].possible_values[k] = txtcol.repr(v)
 
         self._insert_query(origquery)
 
@@ -127,13 +85,11 @@ class JoinTable(DerivedTable):
 
     def _init_columns(self):
         self.columns = collections.OrderedDict()
-        self.columns['id'] = bcol.ColumnInfo.build_id_category()
+        self.columns['id'] = bcol.build_id()
         for te, table in zip(self.joinentries, self.dependencies):
             for onm, tnm in zip(te.view_columns, te.name_columns):
                 ocol = table.columns[onm]
-                self.columns[tnm] = ocol.build_deep_copy(tnm)
-
-        self._complete_columns_lists()
+                self.columns[tnm] = bcol.build_deep_copy(ocol, tnm)
 
     def _fill_ttab(self):
         # 1. temporary add comparison columns
@@ -141,8 +97,9 @@ class JoinTable(DerivedTable):
             for i, kcol, kfun in zip(itertools.count(1),
                                      te.key_columns,
                                      te.key_mappings):
-                newcol = bcol.FunctionColumn("__k{}".format(i), [kcol],
-                                             table, kfun, False, "INTEGER")
+                depcol = table.columns[kcol]
+                newcol = bcol.build_function_column("__k{}".format(i), kfun,
+                                                    [depcol], False, "INT")
                 table.add_column(newcol)
         # 2. build table queries
         tabqueries = []
@@ -195,3 +152,5 @@ class JoinTable(DerivedTable):
             for i, kcol in zip(itertools.count(1), te.key_columns):
                 col = table.columns["__k{}".format(i)]
                 table.remove_column(col)
+
+        self._complete_columns_lists()

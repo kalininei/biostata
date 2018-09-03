@@ -3,6 +3,7 @@ def group_repr(c):
     return '...[' + str(c) + ']'
 
 tech_splitter = ' & '
+_last_connection = None
 
 
 class _Grouping1:
@@ -96,14 +97,14 @@ def category_merge(*args):
     try:
         return tech_splitter.join(map(str, args))
     except Exception as e:
-        print('category merge', args, str(e))
+        print('Error: category merge', args, str(e))
 
 
 def max_per_list(*args):
     try:
         return max(args)
     except Exception as e:
-        print('max_per_list', args, str(e))
+        print('Error: max_per_list', args, str(e))
 
 
 _i_sql_functions = 1
@@ -121,13 +122,13 @@ def build_txt_to_enum(int_to_txt_dict, connection):
     return nm
 
 
-def build_lambda_func(lambda_func, connection):
+def build_lambda_func(lambda_func):
     global _i_sql_functions
 
     def sql_func(*args):
         return lambda_func(*args)
     nm = "sql_custom_func_{}".format(_i_sql_functions)
-    connection.create_function(nm, -1, sql_func)
+    _last_connection.create_function(nm, -1, sql_func)
     _i_sql_functions += 1
     return nm
 
@@ -146,6 +147,8 @@ registered_sql_functions = [
 
 
 def init_connection(connection):
+    global _last_connection
+    _last_connection = connection
     for r in registered_aggregate_functions:
         connection.create_aggregate(*r)
     for r in registered_sql_functions:

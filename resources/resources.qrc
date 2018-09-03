@@ -15,5 +15,6 @@
     <file alias="add">add.svg</file>
     <file alias="link">link.svg</file>
     <file alias="new-row">new-row.svg</file>
+    <file alias="warning">warning.svg</file>
 </qresource>
 </RCC>

@@ -467,12 +467,12 @@ class ColumnInfoModel(TwoLevelTreeModel):
                 QtCore.Qt.Unchecked
             itm[0].setCheckState(cs)
             itm.append(QtGui.QStandardItem())
-            itm[1].setText(c.dt_type)
-            if not c.is_original:
+            itm[1].setText(c.col_type())
+            if not c.is_original():
                 itm.append(QtGui.QStandardItem())
                 itm[2].setIcon(QtGui.QIcon(':/remove'))
                 itm[2].setData(True, TwoLevelTreeModel.RemoveButtonRole)
-            if c.is_category:
+            if c.dt_type != "REAL":
                 self.tli[0].appendRow(itm)
             else:
                 self.tli[1].appendRow(itm)

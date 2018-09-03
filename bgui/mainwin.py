@@ -274,7 +274,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.active_model.update()
 
     def _act_collapse_all(self):
-        if self.active_model.collapse_categories('all', True):
+        try:
+            delim = self.__last_collapse_delimiter
+        except:
+            delim = '-'
+        if self.active_model.collapse_categories('all', True, delim):
             self.active_model.update()
 
     def _act_uncollapse_all(self):
@@ -286,9 +290,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.active_model.dt.get_category_names(), self)
         if dialog.exec_():
             r = dialog.ret_value()
-            a = self.active_model.collapse_categories(r[2], r[0])
+            a = self.active_model.collapse_categories(r[2], r[0], r[1])
             if a:
-                a.delimiter = r[1]
+                self.__last_collapse_delimiter = r[1]
                 self.active_model.update()
 
     def _act_export(self):

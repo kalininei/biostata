@@ -1,254 +1,301 @@
-import copy
 from bdata import bsqlproc
 
 
-# -------------------- Column information
+# ====================== Basic column info
 class ColumnInfo:
     def __init__(self):
         self.name = None
         self.shortname = None
-        self.is_original = None
-        self.is_category = None
+        self.dim = None
+        self.groupname = None
         self.dt_type = None
-        self.sql_group_fun = None
-        self.sql_fun = None
-        self.sql_data_type = None
-        self._long_caption = None
-        self.status_column = None
-        self._realdata_group_func = "AVG"
-        # this is not None only for enum and boolean types
-        self.possible_values = None
-        # defined delegates
-        self._assign_representation_funs()
+        self._sql_group_fun = None
 
-    def set_realdata_group_func(self, func):
-        self._realdata_group_func = func
-        if not self.is_category:
-            self.sql_group_fun = '{}({})'.format(func, self.sql_fun)
+    def col_type(self):
+        return self.dt_type
 
-    def short_caption(self):
-        return self.shortname
+    def is_category(self):
+        return self.dt_type != "REAL"
 
-    def long_caption(self):
-        return self._long_caption
+    def is_original(self):
+        return isinstance(self, OriginalColumnInfo)
 
-    def _build_status_column(self):
-        ret = ColumnInfo()
-        if self.is_original:
-            ret.name = ret.shortname = '_status_' + self.name
-            ret.sql_fun = '"{}"'.format(ret.name)
-        else:
-            # fake status column filled with zeros
-            ret.name = ret.shortname = ret.sql_fun = '0'
-        ret.is_original = False
-        ret.is_category = False
-        ret.sql_group_fun = 'MAX({})'.format(ret.sql_fun)
-        ret.sql_data_type = "INTEGER"
-        ret.dt_type = "BOOLEAN"
-        self.status_column = ret
+    def sql_line(self, grouping=False):
+        raise NotImplementedError
 
-    def _assign_representation_funs(self):
-        self.repr = lambda x: "" if x is None else x
-        self.from_repr = lambda x: None if x == "" else x
+    def sql_data_type(self):
+        if self.dt_type in ["ENUM", "BOOL", "INT"]:
+            return "INTEGER"
+        elif self.dt_type == "REAL":
+            return "REAL"
+        elif self.dt_type == "TEXT":
+            return "TEXT"
 
-        if self.dt_type in ["ENUM", "BOOLEAN"]:
-            self.repr = lambda x: "" if x is None else\
-                    self.possible_values[x]
-            self.from_repr = lambda x: None if x == "" else next(
-                k for k, v in self.possible_values.items() if v == x)
+    @staticmethod
+    def are_same(collist):
+        if len(collist) < 2:
+            return True
 
-    # --------------- constructors
-    def build_deep_copy(self, newname=None):
-        """ copies, breaks all dependencies """
-        ret = ColumnInfo()
-        ret.name = self.name if newname is None else newname
-        ret.shortname = self.shortname
-        ret.is_original = True
-        ret.is_category = self.is_category
-        ret.dt_type = self.dt_type
-        ret.sql_fun = '"{}"'.format(ret.name)
-        if ret.is_category:
-            ret.sql_group_fun = "category_group({})".format(ret.sql_fun)
-        else:
-            ret.set_realdata_group_func(self._realdata_group_func)
-        ret.sql_data_type = self.sql_data_type
-        ret._long_caption = ret.name
-        ret.possible_values = copy.deepcopy(self.possible_values)
-        ret._assign_representation_funs()
-        ret._build_status_column()
-        return ret
+        def eq(col1, col2):
+            if col1.dt_type != col2.dt_type:
+                return False
+            if col1.dt_type in ["BOOL", "ENUM"]:
+                if col1.dict != col2.dict:
+                    return False
+            return True
 
-    @classmethod
-    def build_from_category(cls, category):
-        ret = cls()
-        ret.name = category.name
-        ret.shortname = category.shortname
-        ret.is_original = True
-        ret.is_category = category.is_category
-        ret.sql_fun = '"' + ret.name + '"'
-        if ret.is_category:
-            ret.sql_group_fun = 'category_group({})'.format(ret.sql_fun)
-        else:
-            ret.set_realdata_group_func(ret._realdata_group_func)
-        ret.dt_type = category.dt_type
-        if category.dt_type != "REAL":
-            ret.sql_data_type = "INTEGER"
-        else:
-            ret.sql_data_type = "REAL"
-        if category.dim:
-            ret._long_caption = "{0}".format(ret.name, category.dim)
-        else:
-            ret._long_caption = ret.name
-
-        ret.possible_values = category.possible_values
-
-        # changing representation function for boolean and enum types
-        ret._assign_representation_funs()
-        ret._build_status_column()
-        return ret
-
-    @classmethod
-    def build_bool_category(cls, name, shortname, yesno, sql_fun=None):
-        ret = cls()
-        ret.name = name
-        ret.shortname = shortname
-        ret._long_caption = name
-        if sql_fun is None:
-            ret.is_original = True
-            ret.sql_fun = '"{}"'.format(name)
-        else:
-            ret.is_original = False
-            ret.sql_fun = sql_fun
-        ret.is_category = True
-        ret.dt_type = "BOOLEAN"
-        ret.sql_group_fun = 'category_group({})'.format(ret.sql_fun)
-        ret.sql_data_type = "INTEGER"
-        ret.possible_values = {0: yesno[1], 1: yesno[0]}
-        ret._assign_representation_funs()
-        ret._build_status_column()
-        return ret
-
-    @classmethod
-    def build_enum_category(cls, name, shortname, posvals, sql_fun=None):
-        ret = cls()
-        ret.name = name
-        ret.shortname = shortname
-        ret._long_caption = name
-        ret.is_original = False
-        if sql_fun is None:
-            ret.is_original = True
-            ret.sql_fun = '"{}"'.format(name)
-        else:
-            ret.is_original = False
-            ret.sql_fun = sql_fun
-        ret.is_category = True
-        ret.dt_type = "ENUM"
-        ret.sql_group_fun = 'category_group({})'.format(ret.sql_fun)
-        ret.sql_data_type = "INTEGER"
-        ret.possible_values = {k+1: v for k, v in enumerate(posvals)}
-        ret._assign_representation_funs()
-        ret._build_status_column()
-        return ret
-
-    @classmethod
-    def build_id_category(cls):
-        ret = cls()
-        ret.name = 'id'
-        ret.shortname = 'id'
-        ret.is_original = True
-        ret.is_category = True
-        ret.dt_type = "INTEGER"
-        ret.sql_group_fun = 'category_group(id)'
-        ret.sql_fun = '"id"'
-        ret.sql_data_type = "INTEGER"
-        ret._long_caption = "id"
-        ret._build_status_column()
-        return ret
+        for i in range(len(collist)-1):
+            if not eq(collist[i], collist[i+1]):
+                return False
+        return True
 
 
-class DerivedColumnInfo(ColumnInfo):
-    def __init__(self, deps):
+# ====================== Data representation classes
+class DataRepr:
+    def __init__(self):
+        pass
+
+    def repr(self, x):
+        raise NotImplementedError
+
+    def from_repr(self, x):
+        raise NotImplementedError
+
+
+class EnumRepr(DataRepr):
+    def __init__(self, dct):
+        self.dict = dct
+
+    def repr(self, x):
+        try:
+            return self.dict.possible_values[x]
+        except KeyError:
+            return None
+
+    def from_repr(self, x):
+        return next((k for k, v in self.dict.possible_values.items()
+                    if v == x), None)
+
+
+class SimpleRepr(DataRepr):
+    def __init__(self, ptype):
         super().__init__()
-        self.dependencies = deps
+        self._ptype = ptype
+
+    def repr(self, x):
+        return x
+
+    def from_repr(self, x):
+        return self._ptype(x) if x is not None else None
 
 
-class FunctionColumn(DerivedColumnInfo):
-    def __init__(self, name, deps_names, tab, func, before_group, dt_type):
-        super().__init__([tab.columns[x] for x in deps_names])
-        self.name = name
-        self.shortname = name
-        self.is_original = False
-        self.is_category = dt_type != "REAL"
-        self.func_code = bsqlproc.build_lambda_func(func, tab.connection)
-        collist = [c.sql_fun for c in self.dependencies]
-        self.sql_fun = "{}({})".format(self.func_code, ", ".join(collist))
-        self.use_before_grouping(before_group)
-        self.dt_type = dt_type
-        if dt_type != "REAL":
-            self.sql_data_type = "INTEGER"
+# ======================= Original Columns (present in sql table)
+class OriginalColumnInfo(ColumnInfo):
+    def __init__(self):
+        super().__init__()
+
+    def sql_line(self, grouping=False):
+        if not grouping:
+            return '"{}"'.format(self.name)
         else:
-            self.sql_data_type = "REAL"
-        self._long_caption = self.name
-        # changing representation function for boolean and enum types
-        self._assign_representation_funs()
-        self._build_status_column()
+            return '{}("{}")'.format(self._sql_group_fun, self.name)
 
-    def use_before_grouping(self, yes):
-        self._before_grouping = yes
-        self.set_realdata_group_func(self._realdata_group_func)
-
-    def set_realdata_group_func(self, func):
-        if self._before_grouping:
-            super().set_realdata_group_func(func)
+    @staticmethod
+    def build(dt_type, dct=None):
+        if dt_type == "INT":
+            return IntColumnInfo()
+        elif dt_type == "TEXT":
+            return TextColumnInfo()
+        elif dt_type == "REAL":
+            return RealColumnInfo()
+        elif dt_type == "BOOL":
+            return BoolColumnInfo(dct)
+        elif dt_type == "ENUM":
+            return EnumColumnInfo(dct)
         else:
-            collist = [c.sql_group_fun for c in self.dependencies]
-            self.sql_group_fun = "{}({})".format(self.func_code,
-                                                 ", ".join(collist))
+            raise Exception("Unknown column type: {}".format(dt_type))
 
 
-class CollapsedCategories(DerivedColumnInfo):
-    def __init__(self, categories):
-        super().__init__(categories)
-        self.name = '-'.join([c.shortname for c in categories])
+class StatusColumnInfo(OriginalColumnInfo):
+    def __init__(self, parent):
+        super().__init__()
+        self.name = "_status " + parent.name
         self.shortname = self.name
-        self.is_original = False
-        self.is_category = True
+        self.dt_type = "BOOL"
+        self._sql_group_fun = 'MAX'
+
+
+class EnumColumnInfo(OriginalColumnInfo, EnumRepr):
+    def __init__(self, dct):
+        OriginalColumnInfo.__init__(self)
+        EnumRepr.__init__(self, dct)
+        self.dt_type = "ENUM"
+
+    def col_type(self):
+        return "{} ({})".format(self.dt_type, self.dict.name)
+
+
+class BoolColumnInfo(OriginalColumnInfo, EnumRepr):
+    def __init__(self, dct):
+        OriginalColumnInfo.__init__(self)
+        EnumRepr.__init__(self, dct)
+        self.dt_type = "BOOL"
+
+    def col_type(self):
+        return "{} ({})".format(self.dt_type, self.dict.name)
+
+
+class IntColumnInfo(OriginalColumnInfo, SimpleRepr):
+    def __init__(self):
+        OriginalColumnInfo.__init__(self)
+        SimpleRepr.__init__(self, int)
+        self.dt_type = "INT"
+
+
+class TextColumnInfo(OriginalColumnInfo, SimpleRepr):
+    def __init__(self):
+        OriginalColumnInfo.__init__(self)
+        SimpleRepr.__init__(self, str)
         self.dt_type = "TEXT"
-        self.sql_fun = 'category_merge({})'.format(
-                ', '.join([c.sql_fun for c in categories]))
-        self.sql_group_fun = "merged_group({})".format(
-                ', '.join([c.sql_fun for c in categories]))
-        self.sql_data_type = "TEXT"
-        self._long_caption = self.name
-        self._build_status_column()
-        self.delimiter = '-'
 
-        # representation
-        def r(x):
-            sp = x.split(' & ')
-            ret = []
-            for c, x in zip(self.dependencies, sp):
-                try:
-                    if c.dt_type != "BOOLEAN":
-                            ret.append(c.repr(int(x)))
-                    else:
-                        ret.append(c.possible_values[int(x)])
-                except ValueError:
-                    ret.append(x)
-            return self.delimiter.join(map(str, ret))
 
-        self.repr = r
-        self.rrepr = None
+class RealColumnInfo(OriginalColumnInfo, SimpleRepr):
+    def __init__(self):
+        OriginalColumnInfo.__init__(self)
+        SimpleRepr.__init__(self, float)
+        self.dt_type = "REAL"
 
-    def _build_status_column(self):
-        super()._build_status_column()
-        self.status_column.sql_fun = 'max_per_list({})'.format(
-            ','.join([x.status_column.sql_fun for x in self.dependencies]))
 
-    class InvalidDeepCopy(Exception):
+# ========================== Function column: calculated each query
+class FunctionColumn(ColumnInfo):
+    def __init__(self):
+        super().__init__()
+        self._sql_fun = None
+        self.use_before_grouping = None
+        self.deps = []
+
+    def sql_line(self, grouping=False):
+        if grouping and self.use_before_grouping:
+            return "{}({}({}))".format(
+                self._sql_group_fun, self._sql_fun,
+                ", ".join([x.sql_line(False) for x in self.deps]))
+        elif grouping and not self.use_before_grouping:
+            return "{}({})".format(self._sql_fun, ", ".join(
+                [x.sql_line(True) for x in self.deps]))
+        else:
+            return "{}({})".format(self._sql_fun, ", ".join(
+                [x.sql_line(False) for x in self.deps]))
+
+
+class FuncStatusColumn(FunctionColumn):
+    def __init__(self, parent):
+        super().__init__()
+        self.name = "_status " + parent.name
+        self.shortname = self.name
+        self.dt_type = "BOOL"
+        self._sql_group_fun = "MAX"
+        self._sql_fun = "max_per_list"
+        self.before_grouping = True
+        self.deps = [p.status_column for p in parent.deps]
+
+
+# ========================= Constructors
+def build_from_db(proj, table_name, name):
+    qr = """
+        SELECT type, dict, colgroup, dim, shortname FROM "_COLINFO {}"
+            WHERE colname="{}"
+    """.format(table_name, name)
+    proj.cursor.execute(qr)
+    f = proj.cursor.fetchone()
+
+    dct = proj.get_dictionary(f[1]) if f[1] else None
+    ret = OriginalColumnInfo.build(f[0], dct)
+    ret.name = name
+    ret.shortname = f[4] if f[4] is not None else name
+    ret.dim = f[3]
+    ret.groupname = f[2]
+    ret.dt_type = f[0]
+    if ret.is_category():
+        ret._sql_group_fun = "category_group"
+    else:
+        ret._sql_group_fun = "AVG"
+    ret.status_column = StatusColumnInfo(ret)
+    return ret
+
+
+def build_id():
+    ret = OriginalColumnInfo.build("INT", None)
+    ret.name = 'id'
+    ret.shortname = 'id'
+    ret.dt_type = 'INT'
+    ret._sql_group_fun = 'category_group'
+    ret.status_column = StatusColumnInfo(ret)
+    return ret
+
+
+def build_deep_copy(orig, newname=None):
+    """ copies, breaks all dependencies. Resulting column is original. """
+    if orig.dt_type in ["BOOL", "ENUM"]:
+        dct = orig.dict
+    else:
+        dct = None
+    ret = OriginalColumnInfo.build(orig.dt_type, dct)
+    ret.name = orig.name if newname is None else newname
+    ret.shortname = orig.shortname
+    ret.dt_type = orig.dt_type
+    ret._sql_fun = '"{}"'.format(ret.name)
+    ret._sql_group_fun = orig._sql_group_fun
+    ret.status_column = StatusColumnInfo(ret)
+    return ret
+
+
+def build_function_column(name, func, deps, before_grouping,
+                          dt_type, dct=None):
+    # representation class
+    if dt_type in ["BOOL", "ENUM"]:
+        RepClass = EnumRepr    # noqa
+        repargs = (dct,)
+    else:
+        RepClass = SimpleRepr  # noqa
+        if dt_type == "INT":
+            repargs = (int,)
+        elif dt_type == "TEXT":
+            repargs = (str,)
+        elif dt_type == "REAL":
+            repargs = (float,)
+
+    class FuncCInfo(FunctionColumn, RepClass):
         def __init__(self):
-            super().__init__("Can not build a copy of collapsed categories")
+            FunctionColumn.__init__(self)
+            RepClass.__init__(self, *repargs)
+            self.name = name
+            self.shortname = name
+            self.dt_type = dt_type
+            self.deps = deps
+            self.use_before_grouping = before_grouping
+            self._sql_fun = bsqlproc.build_lambda_func(func)
+            if self.is_category():
+                self._sql_group_fun = "category_group"
+            else:
+                self._sql_group_fun = "AVG"
+            self.status_column = FuncStatusColumn(self)
 
-    def build_deep_copy(self, col):
-        # Use conversation to enum column instead
-        raise CollapsedCategories.InvalidDeepCopy()
+    return FuncCInfo()
+
+
+def collapsed_categories(columns, delimiter='-'):
+
+    def collapse_func(*args):
+        try:
+            ret = []
+            for c, x in zip(columns, args):
+                ret.append(str(c.repr(x)))
+            return delimiter.join(ret)
+        except Exception as e:
+            print("Collapse error: ", str(e), [c.name for c in columns], args)
+
+    name = delimiter.join([x.shortname for x in columns])
+
+    ret = build_function_column(name, collapse_func, columns, True, "TEXT")
+    ret._collapsed_categories = True
+    return ret
