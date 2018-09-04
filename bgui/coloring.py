@@ -26,6 +26,11 @@ def get_group_color_light(igr):
     m = igr % len(Random220.c)
     return QtGui.QColor(*Random220.c[m])
 
+def get_bg2_color(igr):
+    if igr % 2:
+        return QtGui.QColor(255, 255, 0, 70)
+    else:
+        return QtGui.QColor(255, 255, 0, 40)
 
 class Coloring:
     def __init__(self, datatab):

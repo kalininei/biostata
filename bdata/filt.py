@@ -16,10 +16,10 @@ def possible_values_list(column, operation, datatab):
     elif column.dt_type == "REAL":
         append_col_names("REAL")
     elif column.dt_type == "ENUM":
-        ret.extend(column.dict.possible_values.values())
+        ret.extend(column.dict.values())
     elif column.dt_type == "BOOL":
-        ret.append(column.dict.possible_values[0] + " (False)")
-        ret.append(column.dict.possible_values[1] + " (True) ")
+        ret.append(column.dict.values()[0] + " (False)")
+        ret.append(column.dict.values()[1] + " (True) ")
         append_col_names("BOOL")
     elif column.dt_type == "TEXT":
         append_col_names("TEXT")

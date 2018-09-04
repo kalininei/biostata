@@ -2,6 +2,7 @@ import functools
 import traceback
 from PyQt5 import QtWidgets, QtGui, QtCore
 from bdata import projroot
+from bdata import derived_tabs
 from bgui import dlgs
 from bgui import tmodel
 from bgui import tview
@@ -49,6 +50,26 @@ class MainWindow(QtWidgets.QMainWindow):
         exit_action.setShortcut(QtGui.QKeySequence.Close)
         exit_action.triggered.connect(QtWidgets.qApp.quit)
         self.filemenu.addAction(exit_action)
+
+        # --- Project
+        self.projectmenu = menubar.addMenu('Project')
+        self.projectmenu.aboutToShow.connect(self._projectmenu_enabled)
+
+        # import table
+        import_table = QtWidgets.QAction("Import table...", self)
+        import_table.triggered.connect(self._act_import_table)
+        self.projectmenu.addAction(import_table)
+
+        # -- Edit actions
+        self.projectmenu.addSeparator()
+        # tables and columns
+        tables_columns_info = QtWidgets.QAction("Tables && Columns...", self)
+        tables_columns_info.triggered.connect(self._act_tab_col)
+        self.projectmenu.addAction(tables_columns_info)
+        # dictionaries
+        dictionaries_info = QtWidgets.QAction("Dictionaries...", self)
+        dictionaries_info.triggered.connect(self._act_dictinfo)
+        self.projectmenu.addAction(dictionaries_info)
 
         # --- View
         self.viewmenu = menubar.addMenu('View')
@@ -182,6 +203,13 @@ class MainWindow(QtWidgets.QMainWindow):
     def _filemenu_enabled(self):
         self.export_action.setEnabled(self.active_model is not None)
 
+    def _projectmenu_enabled(self):
+        enabled = self.active_model is not None
+        for m in self.projectmenu.actions():
+            m.setEnabled(enabled)
+        if not enabled:
+            return
+
     def _rowsmenu_enabled(self):
         enabled = self.active_model is not None
         for m in self.rowsmenu.actions():
@@ -313,11 +341,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self.active_model.switch_coloring_mode()
 
     def _act_new_bool_column(self):
-        dialog = dlgs.NewBoolColumn(self.active_model.dt, self)
-        if dialog.exec_():
-            newcol = dialog.ret_value()
-            self.active_model.dt.add_column(newcol, None, True)
-            self.active_model.update()
+        # TODO
+        pass
+        # dialog = dlgs.NewBoolColumn(self.active_model.dt, self)
+        # if dialog.exec_():
+        #     newcol = dialog.ret_value()
+        #     self.active_model.dt.add_column(newcol, None, True)
+        #     self.active_model.update()
 
     def _act_new_enum_column(self):
         # TODO
@@ -343,7 +373,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _act_join_tables(self):
         from bgui import joindlg
-        from bdata import derived_tabs
         dialog = joindlg.JoinTablesDialog(self.active_model.dt, self)
         if dialog.exec_():
             name, tabentries = dialog.ret_value()
@@ -352,6 +381,31 @@ class MainWindow(QtWidgets.QMainWindow):
             newmodel = tmodel.TabModel(dt)
             index = self.add_model(newmodel)
             self.wtab.setCurrentIndex(index)
+
+    def _act_import_table(self):
+        from bgui import importdlgs
+        dialog = dlgs.ImportTablesDlg()
+        if dialog.exec_():
+            fname, frmt = dialog.ret_value()
+            if frmt == "plain text":
+                dialog2 = importdlgs.ImportPlainText(self.proj, fname, self)
+            elif frmt == "xlsx":
+                dialog2 = importdlgs.ImportXlsx(self.proj, fname, self)
+            else:
+                raise Exception("Unknow format {}".format(frmt))
+            if dialog2.exec_():
+                name, tab, cols = dialog2.ret_value()
+                newdt = derived_tabs.ExplicitTable(name, cols, tab, self.proj)
+                self.proj.add_table(newdt)
+                newmodel = tmodel.TabModel(newdt)
+                index = self.add_model(newmodel)
+                self.wtab.setCurrentIndex(index)
+
+    def _act_tab_col(self):
+        pass
+
+    def _act_dictinfo(self):
+        pass
 
     # ============== Procedures
     def _load_database(self, fname):

@@ -5,36 +5,76 @@ from bdata import bsqlproc
 
 
 class Dictionary:
-    def __init__(self, name, proj):
-        self.proj = proj
+    def __init__(self, name, dt_type, keys, values, comments=None):
+        if dt_type not in ["BOOL", "ENUM"]:
+            raise Exception("Invalid dictionary data type")
+
+        if None in keys:
+            raise Exception("Some keys are not set")
+
+        if len(set(keys)) != len(keys):
+            raise Exception("Dictionary keys are not unique")
+
+        if len(set(values)) != len(values):
+            raise Exception("Dictionary values are not unique")
+
+        if len(values) != len(keys):
+            raise Exception("Dictionary values and keys have different size")
+
+        if len(values) < 2:
+            raise Exception("Dictionary set needs at least 2 values")
+
+        if dt_type == "BOOL":
+            if len(keys) != 2 or keys[0] != 0 or keys[1] != 1:
+                raise Exception("Bool dictionary keys should contain "
+                                "0 and 1 only")
+        self.dt_type = dt_type
         self.name = name
+        self.kvalues = collections.OrderedDict()
+        self.vkeys = collections.OrderedDict()
+        self.kcomments = collections.OrderedDict()
+        for k, v in zip(keys, values):
+            self.kvalues[k] = v
+            self.vkeys[v] = k
+            self.kcomments[k] = ''
+
+        if comments is not None:
+            for k, coms in zip(self.kvalues.keys(), comments):
+                self.kcomments[k] = coms
+
+    def key_to_value(self, key):
+        return self.kvalues[key]
+
+    def value_to_key(self, value):
+        return self.vkeys[value]
+
+    def comment_from_key(self, key):
+        return self.kcomments[key]
+
+    def values(self):
+        return list(self.vkeys.keys())
+
+    def keys(self):
+        return list(self.kvalues.keys())
+
+    @staticmethod
+    def from_db(name, proj):
         qr = """
             SELECT type, comment FROM _DICTIONARIES_ WHERE name="{}"
-        """.format(self.name)
+        """.format(name)
         proj.cursor.execute(qr)
         f = proj.cursor.fetchone()
-        self.dt_type = f[0]
-        self.comment = f[1]
+        dt_type = f[0]
 
-        # possible values for enum and boolean data
-        # integers to strings converter
-        self.possible_values = collections.OrderedDict()
-        self.values_comments = collections.OrderedDict()
-        if self.dt_type in ["ENUM", "BOOL"]:
-            tnm = '"_DICTIONARY {}"'.format(self.name)
-            qr = "SELECT key, value, comment FROM {}".format(tnm)
-            proj.cursor.execute(qr)
-            f = proj.cursor.fetchall()
-            k = [x[0] for x in f]
-            v = [x[1] for x in f]
-            com = [x[2] for x in f]
-            if self.dt_type == "BOOL":
-                if len(k) != 2 or 0 not in k or 1 not in k:
-                    raise Exception("BOOL dictionary keys should equal"
-                                    " 0 and 1")
-            for i, s, c in zip(k, v, com):
-                self.possible_values[i] = s
-                self.values_comments[i] = c
+        tnm = '"_DICTIONARY {}"'.format(name)
+        qr = "SELECT key, value, comment FROM {}".format(tnm)
+        proj.cursor.execute(qr)
+        f = proj.cursor.fetchall()
+        keys = [x[0] for x in f]
+        values = [x[1] for x in f]
+        comments = [x[2] for x in f]
+
+        return Dictionary(name, dt_type, keys, values, comments)
 
 
 class ProjectDB:
@@ -48,7 +88,7 @@ class ProjectDB:
         self.dictionaries = collections.OrderedDict()
         self.cursor.execute("SELECT name FROM _DICTIONARIES_")
         for a in self.cursor.fetchall():
-            self.dictionaries[a[0]] = Dictionary(a[0], self)
+            self.dictionaries[a[0]] = Dictionary.from_db(a[0], self)
 
         # named filters
         self.named_filters = []
@@ -107,7 +147,8 @@ class ProjectDB:
         self.valid_tech_string(m, nm)
         cnames = list(map(lambda x: x.upper(), self.get_table_names()))
         if nm.upper() in cnames:
-            raise Exception("{} already exists in present project.".format(m))
+            raise Exception(
+                "{} already exists in the present project.".format(m))
 
     def is_possible_column_name(self, nm):
         """ checks if nm could be used as a new column name
@@ -134,6 +175,20 @@ class ProjectDB:
 
     def get_dictionary(self, name):
         return self.dictionaries[name]
+
+    def add_dictionary(self, dct):
+        if dct.name not in self.dictionaries.keys():
+            self.dictionaries[dct.name] = dct
+        else:
+            raise Exception("Dictionary already presents in the project")
+
+    def enum_dictionaries(self):
+        return list(filter(lambda x: x.dt_type == "ENUM",
+                           self.dictionaries.values()))
+
+    def bool_dictionaries(self):
+        return list(filter(lambda x: x.dt_type == "BOOL",
+                           self.dictionaries.values()))
 
     def close_connection(self):
         self.connection.close()

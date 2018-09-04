@@ -21,11 +21,8 @@
 import copy
 import os
 from PyQt5 import QtCore, QtWidgets, QtGui
+from bgui import optview
 import resources    # noqa
-try:
-    from bgui import optview
-except ImportError:
-    import optview
 
 _tmp = None
 
@@ -88,6 +85,25 @@ class SingleChoiceOptionEntry(SimpleOptionEntry):
 
     def edit_widget(self, parent):
         wdg = QtWidgets.QComboBox(parent)
+        wdg.addItems(self.values)
+        wdg.setCurrentIndex(self.values.index(self.get()))
+        if len(self.values) - wdg.maxVisibleItems() < 3:
+            wdg.setMaxVisibleItems(len(self.values))
+        return wdg
+
+    def set_from_widget(self, widget):
+        self.set(widget.currentText())
+
+
+class SingleChoiceEditOptionEntry(SimpleOptionEntry):
+    "string value from combobox"
+    def __init__(self, data, member_name, values):
+        self.values = copy.deepcopy(values)
+        super().__init__(data, member_name)
+
+    def edit_widget(self, parent):
+        wdg = QtWidgets.QComboBox(parent)
+        wdg.setEditable(True)
         wdg.addItems(self.values)
         wdg.setCurrentIndex(self.values.index(self.get()))
         if len(self.values) - wdg.maxVisibleItems() < 3:
@@ -530,7 +546,7 @@ class LineEditWithButton(QtWidgets.QLineEdit):
                                      QtWidgets.QLineEdit.TrailingPosition)
 
 
-class SaveFileOptionEntry(SimpleOptionEntry):
+class _SaveOpenFileOE(SimpleOptionEntry):
     def __init__(self, data, member_name, filter_list):
         """ filter list: [(name, (list of extensions without *)),] except *.*
         """
@@ -562,10 +578,7 @@ class SaveFileOptionEntry(SimpleOptionEntry):
         return -1
 
     def show_dialog(self, parent=None):
-        fl = self.filter_line()
-        fn = QtWidgets.QFileDialog.getSaveFileName(
-            parent, "Save file", self.get(), ';;'.join(fl), fl[0],
-            QtWidgets.QFileDialog.DontConfirmOverwrite)
+        fn = self._getfn(parent)
         if fn[0]:
             self.set(fn[0])
 
@@ -573,6 +586,34 @@ class SaveFileOptionEntry(SimpleOptionEntry):
         w = LineEditWithButton(self.get(), parent)
         w.button.triggered.connect(lambda: self.show_dialog(parent))
         return w
+
+    def _getfn(self):
+        raise NotImplementedError
+
+
+class SaveFileOptionEntry(_SaveOpenFileOE):
+    def __init__(self, data, member_name, filter_list):
+        """ filter list: [(name, (list of extensions without *)),] except *.*
+        """
+        super().__init__(data, member_name, filter_list)
+
+    def _getfn(self, parent):
+        fl = self.filter_line()
+        return QtWidgets.QFileDialog.getSaveFileName(
+            parent, "Save file", self.get(), ';;'.join(fl), fl[0],
+            QtWidgets.QFileDialog.DontConfirmOverwrite)
+
+
+class OpenFileOptionEntry(_SaveOpenFileOE):
+    def __init__(self, data, member_name, filter_list):
+        """ filter list: [(name, (list of extensions without *)),] except *.*
+        """
+        super().__init__(data, member_name, filter_list)
+
+    def _getfn(self, parent):
+        fl = self.filter_line()
+        return QtWidgets.QFileDialog.getOpenFileName(
+            parent, "Open file", self.get(), ';;'.join(fl), fl[0])
 
 
 class SingleChoiceWImgOptionEntry(SimpleOptionEntry):

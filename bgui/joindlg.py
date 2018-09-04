@@ -398,7 +398,7 @@ class TabKeysRow:
             colname = self.wid[itab].currentText()
             col = tab.columns[colname]
             if col.dt_type in ["ENUM", "BOOL"]:
-                pv1 = col.dict.possible_values.keys()
+                pv1 = col.dict.keys()
             else:
                 pv1 = tab.get_distinct_column_raw_vals(colname, False)
             possible_values.append(pv1)

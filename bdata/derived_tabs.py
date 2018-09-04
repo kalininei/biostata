@@ -144,7 +144,6 @@ class JoinTable(DerivedTable):
         origquery = "\n".join(s)
 
         # 6. insert
-        print(origquery)
         self._insert_query(origquery)
 
         # 7. remove comparison columns
@@ -152,5 +151,39 @@ class JoinTable(DerivedTable):
             for i, kcol in zip(itertools.count(1), te.key_columns):
                 col = table.columns["__k{}".format(i)]
                 table.remove_column(col)
+
+        self._complete_columns_lists()
+
+
+class ExplicitTable(DerivedTable):
+    def __init__(self, name, colformats, tab, proj):
+        """ colformats = [(name, dt_type, dict), ...]
+            tab[][] - table in python types format. None for NULL.
+        """
+        self.colformats = colformats
+        self._input_tab = tab
+        super().__init__(name, [], proj)
+
+    def _init_columns(self):
+        self.columns = collections.OrderedDict()
+        self.columns['id'] = bcol.build_id()
+        for name, dt_type, dict_name in self.colformats:
+            col = bcol.explicit_build(self.proj, name, dt_type, dict_name)
+            self.columns[name] = col
+        del self.colformats
+
+    def _fill_ttab(self):
+        sqlcols = []
+        for c in itertools.islice(self.columns.values(), 1, None):
+            sqlcols.append(c.sql_line())
+        pholders = ','.join(['?'] * (len(self.columns)-1))
+        qr = 'INSERT INTO "{tabname}" ({collist}) VALUES ({ph})'.format(
+                tabname=self.ttab_name,
+                collist=", ".join(sqlcols),
+                ph=pholders)
+        print(qr)
+        self.cursor.executemany(qr, self._input_tab)
+
+        del self._input_tab
 
         self._complete_columns_lists()

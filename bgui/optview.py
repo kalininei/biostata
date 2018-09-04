@@ -69,15 +69,77 @@ class OptionWidgetConfigure(object):
 
 class OptionsHolderInterface(object):
     "Abstract dialog for option set"
+    class _OData(object):
+        pass
+
     def odata(self):
         """returns options struct child class singleton which stores
         last dialog execution"""
-        raise NotImplementedError
+        if not hasattr(self, "_odata"):
+            setattr(self.__class__, "_odata", OptionsHolderInterface._OData())
+            self._default_odata(self._odata)
+        return self._odata
+
+    def set_odata_entry(self, code, value):
+        " set odata.code = value with the respective callback"
+        self.odata().__dict__[code] = value
+        self.on_value_change(code)
 
     def odata_status(self):
-        """returns options status struct child class singleton which stores
+        """returns options struct child class singleton which stores
         last dialog execution"""
+        if not hasattr(self, "_odata_status"):
+            setattr(self.__class__, "_odata_status",
+                    OptionsHolderInterface._OData())
+            self._default_odata_status(self._odata_status)
+        return self._odata_status
+
+    def __init__(self):
+        self._odata_init()
+        self.oview = OptionsView(self.olist())
+        self.oview.is_active_delegate(self._active_entries)
+
+    def confirm_input(self):
+        "check errors and invoke parent accept"
+        try:
+            self.check_input()
+            return True
+        except Exception as e:
+            QtWidgets.QMessageBox.warning(self, "Invalid input", str(e))
+            return False
+
+    # functions for overriding
+    def _default_odata(self, obj):
+        "fills options struct obj with default values"
         raise NotImplementedError
+
+    def _default_odata_status(self, obj):
+        "fills options struct obj with default values"
+        pass
+
+    def _odata_init(self):
+        "called before olist call. It modifies odata() global  entries"
+        pass
+
+    def olist(self):
+        "-> optview.OptionsList"
+        raise NotImplementedError
+
+    def ret_value(self):
+        "-> dict from option struct"
+        raise NotImplementedError
+
+    def check_input(self):
+        "throws Exception if self.odata() has invalid fields"
+        pass
+
+    def _active_entries(self, entry):
+        "return False for non-active entries"
+        return True
+
+    def on_value_change(self, code):
+        "fired after odata().code is changed"
+        pass
 
 
 # ================ Option Entries

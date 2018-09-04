@@ -68,13 +68,15 @@ class EnumRepr(DataRepr):
 
     def repr(self, x):
         try:
-            return self.dict.possible_values[x]
+            return self.dict.key_to_value(x)
         except KeyError:
             return None
 
     def from_repr(self, x):
-        return next((k for k, v in self.dict.possible_values.items()
-                    if v == x), None)
+        try:
+            return self.dict.value_to_key(x)
+        except KeyError:
+            return None
 
 
 class SimpleRepr(DataRepr):
@@ -215,6 +217,20 @@ def build_from_db(proj, table_name, name):
     ret.dim = f[3]
     ret.groupname = f[2]
     ret.dt_type = f[0]
+    if ret.is_category():
+        ret._sql_group_fun = "category_group"
+    else:
+        ret._sql_group_fun = "AVG"
+    ret.status_column = StatusColumnInfo(ret)
+    return ret
+
+
+def explicit_build(proj, name, tp_name, dict_name):
+    dct = proj.get_dictionary(dict_name) if dict_name else None
+    ret = OriginalColumnInfo.build(tp_name, dct)
+    ret.name = name
+    ret.shortname = name
+    ret.dt_type = tp_name
     if ret.is_category():
         ret._sql_group_fun = "category_group"
     else:

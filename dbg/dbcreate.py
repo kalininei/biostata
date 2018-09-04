@@ -36,6 +36,10 @@ pst = [
     ("biochar type", "ENUM", None),
     ("fertilizer", "BOOL", None),
     ("has biochar", "BOOL", None),
+    ("dict_ABC", "ENUM", None),
+    ("dict_yesno", "BOOL", None),
+    ("dict_truefalse", "BOOL", None),
+    ("dict_01", "BOOL", None)
 ]
 
 cursor.executemany("""
@@ -93,6 +97,22 @@ pst = [
 ]
 cursor.executemany("""
     INSERT INTO "_DICTIONARY has biochar"(key, value, comment) VALUES (?,?,?)
+""", pst)
+
+# 1/0
+cursor.execute("""
+    CREATE TABLE "_DICTIONARY dict_01"(
+        key INTEGER PRIMARY KEY,
+        value TEXT UNIQUE,
+        comment TEXT
+    )
+""")
+pst = [
+    (0, "0"),
+    (1, "1")
+]
+cursor.executemany("""
+    INSERT INTO "_DICTIONARY dict_01"(key, value) VALUES (?,?)
 """, pst)
 
 # yes/no

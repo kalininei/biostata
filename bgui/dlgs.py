@@ -120,47 +120,43 @@ class ProgressProcedureDlg(QtWidgets.QDialog):
         return self._result
 
 
-class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
-    "Abstract dialog for option set"
-    class _OData(object):
-        pass
-
-    def odata(self):
-        """returns options struct child class singleton which stores
-        last dialog execution"""
-        if not hasattr(self, "_odata"):
-            setattr(self.__class__, "_odata", SimpleAbstractDialog._OData())
-            self._default_odata(self._odata)
-        return self._odata
-
-    def set_odata_entry(self, code, value):
-        " set odata.code = value with the respective callback"
-        self.odata().__dict__[code] = value
-        self.on_value_change(code)
-
-    def odata_status(self):
-        """returns options struct child class singleton which stores
-        last dialog execution"""
-        if not hasattr(self, "_odata_status"):
-            setattr(self.__class__, "_odata_status",
-                    SimpleAbstractDialog._OData())
-            self._default_odata_status(self._odata_status)
-        return self._odata_status
-
-    def __init__(self, parent=None):
-        super(SimpleAbstractDialog, self).__init__(parent)
-        self._odata_init()
-        oview = optview.OptionsView(self.olist())
-        oview.is_active_delegate(self._active_entries)
-        buttonbox = QtWidgets.QDialogButtonBox(
+class OkCancelDialog(QtWidgets.QDialog):
+    def __init__(self, title, parent, layout_type="vertical"):
+        super().__init__(parent)
+        self.resize(self.__class__._sz_x, self.__class__._sz_y)
+        self.setWindowTitle(title)
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.buttonbox = QtWidgets.QDialogButtonBox(
                 QtWidgets.QDialogButtonBox.Ok |
                 QtWidgets.QDialogButtonBox.Cancel)
-        buttonbox.accepted.connect(self.accept)
-        buttonbox.rejected.connect(self.reject)
-        layout = QtWidgets.QVBoxLayout(self)
-        layout.addWidget(oview)
-        layout.addWidget(buttonbox)
-        self.resize(self._sz_x, self._sz_y)
+        self.buttonbox.accepted.connect(self.accept)
+        self.buttonbox.rejected.connect(self.reject)
+
+        self.mainframe = QtWidgets.QFrame(self)
+        if layout_type == "vertical":
+            self.mainframe.setLayout(QtWidgets.QVBoxLayout())
+        elif layout_type == "horizontal":
+            self.mainframe.setLayout(QtWidgets.QHBoxLayout())
+        elif layout_type == "grid":
+            self.mainframe.setLayout(QtWidgets.QGridLayout())
+        else:
+            raise Exception("Unknown layout {}".format(layout_type))
+        self.mainframe.layout().setContentsMargins(0, 0, 0, 0)
+
+        self.layout().addWidget(self.mainframe)
+        self.layout().addWidget(self.buttonbox)
+
+    def resizeEvent(self, e):   # noqa
+        self.__class__._sz_x = e.size().width()
+        self.__class__._sz_y = e.size().height()
+        super().resizeEvent(e)
+
+
+class SimpleAbstractDialog(OkCancelDialog, optview.OptionsHolderInterface):
+    def __init__(self, title, parent=None):
+        OkCancelDialog.__init__(self, title, parent)
+        optview.OptionsHolderInterface.__init__(self)
+        self.mainframe.layout().addWidget(self.oview)
 
     def resizeEvent(self, e):   # noqa
         self.__class__._sz_x = e.size().width()
@@ -169,45 +165,8 @@ class SimpleAbstractDialog(QtWidgets.QDialog, optview.OptionsHolderInterface):
 
     def accept(self):
         "check errors and invoke parent accept"
-        try:
-            self.check_input()
-            super(SimpleAbstractDialog, self).accept()
-        except Exception as e:
-            QtWidgets.QMessageBox.warning(
-                    self, "Warning", "Invalid Input: %s" % str(e))
-
-    # functions for overriding
-    def _default_odata(self, obj):
-        "fills options struct obj with default values"
-        raise NotImplementedError
-
-    def _default_odata_status(self, obj):
-        "fills options struct obj with default values"
-        pass
-
-    def _odata_init(self):
-        "called before olist call. It modifies odata() global  entries"
-        pass
-
-    def olist(self):
-        "-> optview.OptionsList"
-        raise NotImplementedError
-
-    def ret_value(self):
-        "-> dict from option struct"
-        raise NotImplementedError
-
-    def check_input(self):
-        "throws Exception if self.odata() has invalid fields"
-        pass
-
-    def _active_entries(self, entry):
-        "return False for non-active entries"
-        return True
-
-    def on_value_change(self, code):
-        "fired after odata().code is changed"
-        pass
+        if self.confirm_input():
+            QtWidgets.QDialog.accept(self)
 
 
 class GroupRowsDlg(SimpleAbstractDialog):
@@ -215,8 +174,7 @@ class GroupRowsDlg(SimpleAbstractDialog):
 
     def __init__(self, lst_categories, parent=None):
         self.cats = lst_categories
-        super().__init__(parent)
-        self.setWindowTitle("Group Rows")
+        super().__init__("Group Rows", parent)
 
     def _odata_init(self):
         e = collections.OrderedDict([(
@@ -259,9 +217,8 @@ class CollapseColumnsDlg(SimpleAbstractDialog):
 
     def __init__(self, lst_categories, parent=None):
         self.cats = lst_categories
-        super().__init__(parent)
+        super().__init__("Collapse columns", parent)
         self.odata().cats = lst_categories
-        self.setWindowTitle("Collapse columns")
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -296,8 +253,7 @@ class ExportTablesDlg(SimpleAbstractDialog):
     _sz_x, _sz_y = 400, 300
 
     def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Export table")
+        super().__init__("Export table", parent)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -381,8 +337,7 @@ class RowColoringDlg(SimpleAbstractDialog):
             ("red", (255, 0, 0)), ("magenta", (255, 0, 255)),
             ("yellow", (255, 255, 0)), ("aqua", (0, 255, 255))])
         # init
-        super().__init__(parent)
-        self.setWindowTitle("Coloring")
+        super().__init__("Coloring", parent)
         self._sync_schemes()
 
     def _default_odata(self, obj):
@@ -451,8 +406,7 @@ class NewBoolColumn(SimpleAbstractDialog):
     def __init__(self, dt, parent=None):
         # data
         self.dt = dt
-        super().__init__(parent)
-        self.setWindowTitle("New boolean column")
+        super().__init__("New boolean column", parent)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -545,8 +499,8 @@ class NewTableFromVisible(SimpleAbstractDialog):
     def __init__(self, dt, parent=None):
         # data
         self.dt = dt
-        super().__init__(parent)
-        self.setWindowTitle("New table from {}".format(self.dt.table_name()))
+        super().__init__("New table from {}".format(self.dt.table_name),
+                         parent)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -591,3 +545,40 @@ class NewTableFromVisible(SimpleAbstractDialog):
         newdt = derived_tabs.CopyViewTable(
                 od.tablename, self.dt, cols, self.dt.proj)
         return newdt
+
+
+class ImportTablesDlg(SimpleAbstractDialog):
+    _sz_x, _sz_y = 400, 300
+
+    def __init__(self, parent=None):
+        super().__init__("Import table", parent)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.filename = ''
+        obj.format = "plain text"
+
+    def olist(self):
+        flt = [('Excel files', ('xlsx',))]
+        return optview.OptionsList([
+            ("Import from", "Filename", optwdg.OpenFileOptionEntry(
+                self, "filename", flt)),
+            ("Import from", "Format", optwdg.SingleChoiceOptionEntry(
+                self, "format", ["xlsx", "plain text"])),
+            ])
+
+    def on_value_change(self, code):
+        if code == 'filename':
+            if self.odata().filename[-5:] == '.xlsx':
+                self.set_odata_entry('format', 'xlsx')
+            elif self.odata().filename[-4:] == '.txt':
+                self.set_odata_entry('format', 'plain text')
+
+    def ret_value(self):
+        return self.odata().filename, self.odata().format
+
+    def check_input(self):
+        from pathlib import Path
+        my_file = Path(self.odata().filename)
+        if not my_file.is_file():
+            raise Exception("Invalid file name")
