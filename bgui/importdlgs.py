@@ -5,12 +5,13 @@ from bgui import optwdg
 from bgui import dictdlg
 from bgui import coloring
 from bgui import dlgs
+from bgui import qtcommon
 from fileproc import import_tab
 
 
 class _ImportDialog(dlgs.OkCancelDialog):
     def __init__(self, proj, fn, parent):
-        title = "Import table as {} from ({})".format(self.get_format(), fn)
+        title = 'Import table as {} from "{}"'.format(self.get_format(), fn)
         super().__init__(title, parent, "vertical")
         self._ret_value = None
         self.proj = proj
@@ -18,7 +19,6 @@ class _ImportDialog(dlgs.OkCancelDialog):
 
         self.buttonbox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         # mainframe = upperframe + lowerframe
-        self.mainframe.setLayout(QtWidgets.QVBoxLayout())
         self.upper_frame = QtWidgets.QFrame(self)
         self.lower_frame = QtWidgets.QFrame(self)
         self.mainframe.layout().addWidget(self.upper_frame)
@@ -47,16 +47,24 @@ class _ImportDialog(dlgs.OkCancelDialog):
         base = os.path.basename(self.fn)
         return os.path.splitext(base)[0]
 
-    def load_table(self):
+    def load_table(self, opt):
         raise NotImplementedError
 
     def do_load(self):
         try:
-            self.load_table()
-            self.buttonbox.button(
-                    QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
+            if self.spec.confirm_input():
+                od = self.spec.ret_value()
+                tab = self.load_table(od)
+                if od.read_cap:
+                    cap = tab[0]
+                    tab = tab[1:]
+                else:
+                    cap = None
+                self.draw_table(cap, tab)
+                self.buttonbox.button(
+                        QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Error",  str(e))
+            qtcommon.message_exc(self, "File parsing error", e=e)
 
     def specific_frame(self):
         raise NotImplementedError
@@ -83,7 +91,7 @@ class _ImportDialog(dlgs.OkCancelDialog):
             self._ret_value = name, tab, columns
             return super().accept()
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Invalid Input",  str(e))
+            qtcommon.message_exc(self, "Invalid input", e=e)
 
     def ret_value(self):
         '-> name, tab, columns'
@@ -105,6 +113,8 @@ class PreloadModel(QtCore.QAbstractTableModel):
         self.data_columns = 0
 
     def load(self, caps, tab):
+        if len(tab) == 0 or len(tab[0]) == 0:
+            raise Exception("No data were loaded.")
         self.beginResetModel()
         self.caps = caps if caps is not None else []
         self.tab = tab
@@ -119,7 +129,7 @@ class PreloadModel(QtCore.QAbstractTableModel):
 
         for i, c in enumerate(self.caps):
             if not c:
-                self.caps[i] = "Column {}".format(i)
+                self.caps[i] = "Column {}".format(i + 1)
         for i in range(self.data_columns):
             self.columns_format[i] = self.autodetect_type(i, 10)
         self.endResetModel()
@@ -269,13 +279,6 @@ class PreloadModel(QtCore.QAbstractTableModel):
                 ret[i][j] = v
         return ret
 
-    def mousePressEvent(self, event):   # noqa
-        """ edit on single click """
-        if event.button() == QtCore.Qt.LeftButton:
-            index = self.indexAt(event.pos())
-            self.edit(index)
-        super().mousePressEvent(event)
-
 
 class ComboboxDelegate(QtWidgets.QStyledItemDelegate):
     def __init__(self, values, parent):
@@ -359,37 +362,33 @@ class PreloadTable(QtWidgets.QTableView):
         self.resizeColumnsToContents()
 
 
-class PlainTextOptions(QtWidgets.QFrame, optview.OptionsHolderInterface):
-    def __init__(self, tabname, fname, parent):
+class PlainTextOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
+    def __init__(self, tabname, parent):
         self.init_tabname = tabname
-        self.init_fname = fname
         QtWidgets.QFrame.__init__(self, parent)
         optview.OptionsHolderInterface.__init__(self)
         layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.oview)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
-        obj.filename = ''
         obj.tabname = ''
         obj.firstline = 0
         obj.lastline = -1
         obj.read_cap = True
-        obj.col_sep = "tab"
+        obj.col_sep = "whitespaces"
         obj.colcount = -1
         obj.row_sep = "newline"
         obj.ignore_blank = True
         obj.comment_sign = '#'
 
     def _odata_init(self):
-        self.set_odata_entry("filename", self.init_fname)
         self.set_odata_entry("tabname", self.init_tabname)
 
     def olist(self):
         return optview.OptionsList([
-            ("Import", "Filename", optwdg.OpenFileOptionEntry(
-                self, "filename", [])),
-            ("Import", "Table name", optwdg.SimpleOptionEntry(
+            ("Import", "New table name", optwdg.SimpleOptionEntry(
                 self, "tabname", dostrip=True)),
             ("Ranges", "First line", optwdg.BoundedIntOptionEntry(
                 self, 'firstline', 0)),
@@ -398,7 +397,7 @@ class PlainTextOptions(QtWidgets.QFrame, optview.OptionsHolderInterface):
             ("Ranges", "Caption from first row", optwdg.BoolOptionEntry(
                 self, "read_cap")),
             ("Format", "Columns separator", optwdg.SingleChoiceEditOptionEntry(
-                self, "col_sep", ["tab", "space", "any whitespace", ", ",
+                self, "col_sep", ["whitespaces", "tabular", ",",
                                   "in double quotes"])),
             ("Format", "Max columns count", optwdg.BoundedIntOptionEntry(
                 self, "colcount", -1)),
@@ -413,10 +412,6 @@ class PlainTextOptions(QtWidgets.QFrame, optview.OptionsHolderInterface):
     def ret_value(self):
         return copy.deepcopy(self.odata())
 
-    def check_input(self):
-        if not self.odata().filename:
-            raise Exception("Invalid filename")
-
 
 class ImportPlainText(_ImportDialog):
     _sz_x, _sz_y = 400, 500
@@ -428,18 +423,48 @@ class ImportPlainText(_ImportDialog):
         return "plain text"
 
     def specific_frame(self):
-        return PlainTextOptions(self.get_init_tabname(), self.fn, self)
+        return PlainTextOptions(self.get_init_tabname(), self)
 
-    def load_table(self):
-        if self.spec.confirm_input():
-            od = self.spec.ret_value()
-            tab = import_tab.split_plain_text(od.filename, od)
-            if od.read_cap:
-                cap = tab[0]
-                tab = tab[1:]
-            else:
-                cap = None
-            self.draw_table(cap, tab)
+    def load_table(self, opt):
+        return import_tab.split_plain_text(self.fn, opt)
+
+
+class XlsxOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
+    def __init__(self, tabname, fname, parent):
+        self.init_tabname = tabname
+        self.fname = fname
+        self.sheets = import_tab.read_xlsx_sheets(self.fname)
+        QtWidgets.QFrame.__init__(self, parent)
+        optview.OptionsHolderInterface.__init__(self)
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.oview)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.tabname = ''
+        obj.sheetname = ''
+        obj.range = ''
+        obj.read_cap = True
+
+    def _odata_init(self):
+        self.set_odata_entry('tabname', self.init_tabname)
+        self.set_odata_entry('sheetname', self.sheets[0])
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Import", "Sheet name", optwdg.SingleChoiceEditOptionEntry(
+                self, "sheetname", self.sheets)),
+            ("Import", "New table name", optwdg.SimpleOptionEntry(
+                self, "tabname", dostrip=True)),
+            ("Ranges", "Data range", optwdg.SimpleOptionEntry(
+                self, 'range', dostrip=True)),
+            ("Ranges", "Caption from first row", optwdg.BoolOptionEntry(
+                self, "read_cap")),
+            ])
+
+    def ret_value(self):
+        return copy.deepcopy(self.odata())
 
 
 class ImportXlsx(_ImportDialog):
@@ -452,4 +477,7 @@ class ImportXlsx(_ImportDialog):
         return "Excel (xlsx)"
 
     def specific_frame(self):
-        pass
+        return XlsxOptions(self.get_init_tabname(), self.fn, self)
+
+    def load_table(self, opt):
+        return import_tab.parse_xlsx_file(self.fn, opt)

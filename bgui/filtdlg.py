@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import copy
 from PyQt5 import QtWidgets, QtCore
+from bgui import qtcommon
 from bdata import filt
 from bdata import bcol
 
@@ -285,7 +286,7 @@ class EditFilterDialog(QtWidgets.QDialog):
             self._assemble_return()
             super().accept()
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Input error", str(e))
+            qtcommon.message_exc(self, "Input error", e=e)
 
     def reject(self):
         super().reject()

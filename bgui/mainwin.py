@@ -1,5 +1,4 @@
 import functools
-import traceback
 from PyQt5 import QtWidgets, QtGui, QtCore
 from bdata import projroot
 from bdata import derived_tabs
@@ -7,6 +6,7 @@ from bgui import dlgs
 from bgui import tmodel
 from bgui import tview
 from bgui import docks
+from bgui import qtcommon
 from fileproc import export
 
 
@@ -369,7 +369,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.models.pop(i)
             self.wtab.removeTab(i)
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, 'Error', str(e))
+            qtcommon.message_exc(self, e=e)
 
     def _act_join_tables(self):
         from bgui import joindlg
@@ -416,9 +416,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._close_database()
             self._init_project(proj)
         except Exception as e:
-            print(traceback.format_exc())
-            m = "Failed to load database from {}:\n{}".format(fname, e)
-            QtWidgets.QMessageBox.critical(self, self.windowTitle(), m)
+            m = "Failed to load database from {}:\n".format(fname)
+            qtcommon.message_exc(self, "Load error", text=m, e=e)
 
     def _close_database(self):
         if self.proj:

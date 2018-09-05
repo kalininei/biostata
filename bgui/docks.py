@@ -453,7 +453,7 @@ class ColumnInfoModel(TwoLevelTreeModel):
     def __init__(self, dt):
         self.dt = dt
         self.newcolumns = collections.OrderedDict()
-        super().__init__(["Category", "Data"])
+        super().__init__(["Categorical", "Real"])
         self.setColumnCount(3)
 
     def _imp_this_from_external(self):

@@ -4,6 +4,7 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 import resource   # noqa
 from bdata import derived_tabs
 from bdata import bcol
+from bgui import qtcommon
 from bgui import coloring
 
 
@@ -157,7 +158,7 @@ class JoinTablesDialog(QtWidgets.QDialog):
             if self.check_input():
                 super().accept()
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, 'Invalid input', str(e))
+            qtcommon.message_exc(self, "Invalid input", e=e)
 
     def reject(self):
         super().reject()

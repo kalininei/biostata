@@ -66,9 +66,9 @@ class TabModel(QtCore.QAbstractTableModel):
                 if cr == 'I':
                     return "Id"
                 elif cr == 'C':
-                    return "Category"
+                    return "Categorical"
                 else:
-                    return self.dt.table_name()
+                    return "Real"
             elif rr == 'C2':
                 return self.dt.column_caption(index.column())
             else:

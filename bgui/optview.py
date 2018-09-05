@@ -16,6 +16,7 @@ Defined public classes:
 import collections
 import functools
 from PyQt5 import QtGui, QtCore, QtWidgets
+from bgui import qtcommon
 
 _tmp = None
 
@@ -67,7 +68,7 @@ class OptionWidgetConfigure(object):
         return wdg
 
 
-class OptionsHolderInterface(object):
+class OptionsHolderInterface:
     "Abstract dialog for option set"
     class _OData(object):
         pass
@@ -105,7 +106,7 @@ class OptionsHolderInterface(object):
             self.check_input()
             return True
         except Exception as e:
-            QtWidgets.QMessageBox.warning(self, "Invalid input", str(e))
+            qtcommon.message_exc(self, "Invalid input", e=e)
             return False
 
     # functions for overriding

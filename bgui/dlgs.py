@@ -152,7 +152,7 @@ class OkCancelDialog(QtWidgets.QDialog):
         super().resizeEvent(e)
 
 
-class SimpleAbstractDialog(OkCancelDialog, optview.OptionsHolderInterface):
+class SimpleAbstractDialog(optview.OptionsHolderInterface, OkCancelDialog):
     def __init__(self, title, parent=None):
         OkCancelDialog.__init__(self, title, parent)
         optview.OptionsHolderInterface.__init__(self)

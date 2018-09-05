@@ -1,5 +1,6 @@
-from bgui import dlgs
 from PyQt5 import QtWidgets, QtCore
+from bgui import dlgs
+from bgui import qtcommon
 
 
 class EditDictModel(QtCore.QAbstractTableModel):
@@ -184,7 +185,7 @@ class CreateNewDictionary(dlgs.OkCancelDialog):
                                                   keys, vals, comms)
             return super().accept()
         except Exception as e:
-            QtWidgets.QMessageBox.critical(self, "Invalid input", str(e))
+            qtcommon.message_exc(self, "Invalid input", e=e)
 
     def ret_value(self):
         return self._ret_value
