@@ -4,6 +4,9 @@ import resources   # noqa
 
 class ViewConfig(object):
     _conf = None
+    BOOL_AS_ICONS = 0
+    BOOL_AS_CODES = 1
+    BOOL_AS_YESNO = 2
 
     @classmethod
     def get(cls):
@@ -14,6 +17,7 @@ class ViewConfig(object):
     def __init__(self):
         self._basic_font_size = 10
         self._margin = 3
+        self._show_bool = ViewConfig.BOOL_AS_ICONS
 
         self.caption_color = QtGui.QColor(230, 250, 250)
         self.bg_color = QtGui.QColor(255, 255, 255)
@@ -73,8 +77,17 @@ class ViewConfig(object):
                     self.subdata_font_height(),
                     mode=QtCore.Qt.SmoothTransformation)
 
-    @staticmethod
-    def ftos(v):
+    @classmethod
+    def set_real_precision(cls, prec):
+        f = '.{}g'.format(prec)
+
+        def newfts(cls, v):
+            return format(v, f)
+
+        cls.ftos = newfts
+
+    @classmethod
+    def ftos(cls, v):
         return format(v, '.6g')
 
     def data_font(self):
@@ -105,25 +118,45 @@ class ViewConfig(object):
         return self._margin
 
     def true_icon(self, w_border=False):
-        if w_border:
-            return self._boolpics_data[3]
+        if self._show_bool == self.BOOL_AS_ICONS:
+            if w_border:
+                return self._boolpics_data[3]
+            else:
+                return self._boolpics_data[1]
+        elif self._show_bool == self.BOOL_AS_YESNO:
+            return "Yes"
         else:
-            return self._boolpics_data[1]
+            return None
 
     def false_icon(self, w_border=False):
-        if w_border:
-            return self._boolpics_data[2]
+        if self._show_bool == self.BOOL_AS_ICONS:
+            if w_border:
+                return self._boolpics_data[2]
+            else:
+                return self._boolpics_data[0]
+        elif self._show_bool == self.BOOL_AS_YESNO:
+            return "No"
         else:
-            return self._boolpics_data[0]
+            return None
 
     def true_subicon(self, w_border=False):
-        if w_border:
-            return self._boolpics_subdata[3]
+        if self._show_bool == self.BOOL_AS_ICONS:
+            if w_border:
+                return self._boolpics_subdata[3]
+            else:
+                return self._boolpics_subdata[1]
+        elif self._show_bool == self.BOOL_AS_YESNO:
+            return "Yes"
         else:
-            return self._boolpics_subdata[1]
+            return None
 
     def false_subicon(self, w_border=False):
-        if w_border:
-            return self._boolpics_subdata[2]
+        if self._show_bool == self.BOOL_AS_ICONS:
+            if w_border:
+                return self._boolpics_subdata[2]
+            else:
+                return self._boolpics_subdata[0]
+        elif self._show_bool == self.BOOL_AS_YESNO:
+            return "No"
         else:
-            return self._boolpics_subdata[0]
+            return None

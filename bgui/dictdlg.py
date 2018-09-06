@@ -101,12 +101,12 @@ class EditDictView(QtWidgets.QTableView):
         self.verticalHeader().setVisible(False)
 
 
+@qtcommon.hold_position
 class CreateNewDictionary(dlgs.OkCancelDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, proj, parent, tp=None,
                  uvals=None, can_change_type=True):
         super().__init__("Create new dictionary", parent, "grid")
+        resize(400, 300)
         self._ret_value = None
         self.proj = proj
         if len(uvals) == 0:

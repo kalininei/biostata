@@ -2,7 +2,7 @@
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
-from bgui import optview, optwdg, coloring
+from bgui import optview, optwdg, coloring, qtcommon
 from bdata import filt
 from bdata import derived_tabs
 from bdata import bcol
@@ -123,7 +123,6 @@ class ProgressProcedureDlg(QtWidgets.QDialog):
 class OkCancelDialog(QtWidgets.QDialog):
     def __init__(self, title, parent, layout_type="vertical"):
         super().__init__(parent)
-        self.resize(self.__class__._sz_x, self.__class__._sz_y)
         self.setWindowTitle(title)
         self.setLayout(QtWidgets.QVBoxLayout())
         self.buttonbox = QtWidgets.QDialogButtonBox(
@@ -146,11 +145,6 @@ class OkCancelDialog(QtWidgets.QDialog):
         self.layout().addWidget(self.mainframe)
         self.layout().addWidget(self.buttonbox)
 
-    def resizeEvent(self, e):   # noqa
-        self.__class__._sz_x = e.size().width()
-        self.__class__._sz_y = e.size().height()
-        super().resizeEvent(e)
-
 
 class SimpleAbstractDialog(optview.OptionsHolderInterface, OkCancelDialog):
     def __init__(self, title, parent=None):
@@ -158,23 +152,18 @@ class SimpleAbstractDialog(optview.OptionsHolderInterface, OkCancelDialog):
         optview.OptionsHolderInterface.__init__(self)
         self.mainframe.layout().addWidget(self.oview)
 
-    def resizeEvent(self, e):   # noqa
-        self.__class__._sz_x = e.size().width()
-        self.__class__._sz_y = e.size().height()
-        super().resizeEvent(e)
-
     def accept(self):
         "check errors and invoke parent accept"
         if self.confirm_input():
             QtWidgets.QDialog.accept(self)
 
 
+@qtcommon.hold_position
 class GroupRowsDlg(SimpleAbstractDialog):
-    _sz_x, _sz_y = 300, 400
-
     def __init__(self, lst_categories, parent=None):
         self.cats = lst_categories
         super().__init__("Group Rows", parent)
+        self.resize(300, 400)
 
     def _odata_init(self):
         e = collections.OrderedDict([(
@@ -212,12 +201,12 @@ class GroupRowsDlg(SimpleAbstractDialog):
         return [od.algo, ret]
 
 
+@qtcommon.hold_position
 class CollapseColumnsDlg(SimpleAbstractDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, lst_categories, parent=None):
         self.cats = lst_categories
         super().__init__("Collapse columns", parent)
+        self.resize(400, 300)
         self.odata().cats = lst_categories
 
     def _default_odata(self, obj):
@@ -249,11 +238,11 @@ class CollapseColumnsDlg(SimpleAbstractDialog):
         return [od.do_hide, od.delim, ret]
 
 
+@qtcommon.hold_position
 class ExportTablesDlg(SimpleAbstractDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, parent=None):
         super().__init__("Export table", parent)
+        self.resize(400, 300)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -319,9 +308,8 @@ class ExportTablesDlg(SimpleAbstractDialog):
             raise Exception("Invalid filename")
 
 
+@qtcommon.hold_position
 class RowColoringDlg(SimpleAbstractDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, clist, parent=None):
         # column list
         self.clist = clist
@@ -338,6 +326,7 @@ class RowColoringDlg(SimpleAbstractDialog):
             ("yellow", (255, 255, 0)), ("aqua", (0, 255, 255))])
         # init
         super().__init__("Coloring", parent)
+        self.resize(400, 300)
         self._sync_schemes()
 
     def _default_odata(self, obj):
@@ -400,13 +389,13 @@ class RowColoringDlg(SimpleAbstractDialog):
             v.set_default_color(self.defcolors[self.odata().none_color])
 
 
+@qtcommon.hold_position
 class NewBoolColumn(SimpleAbstractDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, dt, parent=None):
         # data
         self.dt = dt
         super().__init__("New boolean column", parent)
+        self.resize(400, 300)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -493,14 +482,14 @@ class NewBoolColumn(SimpleAbstractDialog):
                 sql_fun)
 
 
+@qtcommon.hold_position
 class NewTableFromVisible(SimpleAbstractDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, dt, parent=None):
         # data
         self.dt = dt
         super().__init__("New table from {}".format(self.dt.table_name),
                          parent)
+        self.resize(400, 300)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -547,11 +536,11 @@ class NewTableFromVisible(SimpleAbstractDialog):
         return newdt
 
 
+@qtcommon.hold_position
 class ImportTablesDlg(SimpleAbstractDialog):
-    _sz_x, _sz_y = 400, 300
-
     def __init__(self, parent=None):
         super().__init__("Import table", parent)
+        self.resize(400, 300)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -582,3 +571,57 @@ class ImportTablesDlg(SimpleAbstractDialog):
         my_file = Path(self.odata().filename)
         if not my_file.is_file():
             raise Exception("Invalid file name")
+
+
+@qtcommon.hold_position
+class OptionsDlg(SimpleAbstractDialog):
+    def __init__(self, opts, parent=None):
+        self.opts = opts
+        super().__init__("Configuration", parent)
+        self.resize(300, 400)
+
+    def _default_odata(self, obj):
+        obj.basic_font_size = 10
+        obj.show_bool_as = 'icons'
+        obj.real_numbers_prec = 6
+        obj.external_xlsx_editor = ''
+        obj.external_txt_editor = ''
+        obj.open_recent_db_on_start = True
+
+    def _odata_init(self):
+        o = self.opts
+        self.set_odata_entry('basic_font_size', o.basic_font_size)
+        self.set_odata_entry('show_bool_as', o.show_bool_as)
+        self.set_odata_entry('real_numbers_prec', o.real_numbers_prec)
+        self.set_odata_entry('external_xlsx_editor', o.external_xlsx_editor)
+        self.set_odata_entry('external_txt_editor', o.external_txt_editor)
+        self.set_odata_entry('open_recent_db_on_start',
+                             bool(o.open_recent_db_on_start))
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Main table", "Font size", optwdg.BoundedIntOptionEntry(
+                self, "basic_font_size", minv=3)),
+            ("Main table", "Boolean values as", optwdg.SingleChoiceOptionEntry(
+                self, "show_bool_as", ['icons', 'codes', 'Yes/No'])),
+            ("Main table", "Real number digits", optwdg.BoundedIntOptionEntry(
+                self, "real_numbers_prec", minv=0)),
+            ("External programs", "Xlsx editor", optwdg.OpenFileOptionEntry(
+                self, "external_xlsx_editor", [])),
+            ("External programs", "Text editor", optwdg.OpenFileOptionEntry(
+                self, "external_txt_editor", [])),
+            ("Behaviour", "Open recent db on start", optwdg.BoolOptionEntry(
+                self, "open_recent_db_on_start")),
+            ])
+
+    def ret_value(self):
+        od = copy.deepcopy(self.odata())
+        need_view_update = not all([self.opts.__dict__[a] == od.__dict__[a]
+                                    for a in ['basic_font_size',
+                                              'show_bool_as',
+                                              'real_numbers_prec']])
+        for a in ['basic_font_size', 'show_bool_as', 'real_numbers_prec',
+                  'external_xlsx_editor', 'external_txt_editor']:
+            self.opts.__dict__[a] = od.__dict__[a]
+        self.opts.open_recent_db_on_start = int(od.open_recent_db_on_start)
+        return need_view_update

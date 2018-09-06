@@ -413,11 +413,11 @@ class PlainTextOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
         return copy.deepcopy(self.odata())
 
 
+@qtcommon.hold_position
 class ImportPlainText(_ImportDialog):
-    _sz_x, _sz_y = 400, 500
-
     def __init__(self, proj, fname, parent):
         super().__init__(proj, fname, parent)
+        self.resize(400, 500)
 
     def get_format(self):
         return "plain text"
@@ -467,11 +467,11 @@ class XlsxOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
         return copy.deepcopy(self.odata())
 
 
+@qtcommon.hold_position
 class ImportXlsx(_ImportDialog):
-    _sz_x, _sz_y = 400, 500
-
     def __init__(self, proj, fname, parent):
         super().__init__(proj, fname, parent)
+        self.resize(400, 500)
 
     def get_format(self):
         return "Excel (xlsx)"

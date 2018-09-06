@@ -95,11 +95,11 @@ class FilterRow:
         self.cb[5].setCurrentText(e.paren2)
 
 
+@qtcommon.hold_position
 class EditFilterDialog(QtWidgets.QDialog):
-    _sz_x, _sz_y = 300, 400
-
     def __init__(self, filt, datatab, used_names, parent):
         super().__init__(parent)
+        self.resize(300, 400)
         self.__deactivate_update_filter_entries = False
         self.__last_frow = -1
         if used_names is None:

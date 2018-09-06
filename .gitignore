@@ -59,3 +59,6 @@ target/
 *.swo
 dbg/a.py
 dbg/b.py
+
+# biostata options
+.biostatarc

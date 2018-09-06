@@ -138,14 +138,12 @@ class TabModel(QtCore.QAbstractTableModel):
         elif role == self.SubDecorationRole:
             ret = [None]*self.dt.n_subrows(r-2)
             if r > 1 and self.dt.visible_columns[c].dt_type == 'BOOL':
-                for i, a in enumerate(index.data(self.RawSubValuesRole)):
-                    if a is not None:
-                        if a == 1:
-                            ret[i] = self.conf.true_subicon(
-                                    self.use_coloring())
-                        elif a == 0:
-                            ret[i] = self.conf.false_subicon(
-                                    self.use_coloring())
+                v = index.data(self.RawSubValuesRole)
+                for i, a in enumerate(v):
+                    if a == 1:
+                        ret[i] = self.conf.true_subicon(self.use_coloring())
+                    elif a == 0:
+                        ret[i] = self.conf.false_subicon(self.use_coloring())
             return ret
         else:
             if role not in [3, 4]:
@@ -163,6 +161,10 @@ class TabModel(QtCore.QAbstractTableModel):
         if not isinstance(self._unfolded_groups, bool):
             self._unfolded_groups = False
         self.endResetModel()
+        self.repr_updated.emit(self, -1)
+
+    def view_update(self):
+        self.modelReset.emit()
         self.repr_updated.emit(self, -1)
 
     # ------------------------ information procedures
@@ -271,8 +273,7 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def unfold_all_rows(self, do_unfold):
         self._unfolded_groups = do_unfold
-        self.modelReset.emit()
-        self.repr_updated.emit(self, -1)
+        self.view_update()
 
     def set_sorting(self, colname, is_asc):
         self.dt.ordering = (colname, 'ASC' if is_asc else 'DESC')
@@ -325,13 +326,12 @@ class TabModel(QtCore.QAbstractTableModel):
     def zoom_font(self, delta):
         self.conf._basic_font_size += delta
         self.conf.refresh()
-        self.modelReset.emit()
-        self.repr_updated.emit(self, -1)
+        self.view_update()
 
     def switch_coloring_mode(self):
         self.coloring.use = not self.coloring.use
-        self.modelReset.emit()
-        self.repr_updated.emit(self, -1)
+        self.conf.refresh()
+        self.view_update()
 
     def set_coloring(self, column=None, scheme=None, is_local=None):
         if scheme is not None:

@@ -8,6 +8,9 @@ from bgui import filtdlg
 class DockWidget(QtWidgets.QDockWidget):
     def __init__(self, parent, name, menu):
         super().__init__(name, parent)
+        self.setObjectName(name)
+        self.tmodel = None
+        self.dt = None
         parent.addDockWidget(QtCore.Qt.RightDockWidgetArea, self)
         self.setVisible(False)
         parent.active_model_changed.connect(self.active_model_changed)
@@ -23,7 +26,11 @@ class DockWidget(QtWidgets.QDockWidget):
         pass
 
     def active_model_changed(self):
-        pass
+        self.tmodel = self.parent().active_model
+        if self.tmodel is not None:
+            self.dt = self.tmodel.dt
+        else:
+            self.dt = None
 
     def repr_changed(self):
         if self.isVisible():
@@ -92,20 +99,25 @@ class ColorDockWidget(DockWidget):
         buttons[4].setToolTip("Revert color scheme")
         buttons[4].clicked.connect(self._act_revert_scheme)
 
+    def active_model_changed(self):
+        super().active_model_changed()
+        if self.tmodel is None:
+            self.refill()
+
     def refill(self):
-        if self.parent().active_model is None:
+        self.scene = QtWidgets.QGraphicsScene()
+        if self.tmodel is None:
             for b in self.btn:
                 b.setEnabled(False)
-        for b in self.btn:
-            b.setEnabled(True)
-        self.btn[0].setChecked(self.parent().active_model.use_coloring())
-        pm = self.parent().active_model.coloring.draw_legend(
-                    self.frame.size())
-        self.scene = QtWidgets.QGraphicsScene()
+        else:
+            for b in self.btn:
+                b.setEnabled(True)
+            self.btn[0].setChecked(self.tmodel.use_coloring())
+            pm = self.tmodel.coloring.draw_legend(self.frame.size())
+            item = QtWidgets.QGraphicsPixmapItem(pm)
+            self.scene.addItem(item)
+            item.setPos(0, 0)
         self.frame.setScene(self.scene)
-        item = QtWidgets.QGraphicsPixmapItem(pm)
-        self.scene.addItem(item)
-        item.setPos(0, 0)
         self.frame.show()
 
     def resizeEvent(self, e):   # noqa
@@ -117,21 +129,23 @@ class ColorDockWidget(DockWidget):
         super().showEvent(e)
 
     def _act_actbutton(self):
-        if self.parent().active_model:
-            self.parent().active_model.switch_coloring_mode()
+        if self.tmodel:
+            self.tmodel.switch_coloring_mode()
             self.btn[0].setChecked(not self.btn[0].isChecked())
 
     def _act_change_scheme(self, step):
-        sc = self.parent().active_model.get_color_scheme()
-        order = sc.__class__.order
-        newsc = coloring.ColorScheme.scheme_by_order(order+step)()
-        newsc.copy_settings_from(sc)
-        self.parent().active_model.set_coloring(None, newsc, None)
+        if self.tmodel:
+            sc = self.tmodel.get_color_scheme()
+            order = sc.__class__.order
+            newsc = coloring.ColorScheme.scheme_by_order(order+step)()
+            newsc.copy_settings_from(sc)
+            self.tmodel.set_coloring(None, newsc, None)
 
     def _act_revert_scheme(self, step):
-        sc = self.parent().active_model.get_color_scheme()
-        sc.set_reversed()
-        self.parent().active_model.set_coloring(None, sc, None)
+        if self.tmodel:
+            sc = self.tmodel.get_color_scheme()
+            sc.set_reversed()
+            self.tmodel.set_coloring(None, sc, None)
 
 
 # ========================= Status Window
@@ -188,6 +202,8 @@ class TwoLevelTreeView(QtWidgets.QTreeView):
         return False
 
     def _context_menu(self, pnt):
+        if self.model() is None:
+            return
         menu = QtWidgets.QMenu(self)
         srows = self.selectionModel().selectedRows()
         if len(srows) > 1:
@@ -442,15 +458,16 @@ class TwoLevelTreeDockWidget(DockWidget):
         self.tab.setPalette(p)
 
     def refill(self):
-        # refill model
-        self.tab.model().this_from_external()
-        # disable apply button
-        self._wait_for_apply(False)
+        if self.tmodel:
+            # refill model
+            self.tab.model().this_from_external()
+            # disable apply button
+            self._wait_for_apply(False)
 
 
 # ============================= ColumnInfoDock
 class ColumnInfoModel(TwoLevelTreeModel):
-    def __init__(self, dt):
+    def __init__(self, dt=None):
         self.dt = dt
         self.newcolumns = collections.OrderedDict()
         super().__init__(["Categorical", "Real"])
@@ -508,20 +525,24 @@ class ColumnInfoDockWidget(TwoLevelTreeDockWidget):
         self.tab.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
 
     def active_model_changed(self):
-        model = ColumnInfoModel(self.parent().active_model.dt)
-        self.tab.setModel(model)
-        model.changed_by_user.connect(self.internal_change)
-        self.tab.header().setStretchLastSection(False)
-        self.tab.header().setSectionResizeMode(
-                 1, QtWidgets.QHeaderView.Stretch)
-        self.tab.resizeColumnToContents(0)
-        self.tab.resizeColumnToContents(1)
-        self.tab.setColumnWidth(2, 20)
+        super().active_model_changed()
+        if self.dt is not None:
+            model = ColumnInfoModel(self.dt)
+            model.changed_by_user.connect(self.internal_change)
+            self.tab.setModel(model)
+            self.tab.header().setStretchLastSection(False)
+            self.tab.header().setSectionResizeMode(
+                     1, QtWidgets.QHeaderView.Stretch)
+            self.tab.resizeColumnToContents(0)
+            self.tab.resizeColumnToContents(1)
+            self.tab.setColumnWidth(2, 20)
+        else:
+            self.tab.setModel(None)
 
 
 # ============================= Filters Dock
 class FiltersInfoModel(TwoLevelTreeModel):
-    def __init__(self, dt):
+    def __init__(self, dt=None):
         self.dt = dt
         super().__init__(["Named", "Anonymous"])
         self.setColumnCount(3)
@@ -585,14 +606,18 @@ class FiltersDockWidget(TwoLevelTreeDockWidget):
         self.tab.settings_button_clicked.connect(self._filter_settings)
 
     def active_model_changed(self):
-        model = FiltersInfoModel(self.parent().active_model.dt)
-        self.tab.setModel(model)
-        model.changed_by_user.connect(self.internal_change)
-        self.tab.header().setStretchLastSection(False)
-        self.tab.header().setSectionResizeMode(
-                0, QtWidgets.QHeaderView.Stretch)
-        self.tab.setColumnWidth(1, 20)
-        self.tab.setColumnWidth(2, 20)
+        super().active_model_changed()
+        if self.dt is not None:
+            model = FiltersInfoModel(self.dt)
+            self.tab.setModel(model)
+            model.changed_by_user.connect(self.internal_change)
+            self.tab.header().setStretchLastSection(False)
+            self.tab.header().setSectionResizeMode(
+                    0, QtWidgets.QHeaderView.Stretch)
+            self.tab.setColumnWidth(1, 20)
+            self.tab.setColumnWidth(2, 20)
+        else:
+            self.tab.setModel(None)
 
     def _used_named_filters(self):
         model = self.tab.model()

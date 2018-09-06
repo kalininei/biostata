@@ -73,16 +73,20 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         # group count, does this group is unfolded, number of unique
         n_tot, is_unfolded, n_uni = index.data(
                 tmodel.TabModel.GroupedStatusRole)
-        # an icon instead of data
-        use_icon = index.data(QtCore.Qt.DecorationRole)
         # main data to display
         dt0 = None
+        # an icon instead of data
+        use_icon = index.data(QtCore.Qt.DecorationRole)
         # if we do not need an icon
         if use_icon is None:
             dt0 = index.data(QtCore.Qt.DisplayRole)
             if dt0 is None and n_uni > 1:
                 # if we do have a non-unique category group
                 dt0 = bsqlproc.group_repr(n_uni)
+        # use string instead of icon for bool data
+        if isinstance(use_icon, str):
+            dt0 = use_icon
+            use_icon = None
         # add main value data
         w = self._label(dt0, wdg)
         w.setFont(index.data(QtCore.Qt.FontRole))
@@ -105,6 +109,9 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
                 # if non-unique group
                 dt1 = index.data(tmodel.TabModel.SubDisplayRole)
                 subicons = index.data(tmodel.TabModel.SubDecorationRole)
+                if any([isinstance(s, str) for s in subicons]):
+                    dt1 = subicons
+                    subicons = [None] * n_tot
             # request font for subdata
             fnt = index.data(tmodel.TabModel.SubFontRole)
             # construct sublabels

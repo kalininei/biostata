@@ -8,12 +8,11 @@ from bgui import qtcommon
 from bgui import coloring
 
 
+@qtcommon.hold_position
 class JoinTablesDialog(QtWidgets.QDialog):
-    _sz_x, _sz_y = 700, 500
-
     def __init__(self, dt, parent=None):
         super().__init__(parent)
-        self.resize(self._sz_x, self._sz_y)
+        self.resize(700, 500)
         self.setWindowTitle("Join tables dialog")
         self.dt = dt
         # widget = mainframe/buttonbox
@@ -665,12 +664,11 @@ class EditMappingsTable(QtWidgets.QTableView):
             self.setSpan(s[0], 0, s[1]-s[0]+1, 1)
 
 
+@qtcommon.hold_position
 class EditMappingsDialog(QtWidgets.QDialog):
-    _sz_x, _sz_y = 300, 400
-
     def __init__(self, columns, captions, mappings, parent):
         super().__init__(parent)
-        self.resize(self._sz_x, self._sz_y)
+        self.resize(300, 400)
         self.setWindowTitle("Edit column mappings")
         # fill table widget
         self.columns = columns

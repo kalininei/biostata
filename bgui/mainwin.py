@@ -7,6 +7,7 @@ from bgui import tmodel
 from bgui import tview
 from bgui import docks
 from bgui import qtcommon
+from prog import basic
 from fileproc import export
 
 
@@ -15,13 +16,20 @@ class MainWindow(QtWidgets.QMainWindow):
     active_model_changed = QtCore.pyqtSignal()
     active_model_repr_changed = QtCore.pyqtSignal()
 
-    def __init__(self, proj=None):
+    def __init__(self, opts):
         super().__init__()
+        QtWidgets.qApp.aboutToQuit.connect(self._on_quit)
         self.setWindowTitle("BioStat Analyser")
+        # =========== init position (will be changed by opts data)
+        self.resize(800, 600)
+        self.setGeometry(QtWidgets.QStyle.alignedRect(
+            QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter,
+            self.size(), QtWidgets.qApp.desktop().availableGeometry()))
         # =========== data
         self.proj = None
         self.models = []
         self.active_model = None
+        self.reload_options(opts)
 
         # =========== central widget
         self.wtab = QtWidgets.QTabWidget(self)
@@ -39,37 +47,35 @@ class MainWindow(QtWidgets.QMainWindow):
         open_action = QtWidgets.QAction("Open database...", self)
         open_action.triggered.connect(self._act_open_database)
         self.filemenu.addAction(open_action)
-        # Exports
+        # open recent
+        self.open_recentmenu = QtWidgets.QMenu('Open recent database')
+        self.filemenu.addMenu(self.open_recentmenu)
+        # close
+        self.close_db_action = QtWidgets.QAction("Close database", self)
+        self.close_db_action.triggered.connect(self._close_database)
+        self.filemenu.addAction(self.close_db_action)
+
+        # Export, Import
         self.filemenu.addSeparator()
         self.export_action = QtWidgets.QAction("Export tables...", self)
         self.export_action.triggered.connect(self._act_export)
         self.filemenu.addAction(self.export_action)
+
+        self.import_table = QtWidgets.QAction("Import table...", self)
+        self.import_table.triggered.connect(self._act_import_table)
+        self.filemenu.addAction(self.import_table)
+
+        # options
+        self.filemenu.addSeparator()
+        self.opts_action = QtWidgets.QAction('Configuration', self)
+        self.opts_action.triggered.connect(self._act_opts)
+        self.filemenu.addAction(self.opts_action)
         # Exit
         self.filemenu.addSeparator()
         exit_action = QtWidgets.QAction('Exit', self)
         exit_action.setShortcut(QtGui.QKeySequence.Close)
         exit_action.triggered.connect(QtWidgets.qApp.quit)
         self.filemenu.addAction(exit_action)
-
-        # --- Project
-        self.projectmenu = menubar.addMenu('Project')
-        self.projectmenu.aboutToShow.connect(self._projectmenu_enabled)
-
-        # import table
-        import_table = QtWidgets.QAction("Import table...", self)
-        import_table.triggered.connect(self._act_import_table)
-        self.projectmenu.addAction(import_table)
-
-        # -- Edit actions
-        self.projectmenu.addSeparator()
-        # tables and columns
-        tables_columns_info = QtWidgets.QAction("Tables && Columns...", self)
-        tables_columns_info.triggered.connect(self._act_tab_col)
-        self.projectmenu.addAction(tables_columns_info)
-        # dictionaries
-        dictionaries_info = QtWidgets.QAction("Dictionaries...", self)
-        dictionaries_info.triggered.connect(self._act_dictinfo)
-        self.projectmenu.addAction(dictionaries_info)
 
         # --- View
         self.viewmenu = menubar.addMenu('View')
@@ -163,7 +169,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tablesmenu = menubar.addMenu('Tables')
         self.tablesmenu.aboutToShow.connect(self._tablesmenu_enabled)
 
+        # tables and columns info
+        tables_columns_info = QtWidgets.QAction("Info && Edit...", self)
+        tables_columns_info.triggered.connect(self._act_tab_col)
+        self.tablesmenu.addAction(tables_columns_info)
+        # dictionaries
+        dictionaries_info = QtWidgets.QAction("Dictionaries...", self)
+        dictionaries_info.triggered.connect(self._act_dictinfo)
+        self.tablesmenu.addAction(dictionaries_info)
+
         # new table
+        self.tablesmenu.addSeparator()
         table_from_visible = QtWidgets.QAction(
                 'New table from visible...', self)
         table_from_visible.triggered.connect(self._act_table_from_visible)
@@ -191,7 +207,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.aboutmenu = menubar.addMenu('About')
 
         # =============== Load data
-        self._load_database(proj)
+        filename = self.opts.default_project_filename()
+        if filename is not None:
+            self._load_database(filename)
+
+        # ========= restore
+        try:
+            state, geom = self.opts.mainwindow_state()
+            self.restoreState(state)
+            self.restoreGeometry(geom)
+        except Exception as e:
+            basic.ignore_exception(e)
 
     # =============== Actions
     def _tab_changed(self, index):
@@ -202,13 +228,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _filemenu_enabled(self):
         self.export_action.setEnabled(self.active_model is not None)
-
-    def _projectmenu_enabled(self):
-        enabled = self.active_model is not None
-        for m in self.projectmenu.actions():
-            m.setEnabled(enabled)
-        if not enabled:
-            return
+        self.import_table.setEnabled(self.proj is not None)
+        self.close_db_action.setEnabled(self.proj is not None)
+        # open recent
+        self.open_recentmenu.clear()
+        self.open_recentmenu.setEnabled(len(self.opts.recent_db) > 0)
+        for f in self.opts.recent_db:
+            act = QtWidgets.QAction(f, self)
+            act.triggered.connect(functools.partial(self._load_database, f))
+            self.open_recentmenu.addAction(act)
+        act = QtWidgets.QAction('Clear', self)
+        act.triggered.connect(self.opts.recent_db.clear)
+        self.open_recentmenu.addSeparator()
+        self.open_recentmenu.addAction(act)
 
     def _rowsmenu_enabled(self):
         enabled = self.active_model is not None
@@ -351,6 +383,8 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _act_new_enum_column(self):
         # TODO
+        st = self.saveGeometry()
+        print(st)
         pass
 
     def _act_table_from_visible(self):
@@ -407,22 +441,39 @@ class MainWindow(QtWidgets.QMainWindow):
     def _act_dictinfo(self):
         pass
 
+    def _on_quit(self):
+        self.opts.set_mainwindow_state(self.saveState(), self.saveGeometry())
+        self.opts.save()
+
+    def _act_opts(self):
+        dialog = dlgs.OptionsDlg(self.opts, self)
+        if dialog.exec_():
+            dialog.ret_value()
+            self.opts.save()
+            self.reload_options(self.opts)
+
     # ============== Procedures
     def _load_database(self, fname):
+        import pathlib
         if not fname:
             return
         try:
-            proj = projroot.ProjectDB(fname)
+            if not pathlib.Path(fname).is_file():
+                raise Exception("File doesn't exist.")
             self._close_database()
+            proj = projroot.ProjectDB(fname)
             self._init_project(proj)
+            self.opts.add_db_path(fname)
+            self.setWindowTitle(fname + " - BioStat Analyser")
         except Exception as e:
-            m = "Failed to load database from {}:\n".format(fname)
+            m = 'Failed to load database from "{}". '.format(fname)
             qtcommon.message_exc(self, "Load error", text=m, e=e)
 
     def _close_database(self):
         if self.proj:
             self.proj.close_connection()
         self.proj = None
+        self.active_model = None
         self.models = []
         self.wtab.clear()
         self.tabframes = []
@@ -462,7 +513,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.active_model is not None:
             self.active_model.repr_updated.disconnect(
                     self._forward_repr_changed)
-        if i is not None:
+        if i is not None and i < len(self.models):
             self.active_model = self.models[i]
             self.active_model_changed.emit()
             self.active_model.repr_updated.connect(
@@ -471,3 +522,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.active_model = None
             self.active_model_changed.emit()
+
+    def reload_options(self, opts):
+        from bgui import cfg
+
+        self.opts = opts
+        cfg.ViewConfig.set_real_precision(opts.real_numbers_prec)
+        cfg.ViewConfig.get()._basic_font_size = opts.basic_font_size
+        cfg.ViewConfig.get()._show_bool =\
+            {'icons': cfg.ViewConfig.BOOL_AS_ICONS,
+             'codes': cfg.ViewConfig.BOOL_AS_CODES,
+             'Yes/No': cfg.ViewConfig.BOOL_AS_YESNO}[opts.show_bool_as]
+        cfg.ViewConfig.get().refresh()
+        if self.active_model is not None:
+            self.active_model.view_update()
