@@ -1,6 +1,9 @@
 import collections
+import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape, unescape
 from bdata import filt
 from bdata import bcol
+from prog import basic
 
 
 class DataTable(object):
@@ -8,12 +11,20 @@ class DataTable(object):
         modification options of a given table
         with the results of these modification (self.tab)
     """
-    def __init__(self, name, proj):
+    def __init__(self, name, proj,
+                 init_columns, fill_ttab, isorig):
+        """
+        init_columns:def(DataTable) - delegate for self.columns initialization
+        fill_ttab:def(DataTable) - delegate that fills temporary table
+                                   self.ttab_name
+        isorig:bool - do we have table named self.name in the database
+        """
         self.proj = proj
+        self.comment = None
+        self._isorig = isorig
+        self.need_rewrite = not isorig
         # =========== data declaration
         # sql data
-        self.connection = proj.connection
-        self.cursor = self.connection.cursor()
         self.name = name
         # sql data table name: containes tabname data and
         # additional rows representing status of each entry
@@ -44,16 +55,13 @@ class DataTable(object):
         self.tab = ViewedData(self)
 
         # data initialization
-        self._init_columns()  # fills self.columns, self.visible columns
-        self._assemble_ttab()     # create aux sql table for red status info
+        init_columns(self)   # fills self.columns, self.visible columns
+        self._create_ttab()  # create temporary sql table
+        fill_ttab(self)      # ... and fills it
 
-    def destruct(self):
-        qr = 'DROP TABLE "{}"'.format(self.ttab_name)
-        self.query(qr)
-
-    def _assemble_ttab(self):
-        self._create_ttab()
-        self._fill_ttab()
+        # reorders columns (categorical->real),
+        # fills all columns, visible columns
+        self._complete_columns_lists()
 
     def _create_ttab(self):
         collist = []
@@ -66,7 +74,8 @@ class DataTable(object):
             collist.append("{} INTEGER DEFAULT 0".format(
                 self.columns[c.name].status_column.sql_line(False)))
 
-        qr = """CREATE TEMPORARY TABLE "{0}" ({1})
+        self.query('DROP TABLE IF EXISTS "{}"'.format(self.ttab_name))
+        qr = """CREATE TABLE "{0}" ({1})
         """.format(self.ttab_name, ', '.join(collist))
         self.query(qr)
 
@@ -83,15 +92,57 @@ class DataTable(object):
         for c in self.all_columns:
             self.columns[c.name] = c
 
-    def _fill_ttab(self):
-        raise NotImplementedError
-
-    def _init_columns(self):
-        raise NotImplementedError
+    @staticmethod
+    def _fix_column_order(lst):
+        c1 = list(filter(lambda x: x.is_category(), lst))
+        c2 = list(filter(lambda x: not x.is_category(), lst))
+        lst.clear()
+        lst.extend(c1)
+        lst.extend(c2)
 
     def is_original(self):
-        return False
+        return self._isorig
 
+    # ================ database manipulations (called only from self.proj)
+    def destruct(self):
+        """ removes temporary tables only """
+        qr = 'DROP TABLE "{}"'.format(self.ttab_name)
+        self.query(qr)
+
+    def to_original(self):
+        """ creates a table named "self.name" and writes there all data from
+            temporary table
+        """
+        if self.is_original():
+            return
+        self._isorig = True
+        self.set_need_rewrite(True)
+
+    def set_need_rewrite(self, need):
+        """ Do we need to write this table to the original database
+            in the next commit event
+        """
+        self.need_rewrite = need
+
+    def write_to_db(self):
+        ' flushes current data to A database if needed '
+        if not self.is_original() or not self.need_rewrite:
+            return
+        self.query('DROP TABLE IF EXISTS A."{}"'.format(self.name))
+        colstring = [('id', 'INTEGER PRIMARY KEY AUTOINCREMENT')]
+        for c in filter(lambda x: x.is_original(), self.all_columns[1:]):
+            colstring.append((c.name, c.sql_data_type()))
+        colstring1 = ', '.join(['"{}" {}'.format(x[0], x[1])
+                               for x in colstring])
+        colstring2 = ', '.join(['"{}"'.format(x[0]) for x in colstring[1:]])
+        qr = 'CREATE TABLE A."{}" ({})'.format(self.name, colstring1)
+        self.query(qr)
+        qr = 'INSERT INTO A."{0}" ({1}) SELECT {1} from "{2}"'.format(
+            self.name, colstring2, self.ttab_name)
+        self.query(qr)
+        self.set_need_rewrite(False)
+
+    # ================== SQL query procedures
     def _output_columns_list(self, cols, status_adds=False, use_groups=None,
                              group_adds=False, auto_alias=""):
         if use_groups is None:
@@ -132,8 +183,8 @@ class DataTable(object):
             order = ['MIN(id) ASC']
             if self.ordering:
                 if not oc.is_category():
-                    a = oc.sql_group_fun
-                    order.insert(0, '{} {}'.format(a, self.ordering[1]))
+                    order.insert(0, '{} {}'.format(oc.sql_line(True),
+                                                   self.ordering[1]))
                 elif self.ordering[1] == 'ASC':
                     order.insert(0, 'MIN({}) ASC'.format(oc.sql_line()))
                 else:
@@ -168,7 +219,7 @@ class DataTable(object):
         if group is None:
             group = self.group_by
         # filtration
-        fltline = filt.Filter.compile_sql_line(filters)
+        fltline = filt.Filter.compile_sql_line(filters, self)
 
         # grouping
         grlist, order = self._grouping_ordering(group)
@@ -185,14 +236,20 @@ class DataTable(object):
             order)
         return qr
 
-    def query(self, qr):
-        print(qr)
-        self.cursor.execute(qr)
+    def query(self, qr, dt=None):
+        self.proj.sql.query(qr, dt)
+
+    def qresult(self):
+        return self.proj.sql.qresult()
+
+    def qresults(self):
+        return self.proj.sql.qresults()
 
     def update(self):
         self.query(self._compile_query())
-        self.tab.fill(self.cursor.fetchall())
+        self.tab.fill(self.qresults())
 
+    # ------------------------ Data modification procedures
     def merge_categories(self, categories, delim):
         """ Creates new column build of merged list of categories,
                places it after the last visible category column
@@ -215,7 +272,6 @@ class DataTable(object):
         self.visible_columns.insert(i, col)
         return col
 
-    # ------------------------ Data modification procedures
     def set_data_group_function(self, method=None):
         if method is not None:
             if method == 'amean':
@@ -346,6 +402,107 @@ class DataTable(object):
             self.set_filter_usage(f, True)
 
     # ------------------------ info and checks
+    def current_state_xml(self):
+        root = ET.Element('TableState')
+        # ---- columns
+        cur = ET.SubElement(root, "COLUMNS")
+        # all columns
+        ET.SubElement(cur, "ALL_COLUMNS").text =\
+            escape(str([x.name for x in self.all_columns]))
+        # visible columns
+        ET.SubElement(cur, "VISIBLE_COLUMNS").text =\
+            escape(str([x.name for x in self.visible_columns]))
+        # ----- filters
+        cur = ET.SubElement(root, "FILTERS")
+        # anonymous filters
+        for i, f in enumerate(self.all_anon_filters):
+            n = ET.SubElement(cur, "FILTER")
+            f.to_xml(n, "_anon{}".format(i+1))
+        # used filter
+        uf = []
+        for f in self.used_filters:
+            nm = f.name
+            if nm is None:
+                i = self.all_anon_filters.index(f)
+                nm = "_anon{}".format(i+1)
+            uf.append(nm)
+        ET.SubElement(cur, "USED_FILTERS").text = escape(str(uf))
+        # ----- ordering
+        ET.SubElement(root, "ORDER_BY").text = escape(str(self.ordering))
+
+        # ----- grouping
+        ET.SubElement(root, "GROUP_BY").text = escape(str(self.group_by))
+
+        # ----- return
+        return ET.tostring(root, encoding='utf-8', method='xml').decode()
+
+    def restore_state_by_xml(self, string):
+        from ast import literal_eval
+        root = ET.fromstring(string)
+        # all columns
+        try:
+            line = unescape(root.find('COLUMNS/ALL_COLUMNS').text)
+            line = literal_eval(line)
+            cols = [self.columns[x] for x in line if x in self.columns]
+            cols.extend(filter(lambda x: x not in cols, self.all_columns))
+            self._fix_column_order(cols)
+        except Exception as e:
+            basic.ignore_exception(e)
+        else:
+            self.all_columns = cols
+        # visible columns
+        try:
+            line = unescape(root.find('COLUMNS/VISIBLE_COLUMNS').text)
+            line = literal_eval(line)
+            cols = [self.columns[x] for x in line if x in self.columns]
+            self._fix_column_order(cols)
+        except Exception as e:
+            basic.ignore_exception(e)
+        else:
+            self.visible_columns = cols
+        # filters
+        try:
+            anons, usedf = [], []
+            # anonymous filters
+            for nd in root.findall('FILTERS/FILTER'):
+                anons.append(filt.Filter.from_xml(nd))
+            for a in anons:
+                a.name = None
+            # used filters
+            line = literal_eval(unescape(root.find(
+                'FILTERS/USED_FILTERS').text))
+            for nm in line:
+                if nm[:5] == '_anon':
+                    anon_i = int(nm[5:]) - 1
+                    if anon_i < len(anons):
+                        usedf.append(anons[anon_i])
+                else:
+                    usedf.append(self.proj.get_named_filter(nm))
+        except Exception as e:
+            basic.ignore_exception(e)
+        else:
+            self.all_anon_filters = anons
+            self.used_filters = usedf
+        # ordering
+        try:
+            nord = literal_eval(unescape(root.find('ORDER_BY').text))
+            if nord is not None and nord[0] not in self.columns:
+                raise Exception("invalid order column name")
+        except Exception as e:
+            basic.ignore_exception(e)
+        else:
+            self.ordering = nord
+        # grouping
+        try:
+            ngr = literal_eval(unescape(root.find('GROUP_BY').text))
+            for g in ngr:
+                if g not in self.columns:
+                    raise Exception("invalid group column name")
+        except Exception as e:
+            basic.ignore_exception(e)
+        else:
+            self.group_by = ngr
+
     def table_name(self):
         return self.name
 
@@ -452,13 +609,13 @@ class DataTable(object):
         if cname == 'id' and is_global:
             qr = 'SELECT COUNT(id) FROM "{}"'.format(self.ttab_name)
             self.query(qr)
-            return (1, int(self.cursor.fetchone()[0]))
+            return (1, int(self.qresult()[0]))
         col = self.columns[cname]
         if is_global:
             qr = 'SELECT MIN({0}), MAX({0}) FROM "{1}"'.format(
                     col.sql_line(), self.ttab_name)
             self.query(qr)
-            return self.cursor.fetchall()[0]
+            return self.qresults()[0]
         else:
             raise NotImplementedError
 
@@ -470,7 +627,7 @@ class DataTable(object):
         except ValueError:
             qr = self._compile_query([self.columns[cname]], False)
             self.query(qr)
-            return [x[0] for x in self.cursor.fetchall()]
+            return [x[0] for x in self.qresults()]
 
     def get_distinct_column_raw_vals(self, cname, is_global=True):
         """ -> distinct vals in global scope (ignores filters, groups etc)
@@ -485,40 +642,22 @@ class DataTable(object):
                                      group_adds=False)
             qr = qr.replace("SELECT", "SELECT DISTINCT", 1)
         self.query(qr)
-        return [x[0] for x in self.cursor.fetchall()]
+        return [x[0] for x in self.qresults()]
 
-
-class OriginalTable(DataTable):
-    """ table built from database table """
-    def __init__(self, tab_name, proj):
-        super().__init__(tab_name, proj)
-
-    def is_original(self):
-        return True
-
-    def _init_columns(self):
-        self.columns = collections.OrderedDict()
-        self.all_columns = []
-        self.visible_columns = []
-        self.query("""PRAGMA TABLE_INFO("{}")""".format(self.name))
-        id_found = False
-        for v in self.cursor.fetchall():
-            if v[1] == 'id':
-                id_found = True
-                col = bcol.build_id()
-            else:
-                col = bcol.build_from_db(self.proj, self.table_name(), v[1])
-            self.columns[col.name] = col
-        if not id_found:
-            raise Exception("unique id column was not found")
-        self._complete_columns_lists()
-
-    def _fill_ttab(self):
-        qr = 'INSERT INTO "{0}" ({1}) SELECT {1} from "{2}"'.format(
-            self.ttab_name,
-            ", ".join([x.sql_line() for x in self.columns.values()]),
-            self.name)
+    def redstatus_bytearray(self, colname):
+        """ returns bytearray of column redstatuses if there are
+            any positive values, else returns None
+        """
+        col = self.columns[colname]
+        if not col.is_original():
+            return None
+        nm = col.status_column.sql_line()
+        qr = 'SELECT COUNT(DISTINCT {}) from "{}"'.format(nm, self.ttab_name)
         self.query(qr)
+        if self.qresult()[0] <= 1:
+            return None
+        else:
+            raise NotImplementedError
 
 
 # =================================== Additional classes
@@ -579,7 +718,12 @@ class ViewedData:
                             self.model.ttab_name,
                             self.id)
                         self.model.query(qr)
-                        ret[n] = self.model.cursor.fetchone()[0]
+                        ret[n] = self.model.qresult()[0]
+                    # if field is TEXT we have to use quotes to
+                    # assemble SQL query row in _request_subvalues:
+                    # WHERE field = "value"
+                    if self.model.columns[n].dt_type == 'TEXT':
+                        ret[n] = '"' + ret[n] + '"'
                 return ret
 
         def _request_subvalues(self):
@@ -597,7 +741,7 @@ class ViewedData:
                 qr = self.model._compile_query(filters=flt, group=[])
                 self.model.query(qr)
                 # fill data
-                f = self.model.cursor.fetchall()
+                f = self.model.qresults()
                 self.sub_values = [x[:vc] for x in f]
                 self.sub_status = [x[vc:2*vc] for x in f]
 

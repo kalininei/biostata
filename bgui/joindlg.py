@@ -59,11 +59,6 @@ class JoinTablesDialog(QtWidgets.QDialog):
         # fill widgets
         self._init_fill()
 
-    def resizeEvent(self, e):   # noqa
-        JoinTablesDialog._sz_x = e.size().width()
-        JoinTablesDialog._sz_y = e.size().height()
-        super().resizeEvent(e)
-
     def _init_fill(self):
         # table name
         i = 1
@@ -87,7 +82,7 @@ class JoinTablesDialog(QtWidgets.QDialog):
     def assemble_ret_value(self):
         tabentries = []
         for tname in self.e_tabchoice.ret_value():
-            te = derived_tabs.JoinTable.TableEntry(tname)
+            te = derived_tabs.JoinTableEntry(tname)
             te.view_columns, te.name_columns = self.e_tabcols.ret_value(tname)
             te.key_columns, te.key_mappings = self.e_tabkeys.ret_value(tname)
             tabentries.append(te)
@@ -687,11 +682,6 @@ class EditMappingsDialog(QtWidgets.QDialog):
         self.mainframe.setLayout(QtWidgets.QVBoxLayout())
         self.tab = EditMappingsTable(self.groups, captions, self)
         self.mainframe.layout().addWidget(self.tab)
-
-    def resizeEvent(self, e):   # noqa
-        EditMappingsDialog._sz_x = e.size().width()
-        EditMappingsDialog._sz_y = e.size().height()
-        super().resizeEvent(e)
 
     def init_fill(self, maps):
         # init mappings -> groups

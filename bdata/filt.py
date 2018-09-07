@@ -1,5 +1,6 @@
 import copy
-from bdata import bcol
+import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape, unescape
 
 
 def possible_values_list(column, operation, datatab):
@@ -58,23 +59,31 @@ class Filter:
         self.name = None
         self.do_remove = True
         self.entries = []
+        # we need project reference for dictionary list access
+        self.proj = None
 
     def is_applicable(self, dt):
         for ln in self.entries:
-            if isinstance(ln.column, bcol.ColumnInfo):
-                if ln.column.name not in dt.columns:
+            if isinstance(ln.column, ColumnDef):
+                if not ln.column.does_present(dt.columns):
                     return False
-            if isinstance(ln.value, bcol.ColumnInfo):
-                if ln.value.name not in dt.columns:
+            if isinstance(ln.value, ColumnDef):
+                if not ln.value.does_present(dt.columns):
                     return False
         return True
 
     def copy_from(self, flt):
+        self.proj = flt.proj
         self.name = flt.name
         self.do_remove = flt.do_remove
-        self.entries = [FilterEntry() for _ in flt.entries]
-        for l1, l2 in zip(self.entries, flt.entries):
-            l1.copyfrom(l2)
+        self.entries = copy.deepcopy(flt.entries)
+
+    def repr(self, column, value):
+        dn = column.dict_name
+        if dn is None or self.proj is None:
+            return str(value)
+        else:
+            return self.proj.get_dictionary(dn).key_to_value[value]
 
     def to_singleline(self):
         ret = self.to_multiline()
@@ -89,12 +98,12 @@ class Filter:
             ret.append(e.paren1)
             ret.append(e.column.name)
             ret.append(e.action)
-            if isinstance(e.value, bcol.ColumnInfo):
+            if isinstance(e.value, ColumnDef):
                 ret.append(e.value.name)
             elif isinstance(e.value, list):
                 ret.append(str(e.value))
             else:
-                ret.append(str(e.column.repr(e.value)))
+                ret.append(self.repr(e.column, e.value))
             ret.append(e.paren2)
             ret2.append(" ".join(ret))
         ret3 = "\n".join(ret2)
@@ -102,18 +111,22 @@ class Filter:
             ret3 = "NOT ({})".format(ret3)
         return ret3
 
-    def to_sqlline(self):
+    def to_sqlline(self, table):
         iparen = 0
         line = ""
         for e in self.entries:
+            col1 = table.columns[e.column.name]
+            col2 = None if not isinstance(e.value, ColumnDef) else\
+                table.columns[e.value.name]
             ret = []
+            # skip first
             if e is not self.entries[0]:
                 ret.append(e.concat)
             # opening bracket
             ret.append(e.paren1)
             iparen += e.paren1.count('(')
             # first operand
-            ret.append(e.column.sql_line())
+            ret.append(col1.sql_line())
             # action
             if e.action == "==":
                 ret.append("=")
@@ -129,8 +142,8 @@ class Filter:
                 raise NotImplementedError
             # second operand
             if e.action not in ["NULL", "not NULL"]:
-                if isinstance(e.value, bcol.ColumnInfo):
-                    ret.append(e.value.sql_line())
+                if col2 is not None:
+                    ret.append(col2.sql_line())
                 elif isinstance(e.value, list):
                     ret.append('(' + ", ".join(map(str, e.value)) + ')')
                 else:
@@ -149,11 +162,11 @@ class Filter:
         return line
 
     @classmethod
-    def compile_sql_line(cls, filters):
+    def compile_sql_line(cls, filters, table):
         if len(filters) < 1:
             return ""
         else:
-            r = ['(' + f.to_sqlline() + ')' for f in filters]
+            r = ['(' + f.to_sqlline(table) + ')' for f in filters]
             return "WHERE " + " AND ".join(r)
 
     @classmethod
@@ -163,7 +176,7 @@ class Filter:
         for k, v in zip(cnames, cvals):
             e = FilterEntry()
             e.concat = "AND" if use_and else "OR"
-            e.column = datatab.columns[k]
+            e.column = ColumnDef.from_column(datatab.columns[k])
             e.action = "=="
             e.value = v
             ret.entries.append(e)
@@ -192,7 +205,7 @@ class Filter:
     def filter_by_datalist(cls, datatab, cname, vals, do_remove):
         ret = cls()
         ret.do_remove = do_remove
-        col = datatab.columns[cname]
+        col = ColumnDef.from_column(datatab.columns[cname])
         if len(vals) == 0:
             return cls()
         if col.dt_type == "INT":
@@ -225,8 +238,77 @@ class Filter:
         if self.do_remove != f.do_remove:
             raise Exception("Cannot concatenate opposite filters")
         for e in f.entries:
-            self.entries.append(FilterEntry())
-            self.entries[-1].copyfrom(e)
+            self.entries.append(copy.deepcopy(e))
+
+    def to_xml(self, node, name=None):
+        if name is None:
+            name = self.name
+        ET.SubElement(node, "NAME").text = escape(name)
+        ET.SubElement(node, "DO_REMOVE").text = str(int(self.do_remove))
+        for e in self.entries:
+            e.to_xml(ET.SubElement(node, "E"))
+
+    def to_xml_string(self, name=None):
+        root = ET.Element("FILTER")
+        self.to_xml(root, name)
+        return ET.tostring(root, encoding='utf-8', method='xml').decode()
+
+    @classmethod
+    def from_xml(cls, node):
+        ret = cls()
+        ret.name = unescape(node.find('NAME').text)
+        ret.do_remove = bool(int(node.find('DO_REMOVE').text))
+        for nd in node.findall('E'):
+            ret.entries.append(FilterEntry.from_xml(nd))
+        return ret
+
+    @classmethod
+    def from_xml_string(cls, string):
+        node = ET.fromstring(string)
+        return cls.from_xml(node)
+
+
+class ColumnDef:
+    ' used to describe column in filter definition '
+    def __init__(self, name, tp, dict_name):
+        self.name = name
+        self.dt_type = tp
+        self.dict_name = dict_name
+
+    def is_equal(self, coldef=None, column=None):
+        if coldef is not None:
+            return self.name == coldef.name and\
+                   self.dt_type == coldef.dt_type and\
+                   self.dict_name == coldef.dict_name
+        elif column is not None:
+            return self.is_equal(ColumnDef.from_column(column))
+        else:
+            return False
+
+    def does_present(self, coldict):
+        try:
+            col = coldict[self.name]
+            if col.dt_type != self.dt_type:
+                raise
+            coldct = None
+            if hasattr(col, 'dict'):
+                coldct = col.dict.name
+            if coldct != self.dict_name:
+                raise
+        except:
+            return False
+        else:
+            return True
+
+    def __str__(self):
+        return str((self.name, self.dt_type, self.dict_name))
+
+    @classmethod
+    def from_column(cls, col):
+        if hasattr(col, 'dict'):
+            return cls(col.name, col.dt_type, col.dict.name)
+        else:
+            return cls(col.name, col.dt_type, None)
 
 
 class FilterEntry:
@@ -238,11 +320,25 @@ class FilterEntry:
         self.action = None
         self.value = None
 
-    def copyfrom(self, flt):
-        # avoiding deepcopy to prevent deepcopy of ColumnInfo
-        self.concat = flt.concat
-        self.paren1 = flt.paren1
-        self.paren2 = flt.paren2
-        self.column = flt.column
-        self.action = flt.action
-        self.value = flt.value
+    def to_xml(self, node):
+        node.text = escape(str([self.concat,
+                                self.paren1,
+                                self.paren2,
+                                str(self.column),
+                                self.action,
+                                self.value]))
+        print(node.text)
+
+    @classmethod
+    def from_xml(cls, node):
+        from ast import literal_eval
+
+        ret = cls()
+        [ret.concat,
+         ret.paren1,
+         ret.paren2,
+         ret.column,
+         ret.action,
+         ret.value] = literal_eval(unescape(node.text))
+        ret.column = ColumnDef(*literal_eval(ret.column))
+        return ret

@@ -447,6 +447,7 @@ class TwoLevelTreeDockWidget(DockWidget):
             self.refill()
 
     def _wait_for_apply(self, status):
+        self.buttonbox.setVisible(status)
         self.buttonbox.setEnabled(status)
 
         p = self.tab.palette()

@@ -3,7 +3,6 @@ import copy
 from PyQt5 import QtWidgets, QtCore
 from bgui import qtcommon
 from bdata import filt
-from bdata import bcol
 
 
 class FilterRow:
@@ -86,12 +85,13 @@ class FilterRow:
         self.cb[1].setCurrentText(e.paren1)
         self.cb[2].setCurrentText('"'+e.column.name+'"')
         self.cb[3].setCurrentText(e.action)
-        if isinstance(e.value, bcol.ColumnInfo):
+        if isinstance(e.value, filt.ColumnDef):
             self.cb[4].setCurrentText('"' + e.value.name + '"')
         elif e.action == "one of":
             self.cb[4].setCurrentText(",".join(map(str, e.value)))
         else:
-            self.cb[4].setCurrentText(str(e.column.repr(e.value)))
+            col = self.dlg.datatab.columns[e.column.name]
+            self.cb[4].setCurrentText(str(col.repr(e.value)))
         self.cb[5].setCurrentText(e.paren2)
 
 
@@ -125,7 +125,6 @@ class EditFilterDialog(QtWidgets.QDialog):
         self.setLayout(QtWidgets.QVBoxLayout())
         self.layout().addWidget(mainframe)
         self.layout().addWidget(buttonbox)
-        self.resize(self._sz_x, self._sz_y)
 
     def named_filter_next_name(self):
         i = 1
@@ -135,11 +134,6 @@ class EditFilterDialog(QtWidgets.QDialog):
                 i += 1
             else:
                 return nm
-
-    def resizeEvent(self, e):   # noqa
-        EditFilterDialog._sz_x = e.size().width()
-        EditFilterDialog._sz_y = e.size().height()
-        super().resizeEvent(e)
 
     def _add_nameframe(self, filt, parent):
         frame = QtWidgets.QFrame(parent)
@@ -254,20 +248,22 @@ class EditFilterDialog(QtWidgets.QDialog):
             e.concat = f.cb[0].currentText()
             e.paren1 = f.cb[1].currentText()
             e.paren2 = f.cb[5].currentText()
-            e.column = f.get_column()
+            ecol = f.get_column()
+            e.column = filt.ColumnDef.from_column(ecol)
             e.action = f.cb[3].currentText()
             # value interpretation
             if e.action not in ["NULL", "not NULL"]:
                 atxt = f.cb[4].currentText()
                 if atxt.startswith('"') and atxt.endswith('"'):
                     try:
-                        e.value = self.datatab.columns[atxt[1:-1]]
+                        e.value = filt.ColumnDef.from_column(
+                            self.datatab.columns[atxt[1:-1]])
                     except KeyError:
                         raise Exception("No such data column: {}".format(atxt))
                 elif e.column.dt_type in ["ENUM"]:
-                    e.value = e.column.from_repr(atxt)
+                    e.value = ecol.from_repr(atxt)
                 elif e.column.dt_type in ["BOOL"]:
-                    e.value = e.column.from_repr(atxt[:-8])
+                    e.value = ecol.from_repr(atxt[:-8])
                 elif e.column.dt_type in ["INT"]:
                     if e.action != "one of":
                         e.value = int(atxt)

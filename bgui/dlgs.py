@@ -531,7 +531,7 @@ class NewTableFromVisible(SimpleAbstractDialog):
             else:
                 cols[c.name] = c.name
         # data table
-        newdt = derived_tabs.CopyViewTable(
+        newdt = derived_tabs.copy_view_table(
                 od.tablename, self.dt, cols, self.dt.proj)
         return newdt
 

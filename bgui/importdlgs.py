@@ -137,15 +137,19 @@ class PreloadModel(QtCore.QAbstractTableModel):
     def autodetect_type(self, icol, maxsize):
         import ast
         r = "INT"  # 3-INT, 2-REAL, 1-TEXT
-        for irow in range(min(maxsize, self.data_rows)):
+        s = 0
+        for irow in range(self.data_rows):
             v = self.tab[irow][icol]
-            if v is not "":
+            if v is not "" and v is not None:
                 try:
                     x = ast.literal_eval(v)
                     if type(x) is float:
                         r = "REAL"
                     elif type(x) is not int:
                         raise
+                    s += 1
+                    if s >= maxsize:
+                        break
                 except:
                     return "TEXT"
         return r

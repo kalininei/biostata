@@ -2,22 +2,20 @@
 import sys
 from PyQt5 import QtWidgets
 from bgui import mainwin
-from prog import bopts
+from prog import projroot
 
 
 def main(app):
-    # program options
-    opts = bopts.BiostataOptions()
-    opts.load()
+    # program initialization
+    b = projroot.ProjectDB()
 
     # create window
-    wind = mainwin.MainWindow(opts)
-
-    # place it to the screen center
-    wind.show()
+    mainwin.MainWindow(b).show()
 
     # start gui loop
     QtWidgets.qApp.exec_()
+
+    b.finish()
     sys.exit()
 
 

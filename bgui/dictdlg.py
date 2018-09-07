@@ -106,7 +106,7 @@ class CreateNewDictionary(dlgs.OkCancelDialog):
     def __init__(self, proj, parent, tp=None,
                  uvals=None, can_change_type=True):
         super().__init__("Create new dictionary", parent, "grid")
-        resize(400, 300)
+        self.resize(400, 300)
         self._ret_value = None
         self.proj = proj
         if len(uvals) == 0:

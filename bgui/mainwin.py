@@ -1,6 +1,5 @@
 import functools
 from PyQt5 import QtWidgets, QtGui, QtCore
-from bdata import projroot
 from bdata import derived_tabs
 from bgui import dlgs
 from bgui import tmodel
@@ -16,21 +15,40 @@ class MainWindow(QtWidgets.QMainWindow):
     active_model_changed = QtCore.pyqtSignal()
     active_model_repr_changed = QtCore.pyqtSignal()
 
-    def __init__(self, opts):
+    def __init__(self, proj):
+        'proj - prog.projroot.ProjectDB'
         super().__init__()
         QtWidgets.qApp.aboutToQuit.connect(self._on_quit)
         self.setWindowTitle("BioStat Analyser")
-        # =========== init position (will be changed by opts data)
+        # init position (will be changed by opts data)
         self.resize(800, 600)
         self.setGeometry(QtWidgets.QStyle.alignedRect(
             QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter,
             self.size(), QtWidgets.qApp.desktop().availableGeometry()))
-        # =========== data
-        self.proj = None
+
+        # data
+        self.proj = proj
         self.models = []
         self.active_model = None
-        self.reload_options(opts)
+        self.reload_options(proj.opts)
 
+        # interface
+        self.ui()
+
+        # Load data
+        filename = self.opts.default_project_filename()
+        if filename is not None:
+            self._load_database(filename)
+
+        # restore
+        try:
+            state, geom = self.opts.mainwindow_state()
+            self.restoreState(state)
+            self.restoreGeometry(geom)
+        except Exception as e:
+            basic.ignore_exception(e)
+
+    def ui(self):
         # =========== central widget
         self.wtab = QtWidgets.QTabWidget(self)
         self.wtab.currentChanged.connect(self._tab_changed)
@@ -44,9 +62,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filemenu = menubar.addMenu('File')
         self.filemenu.aboutToShow.connect(self._filemenu_enabled)
         # Open db
-        open_action = QtWidgets.QAction("Open database...", self)
-        open_action.triggered.connect(self._act_open_database)
-        self.filemenu.addAction(open_action)
+        self.open_action = QtWidgets.QAction("Open database...", self)
+        self.open_action.triggered.connect(self._act_open_database)
+        self.open_action.setShortcut(QtGui.QKeySequence.Open)
+        self.filemenu.addAction(self.open_action)
         # open recent
         self.open_recentmenu = QtWidgets.QMenu('Open recent database')
         self.filemenu.addMenu(self.open_recentmenu)
@@ -54,6 +73,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.close_db_action = QtWidgets.QAction("Close database", self)
         self.close_db_action.triggered.connect(self._close_database)
         self.filemenu.addAction(self.close_db_action)
+
+        # save
+        self.filemenu.addSeparator()
+        self.save_action = QtWidgets.QAction("Save", self)
+        self.save_action.setShortcut(QtGui.QKeySequence.Save)
+        self.save_action.triggered.connect(self._act_save)
+        self.filemenu.addAction(self.save_action)
+        self.saveas_action = QtWidgets.QAction("Save as...", self)
+        self.saveas_action.triggered.connect(self._act_saveas)
+        self.filemenu.addAction(self.saveas_action)
 
         # Export, Import
         self.filemenu.addSeparator()
@@ -206,19 +235,6 @@ class MainWindow(QtWidgets.QMainWindow):
         # --- About
         self.aboutmenu = menubar.addMenu('About')
 
-        # =============== Load data
-        filename = self.opts.default_project_filename()
-        if filename is not None:
-            self._load_database(filename)
-
-        # ========= restore
-        try:
-            state, geom = self.opts.mainwindow_state()
-            self.restoreState(state)
-            self.restoreGeometry(geom)
-        except Exception as e:
-            basic.ignore_exception(e)
-
     # =============== Actions
     def _tab_changed(self, index):
         if index >= 0:
@@ -262,7 +278,6 @@ class MainWindow(QtWidgets.QMainWindow):
             m.setEnabled(enabled)
         if not enabled:
             return
-        self.rem_cur_table.setEnabled(not self.active_model.is_original())
 
     def _columnsmenu_enabled(self):
         enabled = self.active_model is not None
@@ -383,8 +398,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _act_new_enum_column(self):
         # TODO
-        st = self.saveGeometry()
-        print(st)
         pass
 
     def _act_table_from_visible(self):
@@ -410,7 +423,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = joindlg.JoinTablesDialog(self.active_model.dt, self)
         if dialog.exec_():
             name, tabentries = dialog.ret_value()
-            dt = derived_tabs.JoinTable(name, tabentries, self.proj)
+            dt = derived_tabs.join_table(name, tabentries, self.proj)
             self.proj.add_table(dt)
             newmodel = tmodel.TabModel(dt)
             index = self.add_model(newmodel)
@@ -429,7 +442,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 raise Exception("Unknow format {}".format(frmt))
             if dialog2.exec_():
                 name, tab, cols = dialog2.ret_value()
-                newdt = derived_tabs.ExplicitTable(name, cols, tab, self.proj)
+                newdt = derived_tabs.explicit_table(name, cols, tab, self.proj)
                 self.proj.add_table(newdt)
                 newmodel = tmodel.TabModel(newdt)
                 index = self.add_model(newmodel)
@@ -452,6 +465,23 @@ class MainWindow(QtWidgets.QMainWindow):
             self.opts.save()
             self.reload_options(self.opts)
 
+    def _act_saveas(self):
+        flt = "Databases (*.db, *.sqlite)(*.db *.sqlite)"
+        filename = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save database as", self.proj.curdir(), flt)
+        if filename[0]:
+            try:
+                self._set_actual_file(filename[0])
+                self.proj.relocate_and_commit_all_changes(filename[0])
+            except Exception as e:
+                qtcommon.message_exc(self, "Save error", e=e)
+
+    def _act_save(self):
+        try:
+            self.proj.commit_all_changes()
+        except Exception as e:
+            qtcommon.message_exc(self, "Save error", e=e)
+
     # ============== Procedures
     def _load_database(self, fname):
         import pathlib
@@ -461,25 +491,25 @@ class MainWindow(QtWidgets.QMainWindow):
             if not pathlib.Path(fname).is_file():
                 raise Exception("File doesn't exist.")
             self._close_database()
-            proj = projroot.ProjectDB(fname)
-            self._init_project(proj)
-            self.opts.add_db_path(fname)
-            self.setWindowTitle(fname + " - BioStat Analyser")
+            self.proj.set_main_database(fname)
+            self._init_project()
+            self._set_actual_file(fname)
         except Exception as e:
             m = 'Failed to load database from "{}". '.format(fname)
             qtcommon.message_exc(self, "Load error", text=m, e=e)
 
+    def _set_actual_file(self, fname):
+            self.opts.add_db_path(fname)
+            self.setWindowTitle(fname + " - BioStat Analyser")
+
     def _close_database(self):
-        if self.proj:
-            self.proj.close_connection()
-        self.proj = None
+        self.proj.close_main_database()
         self.active_model = None
         self.models = []
         self.wtab.clear()
         self.tabframes = []
 
-    def _init_project(self, p):
-        self.proj = p
+    def _init_project(self):
         self.models = []
         # models
         for t in self.proj.data_tables:

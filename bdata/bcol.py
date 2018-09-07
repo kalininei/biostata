@@ -1,4 +1,5 @@
-from bdata import bsqlproc
+import xml.etree.ElementTree as ET
+from prog import bsqlproc
 
 
 # ====================== Basic column info
@@ -7,7 +8,7 @@ class ColumnInfo:
         self.name = None
         self.shortname = None
         self.dim = None
-        self.groupname = None
+        self.comment = None
         self.dt_type = None
         self._sql_group_fun = None
 
@@ -30,6 +31,17 @@ class ColumnInfo:
             return "REAL"
         elif self.dt_type == "TEXT":
             return "TEXT"
+
+    def state_xml(self):
+        "returns spec. info as xml string"
+        root = ET.Element('ColumnState')
+        ET.SubElement(root, 'SQL_GROUP_FUN').text = self._sql_group_fun
+        self.imp_state(root)
+        return ET.tostring(root, encoding='utf-8', method='xml').decode()
+
+    def imp_state(self, root):
+        'used to save stuff from functional columns'
+        pass
 
     @staticmethod
     def are_same(collist):
@@ -103,19 +115,22 @@ class OriginalColumnInfo(ColumnInfo):
             return '{}("{}")'.format(self._sql_group_fun, self.name)
 
     @staticmethod
-    def build(dt_type, dct=None):
+    def build(name, dt_type, dct=None):
         if dt_type == "INT":
-            return IntColumnInfo()
+            ret = IntColumnInfo()
         elif dt_type == "TEXT":
-            return TextColumnInfo()
+            ret = TextColumnInfo()
         elif dt_type == "REAL":
-            return RealColumnInfo()
+            ret = RealColumnInfo()
         elif dt_type == "BOOL":
-            return BoolColumnInfo(dct)
+            ret = BoolColumnInfo(dct)
         elif dt_type == "ENUM":
-            return EnumColumnInfo(dct)
+            ret = EnumColumnInfo(dct)
         else:
             raise Exception("Unknown column type: {}".format(dt_type))
+        ret.name = name
+        ret.status_column = StatusColumnInfo(ret)
+        return ret
 
 
 class StatusColumnInfo(OriginalColumnInfo):
@@ -175,6 +190,9 @@ class FunctionColumn(ColumnInfo):
         self._sql_fun = None
         self.use_before_grouping = None
         self.deps = []
+        # func_name containts function which was used to build this column,
+        # other fields are serializable arguments.
+        self.kwargs = {}
 
     def sql_line(self, grouping=False):
         if grouping and self.use_before_grouping:
@@ -187,6 +205,20 @@ class FunctionColumn(ColumnInfo):
         else:
             return "{}({})".format(self._sql_fun, ", ".join(
                 [x.sql_line(False) for x in self.deps]))
+
+    def function_type(self):
+        try:
+            return self.kwargs['func_name']
+        except KeyError:
+            return None
+
+    def imp_state(self, root):
+        from xml.sax.saxutils import escape
+
+        func = ET.SubElement(root, "FUNCTION")
+        ET.SubElement(func, "ARGUMENTS").text =\
+            escape(str([x.name for x in self.deps]))
+        ET.SubElement(func, "DESCRIPTION").text = escape(str(self.kwargs))
 
 
 class FuncStatusColumn(FunctionColumn):
@@ -202,33 +234,49 @@ class FuncStatusColumn(FunctionColumn):
 
 
 # ========================= Constructors
-def build_from_db(proj, table_name, name):
-    qr = """
-        SELECT type, dict, colgroup, dim, shortname FROM "_COLINFO {}"
-            WHERE colname="{}"
-    """.format(table_name, name)
-    proj.cursor.execute(qr)
-    f = proj.cursor.fetchone()
+def build_from_db(proj, table, name):
+    """ builds a column and places it into table.columns[name].
 
+        In order to keep dependencies recursive procedure is used,
+        so single run of this procedure in case of functinal columns
+        may result in reading and placing all parent columns.
+    """
+    from ast import literal_eval
+    from xml.sax.saxutils import unescape
+    # recursion tail
+    if name in table.columns:
+        return table.columns[name]
+
+    qr = """
+        SELECT type, dict, dim, shortname, comment, state, isorig
+        FROM A."_COLINFO {}" WHERE colname="{}"
+    """.format(table.table_name(), name)
+    proj.sql.query(qr)
+    f = proj.sql.qresult()
     dct = proj.get_dictionary(f[1]) if f[1] else None
-    ret = OriginalColumnInfo.build(f[0], dct)
-    ret.name = name
-    ret.shortname = f[4] if f[4] is not None else name
-    ret.dim = f[3]
-    ret.groupname = f[2]
-    ret.dt_type = f[0]
-    if ret.is_category():
-        ret._sql_group_fun = "category_group"
+    state = ET.fromstring(f[5])
+    if f[6]:
+        ret = OriginalColumnInfo.build(name, f[0], dct)
     else:
-        ret._sql_group_fun = "AVG"
-    ret.status_column = StatusColumnInfo(ret)
+        colnames = literal_eval(unescape(
+            state.find("FUNCTION/ARGUMENTS").text))
+        # create all arguments recursively
+        [build_from_db(proj, table, x) for x in colnames]
+        kwargs = literal_eval(unescape(
+            state.find("FUNCTION/DESCRIPTION").text))
+        ret = restore_function_column(table, colnames, **kwargs)
+    ret.shortname = f[3] if f[3] is not None else name
+    ret.dim = f[2]
+    ret.dt_type = f[0]
+    ret._sql_group_fun = state.find("SQL_GROUP_FUN").text
+    ret.comment = f[4]
+    table.columns[name] = ret
     return ret
 
 
 def explicit_build(proj, name, tp_name, dict_name):
     dct = proj.get_dictionary(dict_name) if dict_name else None
-    ret = OriginalColumnInfo.build(tp_name, dct)
-    ret.name = name
+    ret = OriginalColumnInfo.build(name, tp_name, dct)
     ret.shortname = name
     ret.dt_type = tp_name
     if ret.is_category():
@@ -240,8 +288,7 @@ def explicit_build(proj, name, tp_name, dict_name):
 
 
 def build_id():
-    ret = OriginalColumnInfo.build("INT", None)
-    ret.name = 'id'
+    ret = OriginalColumnInfo.build('id', "INT", None)
     ret.shortname = 'id'
     ret.dt_type = 'INT'
     ret._sql_group_fun = 'category_group'
@@ -255,8 +302,8 @@ def build_deep_copy(orig, newname=None):
         dct = orig.dict
     else:
         dct = None
-    ret = OriginalColumnInfo.build(orig.dt_type, dct)
-    ret.name = orig.name if newname is None else newname
+    name = orig.name if newname is None else newname
+    ret = OriginalColumnInfo.build(name, orig.dt_type, dct)
     ret.shortname = orig.shortname
     ret.dt_type = orig.dt_type
     ret._sql_fun = '"{}"'.format(ret.name)
@@ -266,7 +313,7 @@ def build_deep_copy(orig, newname=None):
 
 
 def build_function_column(name, func, deps, before_grouping,
-                          dt_type, dct=None):
+                          dt_type, kw, dct=None):
     # representation class
     if dt_type in ["BOOL", "ENUM"]:
         RepClass = EnumRepr    # noqa
@@ -289,29 +336,40 @@ def build_function_column(name, func, deps, before_grouping,
             self.dt_type = dt_type
             self.deps = deps
             self.use_before_grouping = before_grouping
-            self._sql_fun = bsqlproc.build_lambda_func(func)
+            self._sql_fun = bsqlproc.connection.build_lambda_func(func)
             if self.is_category():
                 self._sql_group_fun = "category_group"
             else:
                 self._sql_group_fun = "AVG"
             self.status_column = FuncStatusColumn(self)
+            self.kwargs = kw
 
     return FuncCInfo()
 
 
 def collapsed_categories(columns, delimiter='-'):
 
-    def collapse_func(*args):
+    def func(*args):
         try:
             ret = []
             for c, x in zip(columns, args):
-                ret.append(str(c.repr(x)))
+                if x is not None:
+                    ret.append(str(c.repr(x)))
+                else:
+                    ret.append('  ')
             return delimiter.join(ret)
         except Exception as e:
             print("Collapse error: ", str(e), [c.name for c in columns], args)
 
     name = delimiter.join([x.shortname for x in columns])
-
-    ret = build_function_column(name, collapse_func, columns, True, "TEXT")
-    ret._collapsed_categories = True
+    kwargs = {'func_name': 'collapsed_categories', 'delimiter': delimiter}
+    ret = build_function_column(name, func, columns, True, "TEXT", kwargs)
     return ret
+
+
+def restore_function_column(table, colargs, **kwargs):
+    columns = [table.columns[x] for x in colargs]
+    if kwargs['func_name'] == "collapsed_categories":
+        return collapsed_categories(columns, kwargs['delimiter'])
+    else:
+        raise Exception("unknown function name {}".format(kwargs['func_name']))

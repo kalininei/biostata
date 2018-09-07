@@ -1,6 +1,6 @@
 import functools
 from PyQt5 import QtWidgets, QtGui, QtCore
-from bdata import bsqlproc
+from prog import bsqlproc
 from bdata import filt
 from bgui import cfg
 from bgui import tmodel

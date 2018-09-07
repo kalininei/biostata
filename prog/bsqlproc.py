@@ -1,9 +1,10 @@
+import sqlite3
+from prog import basic
+
+
 def group_repr(c):
     """ c -> ...[c] """
     return '...[' + str(c) + ']'
-
-tech_splitter = ' & '
-_last_connection = None
 
 
 class _Grouping1:
@@ -35,23 +36,6 @@ class CategoryGrouping(_Grouping1):
             return self.vals[0]
         else:
             return None
-
-
-class MergedCategoryGrouping(_GroupingA):
-    def __init__(self):
-        super().__init__()
-
-    def finalize(self):
-        if not self.vals:
-            return None
-        cols = []
-        for i in range(len(self.vals[0])):
-            c = set([x[i] for x in self.vals])
-            if len(c) == 1:
-                cols.append(str(self.vals[0][i]))
-            else:
-                cols.append(group_repr(len(c)))
-        return tech_splitter.join(cols)
 
 
 class MedianDataGrouping(_Grouping1):
@@ -93,63 +77,78 @@ class MedianMDataGrouping(_Grouping1):
         return s[indp-1]
 
 
-def category_merge(*args):
-    try:
-        return tech_splitter.join(map(str, args))
-    except Exception as e:
-        print('Error: category merge', args, str(e))
-
-
 def max_per_list(*args):
     try:
         return max(args)
     except Exception as e:
-        print('Error: max_per_list', args, str(e))
+        basic.ignore_exception(e, 'error: max_per_list')
 
-
-_i_sql_functions = 1
-
-
-def build_txt_to_enum(int_to_txt_dict, connection):
-    global _i_sql_functions
-    txt_to_int_dict = {v: k for k, v in int_to_txt_dict.items()}
-
-    def txt_to_enum(txt):
-        return txt_to_int_dict[txt]
-    nm = "txt_to_enumcode_{}".format(_i_sql_functions)
-    connection.create_function(nm, 1, txt_to_enum)
-    _i_sql_functions += 1
-    return nm
-
-
-def build_lambda_func(lambda_func):
-    global _i_sql_functions
-
-    def sql_func(*args):
-        return lambda_func(*args)
-    nm = "sql_custom_func_{}".format(_i_sql_functions)
-    _last_connection.create_function(nm, -1, sql_func)
-    _i_sql_functions += 1
-    return nm
 
 # those functions will be added to each connection passed to TabModel
 registered_aggregate_functions = [
         ("category_group", 1, CategoryGrouping),
-        ("merged_group", -1, MergedCategoryGrouping),
         ("median", 1, MedianDataGrouping),
         ("medianp", 1, MedianPDataGrouping),
         ("medianm", 1, MedianMDataGrouping),
 ]
 registered_sql_functions = [
-        ("category_merge", -1, category_merge),
         ("max_per_list", -1, max_per_list),
 ]
 
 
-def init_connection(connection):
-    global _last_connection
-    _last_connection = connection
-    for r in registered_aggregate_functions:
-        connection.create_aggregate(*r)
-    for r in registered_sql_functions:
-        connection.create_function(*r)
+class SqlConnection:
+    def __init__(self):
+        self.connection = sqlite3.connect(':memory:')
+        self.init_connection()
+        self.cursor = self.connection.cursor()
+        self._i_sql_functions = 1
+
+    def close_connection(self):
+        self.connection.close()
+
+    def query(self, qr, dt=None):
+        basic.log_message(" ".join(qr.split()))
+        if dt is None:
+            self.cursor.execute(qr)
+        else:
+            self.cursor.executemany(qr, dt)
+
+    def qresult(self):
+        return self.cursor.fetchone()
+
+    def qresults(self):
+        return self.cursor.fetchall()
+
+    def commit(self):
+        self.connection.commit()
+
+    def rollback(self):
+        self.connection.rollback()
+
+    def attach_database(self, alias, fn):
+        self.detach_database(alias)
+        self.query('ATTACH DATABASE "{}" AS "{}"'.format(fn, alias))
+
+    def detach_database(self, alias):
+        try:
+            self.query('DETACH DATABASE "{}"'.format(alias))
+        except:
+            pass
+
+    def init_connection(self):
+        for r in registered_aggregate_functions:
+            self.connection.create_aggregate(*r)
+        for r in registered_sql_functions:
+            self.connection.create_function(*r)
+
+    def build_lambda_func(self, lambda_func):
+        def sql_func(*args):
+            return lambda_func(*args)
+
+        nm = "sql_custom_func_{}".format(self._i_sql_functions)
+        self.connection.create_function(nm, -1, sql_func)
+        self._i_sql_functions += 1
+        return nm
+
+
+connection = SqlConnection()

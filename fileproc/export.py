@@ -1,4 +1,4 @@
-from bdata import bsqlproc
+from prog import bsqlproc
 import openpyxl as pxl
 
 
