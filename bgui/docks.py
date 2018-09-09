@@ -426,6 +426,7 @@ class TwoLevelTreeDockWidget(DockWidget):
                 QtWidgets.QDialogButtonBox.Apply |
                 QtWidgets.QDialogButtonBox.Cancel)
         self.buttonbox.setEnabled(False)
+        self.buttonbox.setVisible(False)
         self.buttonbox.clicked.connect(self.apply_cancel_clicked)
         frame.layout().addWidget(self.buttonbox)
 

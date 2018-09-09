@@ -6,20 +6,37 @@ from bdata import filt
 from prog import bsqlproc
 from prog import bopts
 from prog import basic
+from prog import valuedict
 
 
 class ProjectDB:
     def __init__(self):
         # connection to a database with main = :memory:
         self.sql = bsqlproc.connection
-        self.dictionaries = collections.OrderedDict()
-        self.named_filters = []
-        self.data_tables = []
-        self._tables_to_remove = []
+        self._curname = "New database"
         self._curdir = pathlib.Path.cwd()
         # program options
         self.opts = bopts.BiostataOptions()
         self.opts.load()
+        # project data
+        self.dictionaries = collections.OrderedDict()
+        self.named_filters = []
+        self.data_tables = []
+        self._tables_to_remove = []
+
+        self.initialize()
+
+    def initialize(self):
+        self._curname = "New database"
+        self.named_filters.clear()
+        self.data_tables.clear()
+        self._tables_to_remove.clear()
+        self.dictionaries = collections.OrderedDict([
+            ('ABC', valuedict.dict_abc),
+            ('0-9', valuedict.dict_09),
+            ('0-1', valuedict.dict_01),
+            ('True/False', valuedict.dict_truefalse),
+            ('Yes/No', valuedict.dict_yesno)])
 
     # ================= Database procedures
     def set_main_database(self, filedb):
@@ -37,7 +54,8 @@ class ProjectDB:
             basic.ignore_exception(e)
         else:
             for a in self.sql.qresults():
-                self.dictionaries[a[0]] = Dictionary.from_db(a[0], self)
+                self.dictionaries[a[0]] = valuedict.Dictionary.from_db(
+                        a[0], self)
 
         # named filters
         self.named_filters = []
@@ -67,17 +85,18 @@ class ProjectDB:
         # names of non-actual tables which will be removed at next commit
         self._tables_to_remove = []
 
+        self.set_current_filename(filedb)
+
+    def set_current_filename(self, filedb):
         # change current directory
         self._curdir = pathlib.Path(filedb).parent
+        self._curname = filedb
 
     def close_main_database(self):
-        self.sql.detach_database('A')
-        self.dictionaries.clear()
-        self.named_filters.clear()
         for t in self.data_tables:
             t.destruct()
-        self.data_tables.clear()
-        self._tables_to_remove.clear()
+        self.sql.detach_database('A')
+        self.initialize()
 
     def finish(self):
         basic.log_message("Close connection")
@@ -92,6 +111,7 @@ class ProjectDB:
         # 2) detach old A database and open newfile as A database
         self.sql.detach_database('A')
         self.sql.attach_database('A', newfile)
+        self.set_current_filename(newfile)
         # 3) mark all tables as 'need for rewrite'
         for t in self.data_tables:
             t.set_need_rewrite(True)
@@ -139,8 +159,8 @@ class ProjectDB:
                 a = [col.name, col.dt_type, col.dim,
                      col.shortname, col.comment, int(col.is_original())]
                 # dictionary
-                if hasattr(col, 'dict'):
-                    a.append(col.dict.name)
+                if not col.uses_dict(None):
+                    a.append(col.repr_delegate.dict.name)
                 else:
                     a.append(None)
                 # details
@@ -221,6 +241,68 @@ class ProjectDB:
         self.data_tables.remove(tab)
         del tab
 
+    def change_dictionaries(self, oldnew, shrink=True):
+        """ odlnew - {'olddict name': newdict}
+        """
+        removed_filters = []
+        # 1) remove dictionaries
+        for k in [k1 for k1, v1 in oldnew.items() if v1 is None]:
+            d = self.dictionaries[k]
+            # search for columns containing this dict and convert them to int.
+            for t in self.data_tables:
+                for column in t.columns.values():
+                    if column.uses_dict(d):
+                        t.convert_column(column.name, 'INT')
+            # search for filters containing this dict and remove them
+            for f in self.all_filters():
+                if f.uses_dict(d):
+                    removed_filters.append(f)
+            # remove dictionary
+            self.dictionaries.pop(k)
+
+        # 2) change dictionaries
+        newnames = False
+        for k, v in [(k1, v1) for k1, v1 in oldnew.items() if v1 is not None]:
+            d = self.dictionaries[k]
+            what_changed = valuedict.Dictionary.compare(d, v)
+            if 'name' in what_changed:
+                newnames = True
+                # changed name in filters
+                for f in filter(lambda x: x.uses_dict(d), self.all_filters()):
+                    f.change_dict_name(d.name, v.name)
+            if shrink and 'keys removed' in what_changed:
+                # shrink column data
+                for t in self.data_tables:
+                    for column in t.columns.values():
+                        if column.uses_dict(d):
+                            # create fake filter and use it to shrink data
+                            t.convert_column(column.name, 'INT')
+                            flt = filt.Filter.filter_by_datalist(
+                                t, column, v.keys(), True)
+                            t.remove_entries(flt)
+                            t.convert_column(column.name, d.dt_type, d)
+            # update dictionaries
+            d.copy_from(v)
+        if newnames:
+            d2 = collections.OrderedDict()
+            for v in self.dictionaries.values():
+                d2[v.name] = v
+            self.dictionaries = d2
+
+        # 3) remove filters
+        for f in removed_filters:
+            self.remove_filter_anywhere(f)
+
+    def remove_filter_anywhere(self, f):
+        for t in self.data_tables:
+            if f in t.used_filters:
+                t.used_filters.remove(f)
+            if f.name is None and f in t.all_anon_filters:
+                t.all_anon_filters.remove(f)
+                return
+        if f.name is not None and f in self.named_filters:
+            self.named_filters.remove(f)
+
     # ================= Info and data access
     def valid_tech_string(self, descr, nm):
         if not isinstance(nm, str) or not nm.strip():
@@ -250,6 +332,12 @@ class ProjectDB:
         m = 'Column name "{}"'.format(nm)
         self.valid_tech_string(m, nm)
         return True
+
+    def all_filters(self):
+        ret = self.named_filters[:]
+        for t in self.data_tables:
+            ret.extend(t.all_anon_filters)
+        return ret
 
     def get_table_names(self):
         return [x.table_name() for x in self.data_tables]
@@ -283,87 +371,11 @@ class ProjectDB:
         return list(filter(lambda x: x.dt_type == "BOOL",
                            self.dictionaries.values()))
 
+    def need_save(self):
+        return self._curname != 'New database'
+
     def close_connection(self):
         self.connection.close()
 
     def curdir(self):
         return str(self._curdir)
-
-
-class Dictionary:
-    def __init__(self, name, dt_type, keys, values, comments=None):
-        if dt_type not in ["BOOL", "ENUM"]:
-            raise Exception("Invalid dictionary data type")
-
-        if None in keys:
-            raise Exception("Some keys are not set")
-
-        if len(set(keys)) != len(keys):
-            raise Exception("Dictionary keys are not unique")
-
-        if len(set(values)) != len(values):
-            raise Exception("Dictionary values are not unique")
-
-        if len(values) != len(keys):
-            raise Exception("Dictionary values and keys have different size")
-
-        if len(values) < 2:
-            raise Exception("Dictionary set needs at least 2 values")
-
-        if dt_type == "BOOL":
-            if len(keys) != 2 or keys[0] != 0 or keys[1] != 1:
-                raise Exception("Bool dictionary keys should contain "
-                                "0 and 1 only")
-        self.dt_type = dt_type
-        self.name = name
-        self.kvalues = collections.OrderedDict()
-        self.vkeys = collections.OrderedDict()
-        self.kcomments = collections.OrderedDict()
-        for k, v in zip(keys, values):
-            self.kvalues[k] = v
-            self.vkeys[v] = k
-            self.kcomments[k] = ''
-
-        if comments is not None:
-            for k, coms in zip(self.kvalues.keys(), comments):
-                self.kcomments[k] = coms
-
-    def key_to_value(self, key):
-        return self.kvalues[key]
-
-    def value_to_key(self, value):
-        return self.vkeys[value]
-
-    def comment_from_key(self, key):
-        return self.kcomments[key]
-
-    def values(self):
-        return list(self.vkeys.keys())
-
-    def keys(self):
-        return list(self.kvalues.keys())
-
-    def keys_to_str(self):
-        return str(self.keys())
-
-    def values_to_str(self):
-        return str(self.values())
-
-    def comments_to_str(self):
-        return str(list(self.kcomments.values()))
-
-    @staticmethod
-    def from_db(name, proj):
-        import ast
-        qr = """
-            SELECT "type", "keys", "values", "comments" FROM A._DICTIONARIES_
-            WHERE name="{}" """.format(name)
-        proj.sql.query(qr)
-        f = proj.sql.qresult()
-        dt_type = f[0]
-
-        keys = ast.literal_eval(f[1])
-        values = ast.literal_eval(f[2])
-        comments = ast.literal_eval(f[3])
-
-        return Dictionary(name, dt_type, keys, values, comments)

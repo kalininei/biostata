@@ -325,7 +325,7 @@ class DictComboboxDelegate(ComboboxDelegate):
             c = index.column()
             uvals = self.model.get_unique_data_values(c)
             dialog = dictdlg.CreateNewDictionary(
-                self.model.proj, self.parent(),
+                self.model.proj.dictionaries, self.parent(),
                 self.model.columns_format[c], uvals, False)
             if dialog.exec_():
                 dct = dialog.ret_value()

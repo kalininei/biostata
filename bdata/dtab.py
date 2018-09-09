@@ -70,7 +70,7 @@ class DataTable(object):
                 collist.append("{} {}".format(c.sql_line(False),
                                               c.sql_data_type()))
             else:
-                collist.append("id INTEGER PRIMARY KEY AUTOINCREMENT")
+                collist.append("id INTEGER UNIQUE")
             collist.append("{} INTEGER DEFAULT 0".format(
                 self.columns[c.name].status_column.sql_line(False)))
 
@@ -129,12 +129,12 @@ class DataTable(object):
         if not self.is_original() or not self.need_rewrite:
             return
         self.query('DROP TABLE IF EXISTS A."{}"'.format(self.name))
-        colstring = [('id', 'INTEGER PRIMARY KEY AUTOINCREMENT')]
+        colstring = [('id', 'INTEGER UNIQUE')]
         for c in filter(lambda x: x.is_original(), self.all_columns[1:]):
             colstring.append((c.name, c.sql_data_type()))
         colstring1 = ', '.join(['"{}" {}'.format(x[0], x[1])
                                for x in colstring])
-        colstring2 = ', '.join(['"{}"'.format(x[0]) for x in colstring[1:]])
+        colstring2 = ', '.join(['"{}"'.format(x[0]) for x in colstring])
         qr = 'CREATE TABLE A."{}" ({})'.format(self.name, colstring1)
         self.query(qr)
         qr = 'INSERT INTO A."{0}" ({1}) SELECT {1} from "{2}"'.format(
@@ -292,8 +292,7 @@ class DataTable(object):
         else:
             m = self._default_group_method
         for c in self.columns.values():
-            if not c.is_category():
-                c._sql_group_fun = m
+            c.real_data_groupfun = m
 
     def remove_column(self, col):
         if col.is_original():
@@ -349,6 +348,56 @@ class DataTable(object):
         if is_visible:
             vis_set.add(col)
         self._assemble_visibles(vis_set)
+
+        if col.is_original():
+            self.set_need_rewrite(True)
+
+    def convert_column(self, cname, newtype, dct=None):
+        """ converts given column to a given newtype
+        """
+        col = self.columns[cname]
+        if col.dt_type in ['BOOL', 'ENUM'] and newtype == 'INT':
+            col.set_repr_delegate(bcol.IntRepr())
+        elif col.dt_type == 'INT' and newtype == 'BOOL':
+            col.set_repr_delegate(bcol.BoolRepr(dct))
+        elif col.dt_type == 'INT' and newtype == 'ENUM':
+            col.set_repr_delegate(bcol.EnumRepr(dct))
+        else:
+            raise NotImplementedError
+
+    def remove_entries(self, flt):
+        """ Removes entries according to a given filter,
+            retruns number of removed lines.
+        """
+        qr = 'DELETE FROM "{}" WHERE ({})'.format(
+            self.ttab_name, flt.to_sqlline())
+        self.query(qr)
+        self.query("SELECT CHANGES()")
+        ret = self.qresult()[0]
+        if ret > 0:
+            self.reset_id()
+        return ret
+
+    def reset_id(self):
+        """ Fills id column with 1, 2, 3, ... values.
+            Does not check if id values are already in correct order.
+            Set need_rewrite to true.
+        """
+        self.query('SELECT COUNT(id) from "{}"'.format(self.ttab_name))
+        nums = range(1, self.qresult()[0] + 1)
+        # update filters that use id
+        idfilters = list(filter(lambda x: isinstance(x, filt.IdFilter),
+                                self.all_anon_filters))
+        if len(idfilters) > 0:
+            self.query('SELECT id FROM "{}" ORDER BY id'.format(
+                self.ttab_name))
+            old_id = [x[0] for x in self.qresults()]
+            for f in idfilters:
+                if not f.reset_id(old_id):
+                    self.all_anon_filters.remove(f)
+        # update id column
+        self.query('UPDATE "{}" SET id = ?', ((x,) for x in nums))
+        self.set_need_rewrite(True)
 
     def set_visibility(self, col, do_show):
         is_visible = col in self.visible_columns

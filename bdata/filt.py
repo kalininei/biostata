@@ -17,10 +17,10 @@ def possible_values_list(column, operation, datatab):
     elif column.dt_type == "REAL":
         append_col_names("REAL")
     elif column.dt_type == "ENUM":
-        ret.extend(column.dict.values())
+        ret.extend(column.repr_delegate.dict.values())
     elif column.dt_type == "BOOL":
-        ret.append(column.dict.values()[0] + " (False)")
-        ret.append(column.dict.values()[1] + " (True) ")
+        ret.append(column.repr_delegate.dict.values()[0] + " (False)")
+        ret.append(column.repr_delegate.dict.values()[1] + " (True) ")
         append_col_names("BOOL")
     elif column.dt_type == "TEXT":
         append_col_names("TEXT")
@@ -71,6 +71,26 @@ class Filter:
                 if not ln.value.does_present(dt.columns):
                     return False
         return True
+
+    def uses_dict(self, dct):
+        'does this filter use Dictionaty dct'
+        for ln in self.entries:
+            if isinstance(ln.column, ColumnDef):
+                if ln.column.dict_name == dct.name:
+                    return True
+            if isinstance(ln.value, ColumnDef):
+                if ln.value.dict_name == dct.name:
+                    return True
+        return False
+
+    def change_dict_name(self, old, new):
+        for e in self.entries:
+            if isinstance(e.column, ColumnDef):
+                if e.column.dict_name == old:
+                    e.column.dict_name = new
+            if isinstance(e.value, ColumnDef):
+                if e.value.dict_name == old:
+                    e.value.dict_name == new
 
     def copy_from(self, flt):
         self.proj = flt.proj
@@ -182,53 +202,18 @@ class Filter:
             ret.entries.append(e)
         return ret
 
-    @staticmethod
-    def simplify_integer_list(ilist, minrange):
-        """ (1,2,3,4,5, 8, 12,13,14) -> [1,5], 8, [12,14]
-        """
-        srt = sorted(set(ilist))
-        if len(ilist) == 0:
-            return []
-        ret = []
-        i, istart = 0, 0
-        while i < len(srt):
-            while i < len(srt) and srt[i] - srt[istart] == i - istart:
-                i += 1
-            if i - istart >= minrange:
-                ret.append([srt[istart], srt[i-1]])
-            else:
-                ret.extend(srt[istart:i])
-            istart = i
-        return ret
-
     @classmethod
     def filter_by_datalist(cls, datatab, cname, vals, do_remove):
-        ret = cls()
-        ret.do_remove = do_remove
         col = ColumnDef.from_column(datatab.columns[cname])
+        if cname == 'id':
+            ret = IdFilter()
+        else:
+            ret = Filter()
+        ret.do_remove = do_remove
         if len(vals) == 0:
             return cls()
         if col.dt_type == "INT":
-            slist = cls.simplify_integer_list(vals, 4)
-            dist_ints = list(filter(lambda x: isinstance(x, int), slist))
-            range_ints = list(filter(lambda x: isinstance(x, list), slist))
-            # distinct integers
-            if dist_ints:
-                e = FilterEntry()
-                e.column = col
-                e.action = "one of"
-                e.value = dist_ints
-                ret.entries.append(e)
-            # ranges
-            for [r1, r2] in range_ints:
-                e1, e2 = FilterEntry(), FilterEntry()
-                e1.column = e2.column = col
-                e1.concat = "OR"
-                e2.concat = "AND"
-                e1.paren1, e2.paren2 = '(', ')'
-                e1.action, e2.action = ">=", "<="
-                e1.value, e2.value = r1, r2
-                ret.entries.extend([e1, e2])
+            IdFilter.set_from_ilist(ret, col, vals)
             return ret
         else:
             return cls.filter_by_values(datatab, [cname]*len(vals), vals,
@@ -286,14 +271,12 @@ class ColumnDef:
             return False
 
     def does_present(self, coldict):
+        """ does this column present in column dictionary """
         try:
             col = coldict[self.name]
             if col.dt_type != self.dt_type:
                 raise
-            coldct = None
-            if hasattr(col, 'dict'):
-                coldct = col.dict.name
-            if coldct != self.dict_name:
+            if not col.uses_dict(self.dict_name):
                 raise
         except:
             return False
@@ -305,8 +288,8 @@ class ColumnDef:
 
     @classmethod
     def from_column(cls, col):
-        if hasattr(col, 'dict'):
-            return cls(col.name, col.dt_type, col.dict.name)
+        if not col.uses_dict(None):
+            return cls(col.name, col.dt_type, col.repr_delegate.dict.name)
         else:
             return cls(col.name, col.dt_type, None)
 
@@ -341,4 +324,67 @@ class FilterEntry:
          ret.action,
          ret.value] = literal_eval(unescape(node.text))
         ret.column = ColumnDef(*literal_eval(ret.column))
+        return ret
+
+
+class IdFilter(Filter):
+    def __init__(self):
+        super().__init__(self)
+
+    def reset_id(self, used_ids):
+        """ used ids should be sorted.
+            returns false if no entries were left.
+        """
+        oldnew = {v: i+1 for i, v in enumerate(used_ids)}
+        ret = []
+        for x in self.unroll_data():
+            try:
+                ret.append(oldnew[x])
+            except KeyError:
+                break
+        col = self.entries[0].column
+        self.entries.clear()
+        self.set_from_ilist(self, col)
+        return len(self.entries) > 0
+
+    @staticmethod
+    def set_from_ilist(ret, col, ilist):
+        slist = IdFilter.simplify_integer_list(ilist, 4)
+        dist_ints = list(filter(lambda x: isinstance(x, int), slist))
+        range_ints = list(filter(lambda x: isinstance(x, list), slist))
+        # distinct integers
+        if dist_ints:
+            e = FilterEntry()
+            e.column = col
+            e.action = "one of"
+            e.value = dist_ints
+            ret.entries.append(e)
+        # ranges
+        for [r1, r2] in range_ints:
+            e1, e2 = FilterEntry(), FilterEntry()
+            e1.column = e2.column = col
+            e1.concat = "OR"
+            e2.concat = "AND"
+            e1.paren1, e2.paren2 = '(', ')'
+            e1.action, e2.action = ">=", "<="
+            e1.value, e2.value = r1, r2
+            ret.entries.extend([e1, e2])
+
+    @staticmethod
+    def simplify_integer_list(ilist, minrange):
+        """ (1,2,3,4,5, 8, 12,13,14) -> [1,5], 8, [12,14]
+        """
+        srt = sorted(set(ilist))
+        if len(ilist) == 0:
+            return []
+        ret = []
+        i, istart = 0, 0
+        while i < len(srt):
+            while i < len(srt) and srt[i] - srt[istart] == i - istart:
+                i += 1
+            if i - istart >= minrange:
+                ret.append([srt[istart], srt[i-1]])
+            else:
+                ret.extend(srt[istart:i])
+            istart = i
         return ret

@@ -19,7 +19,6 @@ class MainWindow(QtWidgets.QMainWindow):
         'proj - prog.projroot.ProjectDB'
         super().__init__()
         QtWidgets.qApp.aboutToQuit.connect(self._on_quit)
-        self.setWindowTitle("BioStat Analyser")
         # init position (will be changed by opts data)
         self.resize(800, 600)
         self.setGeometry(QtWidgets.QStyle.alignedRect(
@@ -36,6 +35,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui()
 
         # Load data
+        self.reset_title()
         filename = self.opts.default_project_filename()
         if filename is not None:
             self._load_database(filename)
@@ -58,173 +58,123 @@ class MainWindow(QtWidgets.QMainWindow):
         # ============== Menu
         menubar = self.menuBar()
 
-        # --- File
-        self.filemenu = menubar.addMenu('File')
-        self.filemenu.aboutToShow.connect(self._filemenu_enabled)
-        # Open db
-        self.open_action = QtWidgets.QAction("Open database...", self)
-        self.open_action.triggered.connect(self._act_open_database)
-        self.open_action.setShortcut(QtGui.QKeySequence.Open)
-        self.filemenu.addAction(self.open_action)
+        # ============ Filemenu
+        self.filemenu = qtcommon.BMenu('File', self, menubar)
+        # new db
+        self.filemenu.add_action('New database', self._act_newdb,
+                                 hotkey=QtGui.QKeySequence.New)
+        # open db
+        self.filemenu.add_action('Open database', self._act_open_database,
+                                 hotkey=QtGui.QKeySequence.Open)
         # open recent
-        self.open_recentmenu = QtWidgets.QMenu('Open recent database')
-        self.filemenu.addMenu(self.open_recentmenu)
+        self.filemenu.add_menu(QtWidgets.QMenu('Open recent database', self),
+                               menufun=self._recentmenu)
         # close
-        self.close_db_action = QtWidgets.QAction("Close database", self)
-        self.close_db_action.triggered.connect(self._close_database)
-        self.filemenu.addAction(self.close_db_action)
-
-        # save
+        self.filemenu.add_action('Close database', self._close_database,
+                                 vis=self.has_model,
+                                 hotkey=QtGui.QKeySequence.Close)
         self.filemenu.addSeparator()
-        self.save_action = QtWidgets.QAction("Save", self)
-        self.save_action.setShortcut(QtGui.QKeySequence.Save)
-        self.save_action.triggered.connect(self._act_save)
-        self.filemenu.addAction(self.save_action)
-        self.saveas_action = QtWidgets.QAction("Save as...", self)
-        self.saveas_action.triggered.connect(self._act_saveas)
-        self.filemenu.addAction(self.saveas_action)
-
-        # Export, Import
+        # save, save as
+        self.filemenu.add_action('Save', self._act_save,
+                                 vis=self.proj.need_save,
+                                 hotkey=QtGui.QKeySequence.Save)
+        self.filemenu.add_action('Save as...', self._act_saveas)
         self.filemenu.addSeparator()
-        self.export_action = QtWidgets.QAction("Export tables...", self)
-        self.export_action.triggered.connect(self._act_export)
-        self.filemenu.addAction(self.export_action)
-
-        self.import_table = QtWidgets.QAction("Import table...", self)
-        self.import_table.triggered.connect(self._act_import_table)
-        self.filemenu.addAction(self.import_table)
-
-        # options
+        # export, import
+        self.filemenu.add_action('Export tables...', self._act_export,
+                                 vis=self.has_model)
+        self.filemenu.add_action('Import tables...', self._act_import_table)
         self.filemenu.addSeparator()
-        self.opts_action = QtWidgets.QAction('Configuration', self)
-        self.opts_action.triggered.connect(self._act_opts)
-        self.filemenu.addAction(self.opts_action)
-        # Exit
+        # config
+        self.filemenu.add_action('Configuration', self._act_opts)
         self.filemenu.addSeparator()
-        exit_action = QtWidgets.QAction('Exit', self)
-        exit_action.setShortcut(QtGui.QKeySequence.Close)
-        exit_action.triggered.connect(QtWidgets.qApp.quit)
-        self.filemenu.addAction(exit_action)
+        # exit
+        self.filemenu.add_action('Exit', QtWidgets.qApp.quit,
+                                 hotkey=QtGui.QKeySequence.Close)
 
         # --- View
-        self.viewmenu = menubar.addMenu('View')
+        self.viewmenu = qtcommon.BMenu('View', self, menubar)
         self.viewmenu.aboutToShow.connect(self._viewmenu_enabled)
         # zoom
-        zoomin_act = QtWidgets.QAction('Increase font', self)
-        zoomin_act.triggered.connect(functools.partial(
-                self._act_zoom, 2))
-        self.viewmenu.addAction(zoomin_act)
-        zoomout_act = QtWidgets.QAction('Decrease font', self)
-        zoomout_act.triggered.connect(functools.partial(
-                self._act_zoom, -2))
-        self.viewmenu.addAction(zoomout_act)
+        self.viewmenu.add_action('Increase font',
+                                 functools.partial(self._act_zoom, 2),
+                                 vis=self.has_model)
+        self.viewmenu.add_action('Decrease font',
+                                 functools.partial(self._act_zoom, -2),
+                                 vis=self.has_model)
+        self.viewmenu.addSeparator()
         # fold/unfold
+        self.fold_rows_action = self.viewmenu.add_action(
+                'Fold all groups', self._act_fold_all_rows,
+                vis=self.has_model)
+        self.unfold_rows_action = self.viewmenu.add_action(
+                'Unfold all groups', self._act_unfold_all_rows,
+                vis=self.has_model)
         self.viewmenu.addSeparator()
-        self.fold_rows_action = QtWidgets.QAction('Fold all groups', self)
-        self.fold_rows_action.setCheckable(True)
-        self.fold_rows_action.triggered.connect(self._act_fold_all_rows)
-        self.viewmenu.addAction(self.fold_rows_action)
-        self.unfold_rows_action = QtWidgets.QAction('Unfold all groups', self)
-        self.unfold_rows_action.setCheckable(True)
-        self.unfold_rows_action.triggered.connect(self._act_unfold_all_rows)
-        self.viewmenu.addAction(self.unfold_rows_action)
         # color scheme
-        self.viewmenu.addSeparator()
-        self.apply_color_action = QtWidgets.QAction('Apply coloring', self)
-        self.apply_color_action.setCheckable(True)
-        self.apply_color_action.triggered.connect(self._act_apply_color)
-        self.viewmenu.addAction(self.apply_color_action)
-        self.set_color_action = QtWidgets.QAction('Set coloring...', self)
-        self.set_color_action.triggered.connect(self._act_set_coloring)
-        self.viewmenu.addAction(self.set_color_action)
+        self.apply_color_action = self.viewmenu.add_action(
+                'Apply coloring', self._act_apply_color,
+                vis=self.has_model)
+        self.viewmenu.add_action('Set coloring...', self._act_set_coloring,
+                                 vis=self.has_model)
 
         # --- Columns
-        self.columnsmenu = menubar.addMenu('Columns')
-        self.columnsmenu.aboutToShow.connect(self._columnsmenu_enabled)
+        self.columnsmenu = qtcommon.BMenu('Columns', self, menubar)
         # collapse
-        collapse_cats_action = QtWidgets.QAction(
-                'Collapse all categories', self)
-        collapse_cats_action.triggered.connect(self._act_collapse_all)
-        self.columnsmenu.addAction(collapse_cats_action)
-        self.uncollapse_cats_action = QtWidgets.QAction(
-                'Remove all collapses', self)
-        self.uncollapse_cats_action.triggered.connect(self._act_uncollapse_all)
-        self.columnsmenu.addAction(self.uncollapse_cats_action)
-        collapse_menu_action = QtWidgets.QAction(
-                'Collapse ...', self)
-        collapse_menu_action.triggered.connect(self._act_collapse)
-        self.columnsmenu.addAction(collapse_menu_action)
+        self.columnsmenu.add_action('Collapse all categories',
+                                    self._act_collapse_all, self.has_model)
+        self.columnsmenu.add_action('Remove all collapses',
+                                    self._act_collapse_all, self.has_model)
+        self.columnsmenu.add_action('Collapse ...', self._act_collapse,
+                                    self.has_model)
         # add columns
         self.columnsmenu.addSeparator()
-        column_by_filter_action = QtWidgets.QAction(
-                'New boolean category...', self)
-        column_by_filter_action.triggered.connect(self._act_new_bool_column)
-        self.columnsmenu.addAction(column_by_filter_action)
-        enum_column_action = QtWidgets.QAction(
-                'New enum category...', self)
-        enum_column_action.triggered.connect(self._act_new_enum_column)
-        self.columnsmenu.addAction(enum_column_action)
+        self.columnsmenu.add_action('New boolean category...',
+                                    self._act_new_bool_column, self.has_model)
+        self.columnsmenu.add_action('New enum category...',
+                                    self._act_new_enum_column, self.has_model)
 
         # --- Rows
-        self.rowsmenu = menubar.addMenu('Rows')
-        self.rowsmenu.aboutToShow.connect(self._rowsmenu_enabled)
+        self.rowsmenu = qtcommon.BMenu('Rows', self, menubar)
         # group/ungroup
-        group_by_redundancy_action = QtWidgets.QAction(
-                'Group redundancies', self)
-        group_by_redundancy_action.triggered.connect(
-                self._act_group_by_redundancy)
-        self.rowsmenu.addAction(group_by_redundancy_action)
-        self.ungroup_rows_action = QtWidgets.QAction('Ungroup all', self)
-        self.ungroup_rows_action.triggered.connect(self._act_ungroup_rows)
-        self.rowsmenu.addAction(self.ungroup_rows_action)
-        group_rows_action = QtWidgets.QAction('Group rows...', self)
-        group_rows_action.triggered.connect(self._act_group_rows)
-        self.rowsmenu.addAction(group_rows_action)
+        self.rowsmenu.add_action('Group redundancies',
+                                 self._act_group_by_redundancy,
+                                 self.has_model)
+        self.rowsmenu.add_action('Ungroup all',
+                                 self._act_ungroup_rows, self.has_model)
+        self.rowsmenu.add_action('Group rows...',
+                                 self._act_group_rows, self.has_model)
 
         # filtering
         self.rowsmenu.addSeparator()
-        filter_action = QtWidgets.QAction('Add Filter...', self)
-        filter_action.triggered.connect(self._act_filter)
-        self.rowsmenu.addAction(filter_action)
-
-        self.rem_all_filter_action = QtWidgets.QAction(
-                'Remove all filters', self)
-        self.rem_all_filter_action.triggered.connect(
-                lambda: (self.active_model.rem_all_filters(),
-                         self.active_model.update()))
-        self.rowsmenu.addAction(self.rem_all_filter_action)
+        self.rowsmenu.add_action('Add filter...',
+                                 self._act_filter, self.has_model)
+        self.rowsmenu.add_action('Remove all filters',
+                                 self._act_rem_filters, self.has_model)
 
         # --- Tables
-        self.tablesmenu = menubar.addMenu('Tables')
-        self.tablesmenu.aboutToShow.connect(self._tablesmenu_enabled)
+        self.tablesmenu = qtcommon.BMenu('Data', self, menubar)
 
         # tables and columns info
-        tables_columns_info = QtWidgets.QAction("Info && Edit...", self)
-        tables_columns_info.triggered.connect(self._act_tab_col)
-        self.tablesmenu.addAction(tables_columns_info)
+        self.tablesmenu.add_action("Tables...", self._act_tab_col,
+                                   lambda: len(self.models) > 0)
         # dictionaries
-        dictionaries_info = QtWidgets.QAction("Dictionaries...", self)
-        dictionaries_info.triggered.connect(self._act_dictinfo)
-        self.tablesmenu.addAction(dictionaries_info)
+        self.tablesmenu.add_action("Dictionaries...", self._act_dictinfo)
 
         # new table
         self.tablesmenu.addSeparator()
-        table_from_visible = QtWidgets.QAction(
-                'New table from visible...', self)
-        table_from_visible.triggered.connect(self._act_table_from_visible)
-        self.tablesmenu.addAction(table_from_visible)
+        self.tablesmenu.add_action('New table from visible...',
+                                   self._act_table_from_visible,
+                                   self.has_model)
 
         # join tables
-        join_tables = QtWidgets.QAction("Join tables...", self)
-        join_tables.triggered.connect(self._act_join_tables)
-        self.tablesmenu.addAction(join_tables)
+        self.tablesmenu.add_action('Join tables...', self._act_join_tables,
+                                   lambda: len(self.models) > 1)
 
         # remove active table
         self.tablesmenu.addSeparator()
-        self.rem_cur_table = QtWidgets.QAction("Remove active table", self)
-        self.rem_cur_table.triggered.connect(
-                lambda: self._act_remove_table(self.active_index()))
-        self.tablesmenu.addAction(self.rem_cur_table)
+        self.tablesmenu.add_action("Remove active table",
+                                   self._act_remove_table, self.has_model)
 
         # --- Show dock windows
         winmenu = menubar.addMenu("Show")
@@ -233,7 +183,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.dock_colinfo = docks.ColumnInfoDockWidget(self, winmenu)
 
         # --- About
-        self.aboutmenu = menubar.addMenu('About')
+        self.aboutmenu = qtcommon.BMenu('About', self, menubar)
 
     # =============== Actions
     def _tab_changed(self, index):
@@ -242,21 +192,17 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self._set_active_model(None)
 
-    def _filemenu_enabled(self):
-        self.export_action.setEnabled(self.active_model is not None)
-        self.import_table.setEnabled(self.proj is not None)
-        self.close_db_action.setEnabled(self.proj is not None)
-        # open recent
-        self.open_recentmenu.clear()
-        self.open_recentmenu.setEnabled(len(self.opts.recent_db) > 0)
+    def _recentmenu(self, menu):
+        menu.clear()
+        menu.setEnabled(len(self.opts.recent_db) > 0)
         for f in self.opts.recent_db:
             act = QtWidgets.QAction(f, self)
             act.triggered.connect(functools.partial(self._load_database, f))
-            self.open_recentmenu.addAction(act)
+            menu.addAction(act)
         act = QtWidgets.QAction('Clear', self)
         act.triggered.connect(self.opts.recent_db.clear)
-        self.open_recentmenu.addSeparator()
-        self.open_recentmenu.addAction(act)
+        menu.addSeparator()
+        menu.addAction(act)
 
     def _rowsmenu_enabled(self):
         enabled = self.active_model is not None
@@ -272,38 +218,19 @@ class MainWindow(QtWidgets.QMainWindow):
         has_groups = self.active_model.has_groups()
         self.ungroup_rows_action.setEnabled(has_groups)
 
-    def _tablesmenu_enabled(self):
-        enabled = self.active_model is not None
-        for m in self.tablesmenu.actions():
-            m.setEnabled(enabled)
-        if not enabled:
-            return
-
-    def _columnsmenu_enabled(self):
-        enabled = self.active_model is not None
-        for m in self.columnsmenu.actions():
-            m.setEnabled(enabled)
-        if not enabled:
-            return
-        # uncollapse only if there are collapses
-        self.uncollapse_cats_action.setEnabled(
-            self.active_model.has_collapses())
-
     def _viewmenu_enabled(self):
-        enabled = self.active_model is not None
-        for m in self.viewmenu.actions():
-            m.setEnabled(enabled)
-        if not enabled:
-            return
+        if self.has_model():
+            # set checks for fold/unfold
+            self.fold_rows_action.setChecked(
+                self.active_model._unfolded_groups is False)
+            self.unfold_rows_action.setChecked(
+                self.active_model._unfolded_groups is True)
+            # set checks for coloring
+            self.apply_color_action.setChecked(
+                self.active_model.use_coloring())
 
-        # set checks for fold/unfold
-        self.fold_rows_action.setChecked(
-            self.active_model._unfolded_groups is False)
-        self.unfold_rows_action.setChecked(
-            self.active_model._unfolded_groups is True)
-
-        # set checks for coloring
-        self.apply_color_action.setChecked(self.active_model.use_coloring())
+    def _act_newdb(self):
+        self._close_database()
 
     def _act_open_database(self):
         flt = "Databases (*.db, *.sqlite)(*.db *.sqlite);;Any files(*)"
@@ -313,8 +240,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_database(fname=filename[0])
 
     def _act_zoom(self, delta):
-        if self.active_model is not None:
-            self.active_model.zoom_font(delta)
+        self.opts.basic_font_size += delta
+        self.reload_options(self.opts)
 
     def _act_fold_all_rows(self):
         self.active_model.unfold_all_rows(False)
@@ -329,7 +256,11 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec_():
             flt = dialog.ret_value()
             self.active_model.add_filter(flt)
-            self.active_model.update()
+            self.update()
+
+    def _act_rem_filters(self):
+        self.active_model.rem_all_filters()
+        self.update()
 
     def _act_group_rows(self):
         dialog = dlgs.GroupRowsDlg(
@@ -337,16 +268,16 @@ class MainWindow(QtWidgets.QMainWindow):
         if dialog.exec_():
             r = dialog.ret_value()
             self.active_model.group_rows(r[1], r[0])
-            self.active_model.update()
+            self.update()
 
     def _act_group_by_redundancy(self):
         self.active_model.group_rows(
                 self.active_model.dt.get_category_names(), 'amean')
-        self.active_model.update()
+        self.update()
 
     def _act_ungroup_rows(self):
         self.active_model.group_rows([])
-        self.active_model.update()
+        self.update()
 
     def _act_collapse_all(self):
         try:
@@ -354,11 +285,11 @@ class MainWindow(QtWidgets.QMainWindow):
         except:
             delim = '-'
         if self.active_model.collapse_categories('all', True, delim):
-            self.active_model.update()
+            self.update()
 
     def _act_uncollapse_all(self):
         if self.active_model.remove_collapsed('all', True):
-            self.active_model.update()
+            self.update()
 
     def _act_collapse(self):
         dialog = dlgs.CollapseColumnsDlg(
@@ -368,7 +299,7 @@ class MainWindow(QtWidgets.QMainWindow):
             a = self.active_model.collapse_categories(r[2], r[0], r[1])
             if a:
                 self.__last_collapse_delimiter = r[1]
-                self.active_model.update()
+                self.update()
 
     def _act_export(self):
         dialog = dlgs.ExportTablesDlg(self)
@@ -409,7 +340,8 @@ class MainWindow(QtWidgets.QMainWindow):
             index = self.add_model(newmodel)
             self.wtab.setCurrentIndex(index)
 
-    def _act_remove_table(self, i):
+    def _act_remove_table(self):
+        i = self.active_index()
         mod = self.models[i]
         try:
             self.proj.remove_table(mod.table_name())
@@ -452,7 +384,12 @@ class MainWindow(QtWidgets.QMainWindow):
         pass
 
     def _act_dictinfo(self):
-        pass
+        from bgui import dictdlg
+        dialog = dictdlg.DictInformation(self.proj, self)
+        if dialog.exec_():
+            ret = dialog.ret_value()
+            self.proj.change_dictionaries(ret[0], shrink=ret[1]['Shrink'])
+            self.update()
 
     def _on_quit(self):
         self.opts.set_mainwindow_state(self.saveState(), self.saveGeometry())
@@ -471,8 +408,8 @@ class MainWindow(QtWidgets.QMainWindow):
             self, "Save database as", self.proj.curdir(), flt)
         if filename[0]:
             try:
-                self._set_actual_file(filename[0])
                 self.proj.relocate_and_commit_all_changes(filename[0])
+                self._set_actual_file(filename[0])
             except Exception as e:
                 qtcommon.message_exc(self, "Save error", e=e)
 
@@ -499,8 +436,11 @@ class MainWindow(QtWidgets.QMainWindow):
             qtcommon.message_exc(self, "Load error", text=m, e=e)
 
     def _set_actual_file(self, fname):
-            self.opts.add_db_path(fname)
-            self.setWindowTitle(fname + " - BioStat Analyser")
+        self.opts.add_db_path(fname)
+        self.reset_title()
+
+    def reset_title(self):
+        self.setWindowTitle(self.proj._curname + " - BioStat Analyser")
 
     def _close_database(self):
         self.proj.close_main_database()
@@ -508,6 +448,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.models = []
         self.wtab.clear()
         self.tabframes = []
+        self.reset_title()
 
     def _init_project(self):
         self.models = []
@@ -524,6 +465,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.tabframes.append(tview.TableView(m, self.wtab))
         for f in self.tabframes:
             self.wtab.addTab(f, f.table_name())
+
+    def has_model(self):
+        return self.active_model is not None
 
     def active_index(self):
         return self.models.index(self.active_model)
@@ -548,10 +492,18 @@ class MainWindow(QtWidgets.QMainWindow):
             self.active_model_changed.emit()
             self.active_model.repr_updated.connect(
                     self._forward_repr_changed)
-            self.active_model.update()
+            self.update()
         else:
             self.active_model = None
             self.active_model_changed.emit()
+
+    def update(self):
+        if self.active_model:
+            self.active_model.update()
+
+    def view_update(self):
+        if self.active_model:
+            self.active_model.view_update()
 
     def reload_options(self, opts):
         from bgui import cfg
@@ -564,5 +516,4 @@ class MainWindow(QtWidgets.QMainWindow):
              'codes': cfg.ViewConfig.BOOL_AS_CODES,
              'Yes/No': cfg.ViewConfig.BOOL_AS_YESNO}[opts.show_bool_as]
         cfg.ViewConfig.get().refresh()
-        if self.active_model is not None:
-            self.active_model.view_update()
+        self.view_update()

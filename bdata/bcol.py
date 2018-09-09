@@ -1,29 +1,23 @@
+import copy
 import xml.etree.ElementTree as ET
-from prog import bsqlproc
+from xml.sax.saxutils import escape, unescape
+from ast import literal_eval
+from prog import basic, bsqlproc
 
 
-# ====================== Basic column info
 class ColumnInfo:
-    def __init__(self):
-        self.name = None
-        self.shortname = None
+    def __init__(self, name):
+        self.name = name
+        self.shortname = name
         self.dim = None
         self.comment = None
         self.dt_type = None
-        self._sql_group_fun = None
+        self.real_data_groupfun = 'AVG'
+        # delegates
+        self.repr_delegate = None
+        self.sql_delegate = None
 
-    def col_type(self):
-        return self.dt_type
-
-    def is_category(self):
-        return self.dt_type != "REAL"
-
-    def is_original(self):
-        return isinstance(self, OriginalColumnInfo)
-
-    def sql_line(self, grouping=False):
-        raise NotImplementedError
-
+    # ----------- basic functional
     def sql_data_type(self):
         if self.dt_type in ["ENUM", "BOOL", "INT"]:
             return "INTEGER"
@@ -35,169 +29,224 @@ class ColumnInfo:
     def state_xml(self):
         "returns spec. info as xml string"
         root = ET.Element('ColumnState')
-        ET.SubElement(root, 'SQL_GROUP_FUN').text = self._sql_group_fun
-        self.imp_state(root)
+        ET.SubElement(root, 'SQL_REAL_GROUP').text =\
+            escape(self.real_data_groupfun)
+        self.repr_delegate.state_xml(root)
+        self.sql_delegate.state_xml(root)
         return ET.tostring(root, encoding='utf-8', method='xml').decode()
 
-    def imp_state(self, root):
-        'used to save stuff from functional columns'
-        pass
+    def is_category(self):
+        return self.dt_type != "REAL"
 
+    def sql_group_fun(self):
+        if self.is_category():
+            return 'category_group'
+        else:
+            return self.real_data_groupfun
+
+    def set_sql_delegate(self, d):
+        self.sql_delegate = d
+        d.column = self
+
+    def set_repr_delegate(self, d):
+        self.repr_delegate = d
+        self.dt_type = d.dt_type()
+
+    # ------------ delegated to repr_delegate
+    def repr(self, x):
+        try:
+            return self.repr_delegate.repr(x)
+        except:
+            return None
+
+    def from_repr(self, x):
+        try:
+            return self.repr_delegate.from_repr(x)
+        except:
+            return None
+
+    def col_type(self):
+        '-> INT, TEXT, ENUM (dict), ... '
+        return self.repr_delegate.col_type()
+
+    def uses_dict(self, dct):
+        """ whether this column uses Dictionary dct.
+            If dct=None -> checks if there are no dicts at all.
+            if dct is string -> checks dictionary name
+        """
+        return self.repr_delegate.uses_dict(dct)
+
+    def same_representation(self, a):
+        return self.repr_delegate.same_representation(a.repr_delegate)
+
+    # ------------- delegated to sql_delegate
+    def sql_line(self, grouping=False):
+        return self.sql_delegate.sql_line(grouping)
+
+    def is_original(self):
+        return self.sql_delegate.is_original()
+
+    # ------------- static and class methods
     @staticmethod
     def are_same(collist):
         if len(collist) < 2:
             return True
 
-        def eq(col1, col2):
-            if col1.dt_type != col2.dt_type:
-                return False
-            if col1.dt_type in ["BOOL", "ENUM"]:
-                if col1.dict != col2.dict:
-                    return False
-            return True
-
         for i in range(len(collist)-1):
-            if not eq(collist[i], collist[i+1]):
+            if not collist[i].same_representation(collist[i+1]):
                 return False
         return True
 
 
-# ====================== Data representation classes
-class DataRepr:
-    def __init__(self):
+# ================== Repr delegates
+class _BasicRepr:
+    def repr(self, x):
+        raise NotImplementedError
+
+    def from_repr(self, x):
+        raise NotImplementedError
+
+    def col_type(self):
+        raise NotImplementedError
+
+    def dt_type(self):
+        return self.col_type().split(maxsplit=1)[0]
+
+    def same_representation(self, rep):
+        return isinstance(rep, self.__class__)
+
+    def uses_dict(self, dct):
+        return dct is not None
+
+    def state_xml(self, root):
         pass
 
-    def repr(self, x):
-        raise NotImplementedError
+    def copy(self):
+        return copy.deepcopy(self)
 
-    def from_repr(self, x):
-        raise NotImplementedError
-
-
-class EnumRepr(DataRepr):
-    def __init__(self, dct):
-        self.dict = dct
-
-    def repr(self, x):
-        try:
-            return self.dict.key_to_value(x)
-        except KeyError:
-            return None
-
-    def from_repr(self, x):
-        try:
-            return self.dict.value_to_key(x)
-        except KeyError:
-            return None
+    @staticmethod
+    def default(tp, dct=None):
+        if tp == 'INT':
+            return IntRepr()
+        elif tp == 'TEXT':
+            return TextRepr()
+        elif tp == 'REAL':
+            return RealRepr()
+        elif tp == 'BOOL':
+            return BoolRepr(dct)
+        elif tp == 'ENUM':
+            return EnumRepr(dct)
 
 
-class SimpleRepr(DataRepr):
-    def __init__(self, ptype):
-        super().__init__()
-        self._ptype = ptype
-
+class IntRepr(_BasicRepr):
     def repr(self, x):
         return x
 
     def from_repr(self, x):
-        return self._ptype(x) if x is not None else None
+        return int(x) if x is not None else None
+
+    def col_type(self):
+        return "INT"
 
 
-# ======================= Original Columns (present in sql table)
-class OriginalColumnInfo(ColumnInfo):
+class TextRepr(_BasicRepr):
+    def repr(self, x):
+        return x
+
+    def from_repr(self, x):
+        return x
+
+    def col_type(self):
+        return "TEXT"
+
+
+class RealRepr(_BasicRepr):
+    def repr(self, x):
+        return x
+
+    def from_repr(self, x):
+        return float(x)
+
+    def col_type(self):
+        return "REAL"
+
+
+class EnumRepr(_BasicRepr):
+    def __init__(self, d):
+        self.dict = d
+
+    def repr(self, x):
+        return self.dict.key_to_value(x)
+
+    def from_repr(self, x):
+        return self.dict.value_to_key(x)
+
+    def col_type(self):
+        return "ENUM ({})".format(self.dict.name)
+
+    def uses_dict(self, dct):
+        return self.dict is dct or (isinstance(dct, str) and
+                                    dct == self.dict.name)
+
+    def same_representation(self, rep):
+        return super().same_representation(rep) and self.dict is rep.dict
+
+    def copy(self):
+        return self.__class__(self.dict)
+
+
+class BoolRepr(EnumRepr):
+    def col_type(self):
+        return "BOOL ({})".format(self.dict.name)
+
+
+# ======================= Sql delegates
+class _BasicSqlDelegate:
     def __init__(self):
-        super().__init__()
+        # this is assigned when delegate connects to column
+        self.column = None
 
-    def sql_line(self, grouping=False):
-        if not grouping:
-            return '"{}"'.format(self.name)
-        else:
-            return '{}("{}")'.format(self._sql_group_fun, self.name)
-
-    @staticmethod
-    def build(name, dt_type, dct=None):
-        if dt_type == "INT":
-            ret = IntColumnInfo()
-        elif dt_type == "TEXT":
-            ret = TextColumnInfo()
-        elif dt_type == "REAL":
-            ret = RealColumnInfo()
-        elif dt_type == "BOOL":
-            ret = BoolColumnInfo(dct)
-        elif dt_type == "ENUM":
-            ret = EnumColumnInfo(dct)
-        else:
-            raise Exception("Unknown column type: {}".format(dt_type))
-        ret.name = name
-        ret.status_column = StatusColumnInfo(ret)
+    def copy(self):
+        bu, self.column = self.column, None
+        ret = copy.deepcopy(self)
+        self.column = bu
         return ret
 
+    def state_xml(self, root):
+        pass
 
-class StatusColumnInfo(OriginalColumnInfo):
-    def __init__(self, parent):
+
+class OriginalSqlDelegate(_BasicSqlDelegate):
+    def sql_line(self, grouping=False):
+        if not grouping:
+            return '"{}"'.format(self.column.name)
+        else:
+            return '{}("{}")'.format(
+                self.column.sql_group_fun(), self.column.name)
+
+    def is_original(self):
+        return True
+
+
+class FuncSqlDelegate(_BasicSqlDelegate):
+    def __init__(self, deps):
         super().__init__()
-        self.name = "_status " + parent.name
-        self.shortname = self.name
-        self.dt_type = "BOOL"
-        self._sql_group_fun = 'MAX'
-
-
-class EnumColumnInfo(OriginalColumnInfo, EnumRepr):
-    def __init__(self, dct):
-        OriginalColumnInfo.__init__(self)
-        EnumRepr.__init__(self, dct)
-        self.dt_type = "ENUM"
-
-    def col_type(self):
-        return "{} ({})".format(self.dt_type, self.dict.name)
-
-
-class BoolColumnInfo(OriginalColumnInfo, EnumRepr):
-    def __init__(self, dct):
-        OriginalColumnInfo.__init__(self)
-        EnumRepr.__init__(self, dct)
-        self.dt_type = "BOOL"
-
-    def col_type(self):
-        return "{} ({})".format(self.dt_type, self.dict.name)
-
-
-class IntColumnInfo(OriginalColumnInfo, SimpleRepr):
-    def __init__(self):
-        OriginalColumnInfo.__init__(self)
-        SimpleRepr.__init__(self, int)
-        self.dt_type = "INT"
-
-
-class TextColumnInfo(OriginalColumnInfo, SimpleRepr):
-    def __init__(self):
-        OriginalColumnInfo.__init__(self)
-        SimpleRepr.__init__(self, str)
-        self.dt_type = "TEXT"
-
-
-class RealColumnInfo(OriginalColumnInfo, SimpleRepr):
-    def __init__(self):
-        OriginalColumnInfo.__init__(self)
-        SimpleRepr.__init__(self, float)
-        self.dt_type = "REAL"
-
-
-# ========================== Function column: calculated each query
-class FunctionColumn(ColumnInfo):
-    def __init__(self):
-        super().__init__()
+        # list of ColumnInfo from which this function gets its arguments
+        self.deps = deps
         self._sql_fun = None
         self.use_before_grouping = None
-        self.deps = []
-        # func_name containts function which was used to build this column,
-        # other fields are serializable arguments.
+        # string representation of function which was used to build self.
+        self.function_type = None
+        # serializable arguments for calling function_type
         self.kwargs = {}
+
+    def is_original(self):
+        return False
 
     def sql_line(self, grouping=False):
         if grouping and self.use_before_grouping:
             return "{}({}({}))".format(
-                self._sql_group_fun, self._sql_fun,
+                self.column.sql_group_fun(), self._sql_fun,
                 ", ".join([x.sql_line(False) for x in self.deps]))
         elif grouping and not self.use_before_grouping:
             return "{}({})".format(self._sql_fun, ", ".join(
@@ -206,43 +255,96 @@ class FunctionColumn(ColumnInfo):
             return "{}({})".format(self._sql_fun, ", ".join(
                 [x.sql_line(False) for x in self.deps]))
 
-    def function_type(self):
-        try:
-            return self.kwargs['func_name']
-        except KeyError:
-            return None
+    def state_xml(self, root):
+        super().state_xml(root)
 
-    def imp_state(self, root):
-        from xml.sax.saxutils import escape
-
-        func = ET.SubElement(root, "FUNCTION")
-        ET.SubElement(func, "ARGUMENTS").text =\
+        ET.SubElement(root, 'BEFORE_GROUPING').text =\
+            str(int(self.use_before_grouping))
+        ET.SubElement(root, 'FUNCTION').text =\
+            escape(self.function_type)
+        ET.SubElement(root, "ARGUMENTS").text =\
             escape(str([x.name for x in self.deps]))
-        ET.SubElement(func, "DESCRIPTION").text = escape(str(self.kwargs))
+        ET.SubElement(root, "DESCRIPTION").text = escape(str(self.kwargs))
 
 
-class FuncStatusColumn(FunctionColumn):
+class OrigStatusColumn(ColumnInfo):
     def __init__(self, parent):
-        super().__init__()
-        self.name = "_status " + parent.name
-        self.shortname = self.name
+        nm = '_status ' + parent.name
+        super().__init__(nm)
+        self.dt_type = 'BOOL'
+        self.set_sql_delegate(OriginalSqlDelegate())
+
+    def sql_group_fun(self):
+        return 'MAX'
+
+
+class FuncStatusColumn(ColumnInfo):
+    def __init__(self, parent):
+        nm = "_status " + parent.name
+        super().__init__(nm)
         self.dt_type = "BOOL"
-        self._sql_group_fun = "MAX"
-        self._sql_fun = "max_per_list"
-        self.before_grouping = True
-        self.deps = [p.status_column for p in parent.deps]
+
+        deps = [p.status_column for p in parent.sql_delegate.deps]
+        sql = FuncSqlDelegate(deps)
+        sql._sql_fun = 'max_per_list'
+        sql.use_before_gouping = True
+        self.set_sql_delegate(sql)
+
+    def sql_group_fun(self):
+        return 'MAX'
 
 
 # ========================= Constructors
+def build_original_column(name, tp, dct=None, state_xml=None):
+    ret = ColumnInfo(name)
+    ret.set_repr_delegate(_BasicRepr.default(tp, dct))
+    ret.set_sql_delegate(OriginalSqlDelegate())
+
+    if state_xml is not None:
+        ret.real_data_groupfun = unescape(
+            state_xml.find('SQL_REAL_GROUP').text)
+
+    # status column
+    ret.status_column = OrigStatusColumn(ret)
+
+
+def explicit_build(proj, name, tp_name, dict_name=None):
+    dct = proj.get_dictionary(dict_name) if dict_name else None
+    return build_original_column(name, tp_name, dct)
+
+
+def build_id():
+    return build_original_column('id', "INT")
+
+
+def build_deep_copy(orig, newname=None):
+    """ copies, breaks all dependencies. Resulting column is original. """
+    bu1, bu2 = orig.repr_delegate, orig.sql_delegate
+    orig.repr_delegate, orig.sql_delegate = None, None
+    ret = copy.deepcopy(orig)
+    if newname:
+        ret.name = newname
+        ret.shortname = ret.name
+    orig.repr_delegate, orig.sql_delegate = bu1, bu2
+    ret.set_repr_delegate(bu1.copy1())
+    ret.set_sql_delegate(OriginalSqlDelegate())
+    return ret
+
+
+def restore_function_column(name, func_name, columns, **kwargs):
+    if func_name == "collapsed_categories":
+        return collapsed_categories(columns, kwargs['delimiter'])
+    else:
+        raise Exception("unknown function name {}".format(kwargs['func_name']))
+
+
 def build_from_db(proj, table, name):
     """ builds a column and places it into table.columns[name].
 
-        In order to keep dependencies recursive procedure is used,
-        so single run of this procedure in case of functinal columns
+        In order to keep dependencies recursive procedure is used.
+        Hence single run of this procedure in case of functional columns
         may result in reading and placing all parent columns.
     """
-    from ast import literal_eval
-    from xml.sax.saxutils import unescape
     # recursion tail
     if name in table.columns:
         return table.columns[name]
@@ -254,101 +356,41 @@ def build_from_db(proj, table, name):
     proj.sql.query(qr)
     f = proj.sql.qresult()
     dct = proj.get_dictionary(f[1]) if f[1] else None
-    state = ET.fromstring(f[5])
+    state = ET.fromstring(f[5]) if f[5] else None
     if f[6]:
-        ret = OriginalColumnInfo.build(name, f[0], dct)
+        # ------ original column
+        ret = build_original_column(name, f[0], state, dct)
     else:
-        colnames = literal_eval(unescape(
-            state.find("FUNCTION/ARGUMENTS").text))
+        # ------ functional column
+        colnames = literal_eval(unescape(state.find("ARGUMENTS").text))
         # create all arguments recursively
-        [build_from_db(proj, table, x) for x in colnames]
+        colargs = [build_from_db(proj, table, x) for x in colnames]
         kwargs = literal_eval(unescape(
-            state.find("FUNCTION/DESCRIPTION").text))
-        ret = restore_function_column(table, colnames, **kwargs)
+            state.find("DESCRIPTION").text))
+        func_name = unescape(state.find("FUNCTION"))
+        ret = restore_function_column(name, func_name, colargs, **kwargs)
+        ret.set_repr_delegate(_BasicRepr.default(f[0], dct))
+
+    # ----------- fill basic data
     ret.shortname = f[3] if f[3] is not None else name
     ret.dim = f[2]
-    ret.dt_type = f[0]
-    ret._sql_group_fun = state.find("SQL_GROUP_FUN").text
     ret.comment = f[4]
     table.columns[name] = ret
     return ret
 
 
-def explicit_build(proj, name, tp_name, dict_name):
-    dct = proj.get_dictionary(dict_name) if dict_name else None
-    ret = OriginalColumnInfo.build(name, tp_name, dct)
-    ret.shortname = name
-    ret.dt_type = tp_name
-    if ret.is_category():
-        ret._sql_group_fun = "category_group"
-    else:
-        ret._sql_group_fun = "AVG"
-    ret.status_column = StatusColumnInfo(ret)
+def build_function_sql_delegate(deps, before_grouping, func, func_type, kw):
+    ret = FuncSqlDelegate(deps)
+    ret._sql_fun = bsqlproc.connection.build_lambda_func(func)
+    ret.function_type = func_type
+    ret.use_before_grouping = before_grouping
+    ret.kwargs = kw
+
     return ret
 
 
-def build_id():
-    ret = OriginalColumnInfo.build('id', "INT", None)
-    ret.shortname = 'id'
-    ret.dt_type = 'INT'
-    ret._sql_group_fun = 'category_group'
-    ret.status_column = StatusColumnInfo(ret)
-    return ret
-
-
-def build_deep_copy(orig, newname=None):
-    """ copies, breaks all dependencies. Resulting column is original. """
-    if orig.dt_type in ["BOOL", "ENUM"]:
-        dct = orig.dict
-    else:
-        dct = None
-    name = orig.name if newname is None else newname
-    ret = OriginalColumnInfo.build(name, orig.dt_type, dct)
-    ret.shortname = orig.shortname
-    ret.dt_type = orig.dt_type
-    ret._sql_fun = '"{}"'.format(ret.name)
-    ret._sql_group_fun = orig._sql_group_fun
-    ret.status_column = StatusColumnInfo(ret)
-    return ret
-
-
-def build_function_column(name, func, deps, before_grouping,
-                          dt_type, kw, dct=None):
-    # representation class
-    if dt_type in ["BOOL", "ENUM"]:
-        RepClass = EnumRepr    # noqa
-        repargs = (dct,)
-    else:
-        RepClass = SimpleRepr  # noqa
-        if dt_type == "INT":
-            repargs = (int,)
-        elif dt_type == "TEXT":
-            repargs = (str,)
-        elif dt_type == "REAL":
-            repargs = (float,)
-
-    class FuncCInfo(FunctionColumn, RepClass):
-        def __init__(self):
-            FunctionColumn.__init__(self)
-            RepClass.__init__(self, *repargs)
-            self.name = name
-            self.shortname = name
-            self.dt_type = dt_type
-            self.deps = deps
-            self.use_before_grouping = before_grouping
-            self._sql_fun = bsqlproc.connection.build_lambda_func(func)
-            if self.is_category():
-                self._sql_group_fun = "category_group"
-            else:
-                self._sql_group_fun = "AVG"
-            self.status_column = FuncStatusColumn(self)
-            self.kwargs = kw
-
-    return FuncCInfo()
-
-
+# ======================= functional columns list
 def collapsed_categories(columns, delimiter='-'):
-
     def func(*args):
         try:
             ret = []
@@ -359,17 +401,16 @@ def collapsed_categories(columns, delimiter='-'):
                     ret.append('  ')
             return delimiter.join(ret)
         except Exception as e:
-            print("Collapse error: ", str(e), [c.name for c in columns], args)
+            basic.ignore_exception(e, "collapse error. " + str(args))
 
     name = delimiter.join([x.shortname for x in columns])
-    kwargs = {'func_name': 'collapsed_categories', 'delimiter': delimiter}
-    ret = build_function_column(name, func, columns, True, "TEXT", kwargs)
+    kwargs = {'delimiter': delimiter}
+    rep = _BasicRepr.default("TEXT")
+    sql = build_function_sql_delegate(columns, True, func,
+                                      "collapsed_categories", kwargs)
+    ret = ColumnInfo(name)
+    ret.set_repr_delegate(rep)
+    ret.set_sql_delegate(sql)
+
+    ret.status_column = FuncStatusColumn(ret)
     return ret
-
-
-def restore_function_column(table, colargs, **kwargs):
-    columns = [table.columns[x] for x in colargs]
-    if kwargs['func_name'] == "collapsed_categories":
-        return collapsed_categories(columns, kwargs['delimiter'])
-    else:
-        raise Exception("unknown function name {}".format(kwargs['func_name']))
