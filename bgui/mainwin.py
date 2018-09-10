@@ -475,9 +475,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def add_model(self, newmodel):
         self.models.append(newmodel)
         self.tabframes.append(tview.TableView(newmodel, self.wtab))
-        # add {} to show that this is a derived model
-        self.wtab.addTab(self.tabframes[-1],
-                         '{' + self.tabframes[-1].table_name() + '}')
+        self.wtab.addTab(self.tabframes[-1], self.tabframes[-1].table_name())
         return len(self.models) - 1
 
     def _forward_repr_changed(self, a, b):
@@ -489,16 +487,21 @@ class MainWindow(QtWidgets.QMainWindow):
                     self._forward_repr_changed)
         if i is not None and i < len(self.models):
             self.active_model = self.models[i]
-            self.active_model_changed.emit()
+            self.update()
             self.active_model.repr_updated.connect(
                     self._forward_repr_changed)
-            self.update()
+            self.active_model_changed.emit()
         else:
             self.active_model = None
             self.active_model_changed.emit()
 
     def update(self):
         if self.active_model:
+            for i, t in enumerate(self.models):
+                cap = t.table_name()
+                if t.dt.need_rewrite:
+                    cap += '*'
+                self.wtab.setTabText(i, cap)
             self.active_model.update()
 
     def view_update(self):

@@ -306,6 +306,7 @@ def build_original_column(name, tp, dct=None, state_xml=None):
 
     # status column
     ret.status_column = OrigStatusColumn(ret)
+    return ret
 
 
 def explicit_build(proj, name, tp_name, dict_name=None):
@@ -398,7 +399,7 @@ def collapsed_categories(columns, delimiter='-'):
                 if x is not None:
                     ret.append(str(c.repr(x)))
                 else:
-                    ret.append('  ')
+                    ret.append('##')
             return delimiter.join(ret)
         except Exception as e:
             basic.ignore_exception(e, "collapse error. " + str(args))

@@ -147,9 +147,6 @@ class TabModel(QtCore.QAbstractTableModel):
             return ret
         else:
             if role not in [3, 4]:
-                import traceback
-                traceback.print_stack()
-                print(role)
                 raise NotImplementedError
 
         return None
@@ -291,7 +288,7 @@ class TabModel(QtCore.QAbstractTableModel):
         cols = [self.dt.columns[w] for w in what]
         ret = self.dt.merge_categories(cols, delim)
         if ret and do_hide:
-            for c in ret.deps:
+            for c in ret.sql_delegate.deps:
                 self.dt.set_visibility(c, False)
         return ret
 

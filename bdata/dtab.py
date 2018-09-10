@@ -245,6 +245,7 @@ class DataTable(object):
     def qresults(self):
         return self.proj.sql.qresults()
 
+    
     def update(self):
         self.query(self._compile_query())
         self.tab.fill(self.qresults())

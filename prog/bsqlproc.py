@@ -102,6 +102,7 @@ class SqlConnection:
         self.init_connection()
         self.cursor = self.connection.cursor()
         self._i_sql_functions = 1
+        self.has_A = False
 
     def close_connection(self):
         self.connection.close()
@@ -128,12 +129,16 @@ class SqlConnection:
     def attach_database(self, alias, fn):
         self.detach_database(alias)
         self.query('ATTACH DATABASE "{}" AS "{}"'.format(fn, alias))
+        if alias == 'A':
+            self.has_A = True
 
     def detach_database(self, alias):
         try:
             self.query('DETACH DATABASE "{}"'.format(alias))
         except:
             pass
+        if alias == 'A':
+            self.has_A = False
 
     def init_connection(self):
         for r in registered_aggregate_functions:

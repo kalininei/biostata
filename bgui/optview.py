@@ -73,6 +73,8 @@ class OptionsHolderInterface:
     class _OData(object):
         pass
 
+    sig_set_odata_entry = QtCore.pyqtSignal(str, object)
+
     def odata(self):
         """returns options struct child class singleton which stores
         last dialog execution"""
@@ -100,6 +102,18 @@ class OptionsHolderInterface:
         self.oview = OptionsView(self.olist())
         self.oview.is_active_delegate(self._active_entries)
 
+        self.sig_set_odata_entry.connect(self.sig_set_odata_entry_emitter)
+
+    def sig_set_odata_entry_emitter(self, code, value):
+        self.set_odata_entry(code, value)
+        # for i, op in range(self.oview.opt):
+        #     if op.member_name == value:
+        #         break
+        # else:
+        #     raise Exception("code was not found amoung member names")
+        # cap = self.oview.caps[i]
+        self.oview.update_entry_view(code)
+
     def confirm_input(self):
         "check errors and invoke parent accept"
         try:
@@ -123,7 +137,7 @@ class OptionsHolderInterface:
         pass
 
     def olist(self):
-        "-> optview.OptionsList"
+        "-> optview.OptionsList. Used in construction only"
         raise NotImplementedError
 
     def ret_value(self):
@@ -590,6 +604,16 @@ class OptionsModel(QtCore.QAbstractItemModel):
         else:
             return self._root_item.columnCount()
 
+    def index_by_caption_code(self, code):
+        for i in range(self.rowCount(QtCore.QModelIndex())):
+            ind = self.index(i, 0, QtCore.QModelIndex())
+            for j in range(self.rowCount(ind)):
+                ind2 = self.index(j, 0, ind)
+                dt = ind2.internalPointer().data(1)
+                if dt.member_name == code:
+                    return ind2
+        raise Exception("no such code: {}".format(code))
+
     def index(self, row, column, parent):
         "overriden"
         if not self.hasIndex(row, column, parent):
@@ -680,6 +704,11 @@ class OptionsView(QtWidgets.QTreeView):
         self.setAllColumnsShowFocus(True)
         self.setHeaderHidden(True)
         self.setIndentation(conf.branch_indent)
+
+    def update_entry_view(self, code):
+        'updates view (emits dataChanged) for a option line with code'
+        index = self.model.index_by_caption_code(code)
+        self.dataChanged(index, index.sibling(index.row(), 1))
 
     def is_active_delegate(self, func):
         """define a function which sets active status for entries

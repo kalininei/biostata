@@ -10,6 +10,8 @@ from fileproc import import_tab
 
 
 class _ImportDialog(dlgs.OkCancelDialog):
+    data_was_loaded = QtCore.pyqtSignal()
+
     def __init__(self, proj, fn, parent):
         title = 'Import table as {} from "{}"'.format(self.get_format(), fn)
         super().__init__(title, parent, "vertical")
@@ -20,11 +22,10 @@ class _ImportDialog(dlgs.OkCancelDialog):
         self.buttonbox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         # mainframe = upperframe + lowerframe
         self.upper_frame = QtWidgets.QFrame(self)
+        self.upper_frame.setFixedHeight(180)
         self.lower_frame = QtWidgets.QFrame(self)
         self.mainframe.layout().addWidget(self.upper_frame)
         self.mainframe.layout().addWidget(self.lower_frame)
-        self.mainframe.layout().setStretch(0, 2)
-        self.mainframe.layout().setStretch(1, 2)
 
         # upper_frame = specific widget + load button
         self.upper_frame.setLayout(QtWidgets.QVBoxLayout())
@@ -63,6 +64,7 @@ class _ImportDialog(dlgs.OkCancelDialog):
                 self.draw_table(cap, tab)
                 self.buttonbox.button(
                         QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
+            self.data_was_loaded.emit()
         except Exception as e:
             qtcommon.message_exc(self, "File parsing error", e=e)
 
@@ -130,29 +132,8 @@ class PreloadModel(QtCore.QAbstractTableModel):
         for i, c in enumerate(self.caps):
             if not c:
                 self.caps[i] = "Column {}".format(i + 1)
-        for i in range(self.data_columns):
-            self.columns_format[i] = self.autodetect_type(i, 10)
+        self.columns_format = import_tab.autodetect_types(self.tab)
         self.endResetModel()
-
-    def autodetect_type(self, icol, maxsize):
-        import ast
-        r = "INT"  # 3-INT, 2-REAL, 1-TEXT
-        s = 0
-        for irow in range(self.data_rows):
-            v = self.tab[irow][icol]
-            if v is not "" and v is not None:
-                try:
-                    x = ast.literal_eval(v)
-                    if type(x) is float:
-                        r = "REAL"
-                    elif type(x) is not int:
-                        raise
-                    s += 1
-                    if s >= maxsize:
-                        break
-                except:
-                    return "TEXT"
-        return r
 
     def columnCount(self, index=None):   # noqa
         return self.data_columns
@@ -174,17 +155,15 @@ class PreloadModel(QtCore.QAbstractTableModel):
                 return self.columns_dicts[c]
             elif r > 2:
                 v = self.tab[r-3][c]
-                if self.columns_format[c] == "TEXT":
-                    return v
                 try:
                     if self.columns_format[c] == "INT":
-                        return int(v)
+                        int(v)
                     elif self.columns_format[c] == "REAL":
-                        return float(v)
+                        float(v)
                     elif self.columns_format[c] in ["BOOL", "ENUM"]:
                         dct = self.proj.get_dictionary(self.columns_dicts[c])
                         dct.value_to_key(v)
-                        return v
+                    return v
                 except Exception:
                     return None
 
@@ -253,7 +232,7 @@ class PreloadModel(QtCore.QAbstractTableModel):
         return ret
 
     def get_unique_data_values(self, icol):
-        s = set([x[icol] for x in self.tab])
+        s = set([x[icol] for x in self.tab if x[icol] is not None])
         return sorted(s)
 
     def get_columns(self):
@@ -272,15 +251,9 @@ class PreloadModel(QtCore.QAbstractTableModel):
         ret = [[None] * len(jreal) for _ in range(len(self.tab))]
 
         for j, jr in enumerate(jreal):
-            if self.columns_format[jr] in ["ENUM", "BOOL"]:
-                dct = self.proj.get_dictionary(self.columns_dicts[jr])
-            else:
-                dct = None
             for i in range(len(self.tab)):
-                v = self.data(self.index(i + 3, jr), QtCore.Qt.DisplayRole)
-                if v is not None and dct is not None:
-                    v = dct.value_to_key(v)
-                ret[i][j] = v
+                ret[i][j] = self.data(self.index(i + 3, jr),
+                                      QtCore.Qt.DisplayRole)
         return ret
 
 

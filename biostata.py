@@ -16,7 +16,6 @@ def main(app):
     QtWidgets.qApp.exec_()
 
     b.finish()
-    sys.exit()
 
 
 if __name__ == '__main__':
@@ -24,3 +23,4 @@ if __name__ == '__main__':
     # segmentation fault on exit
     qApp = QtWidgets.QApplication(sys.argv)
     main(qApp)
+    sys.exit()

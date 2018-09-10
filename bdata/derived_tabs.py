@@ -180,7 +180,13 @@ def explicit_table(tab_name, colformats, tab, proj):
     """ Assembles a table from given python data.
         colformats = [(name, dt_type, dict), ...]
         tab[][] - table in python types format. None for NULL.
+
+        !!! This procedure modificates tab (converts string values to format
+        values). Use deepcopy in order to keep tab unchanged.
     """
+    for i, t in enumerate(tab):
+        t.insert(0, i+1)
+
     def init_columns(self):
         self.columns = collections.OrderedDict()
         self.columns['id'] = bcol.build_id()
@@ -189,10 +195,16 @@ def explicit_table(tab_name, colformats, tab, proj):
             self.columns[name] = col
 
     def fill_ttab(self):
-        sqlcols = []
-        for c in itertools.islice(self.columns.values(), 1, None):
+        cols, sqlcols = [], []
+        for c in self.columns.values():
+            cols.append(c)
             sqlcols.append(c.sql_line())
-        pholders = ','.join(['?'] * (len(self.columns)-1))
+
+        for i in range(len(tab)):
+            for j in range(len(tab[i])):
+                tab[i][j] = cols[j].from_repr(tab[i][j])
+
+        pholders = ','.join(['?'] * (len(self.columns)))
         qr = 'INSERT INTO "{tabname}" ({collist}) VALUES ({ph})'.format(
                 tabname=self.ttab_name,
                 collist=", ".join(sqlcols),

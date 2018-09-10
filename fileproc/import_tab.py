@@ -23,8 +23,7 @@ def split_plain_text(fname, options):
                 lines[i] = line[:pos]
     # remove blank lines
     if options.ignore_blank:
-        lines = [x.strip() for x in lines]
-        lines = list(filter(lambda x: len(x) > 0, lines))
+        lines = list(filter(lambda x: len(x.strip()) > 0, lines))
 
     # reassemble lines if row separator is not a new line
     if options.row_sep != "newline":
@@ -92,6 +91,37 @@ def parse_xlsx_file(fname, options):
 
     for row in sh.iter_rows(None, min_row, max_row, min_col, max_col):
         ret.append(list(map(lambda x: str(x.value)
-                            if x.value is not None else None, row)))
+                            if x.value is not None else '', row)))
 
+    return ret
+
+
+def autodetect_types(tab, maxsize=10):
+    from ast import literal_eval
+    if len(tab) == 0:
+        return []
+
+    nrows = len(tab)
+    ncols = max([len(x) for x in tab])
+
+    ret = []
+    for icol in range(ncols):
+        r = "INT"  # 3-INT, 2-REAL, 1-TEXT
+        s = 0
+        for irow in range(nrows):
+            v = tab[irow][icol]
+            if v is not "" and v is not None:
+                try:
+                    x = literal_eval(v)
+                    if type(x) is float:
+                        r = "REAL"
+                    elif type(x) is not int:
+                        raise
+                    s += 1
+                    if s >= maxsize:
+                        break
+                except:
+                    r = "TEXT"
+                    break
+        ret.append(r)
     return ret

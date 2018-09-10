@@ -120,6 +120,8 @@ class ProjectDB:
 
     def commit_all_changes(self):
         basic.log_message("Commit all changes")
+        if not self.sql.has_A:
+            raise Exception("No file based database found")
         # data bases
         # 1) additional information
         self._write_tables_current_info()
