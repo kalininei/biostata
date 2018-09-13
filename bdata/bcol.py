@@ -116,7 +116,7 @@ class _BasicRepr:
         return isinstance(rep, self.__class__)
 
     def uses_dict(self, dct):
-        return dct is not None
+        return dct is None
 
     def state_xml(self, root):
         pass
@@ -327,7 +327,7 @@ def build_deep_copy(orig, newname=None):
         ret.name = newname
         ret.shortname = ret.name
     orig.repr_delegate, orig.sql_delegate = bu1, bu2
-    ret.set_repr_delegate(bu1.copy1())
+    ret.set_repr_delegate(bu1.copy())
     ret.set_sql_delegate(OriginalSqlDelegate())
     return ret
 

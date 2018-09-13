@@ -2,7 +2,7 @@ import copy
 import unittest
 from prog import basic, projroot
 from fileproc import import_tab
-from bdata import derived_tabs
+from bdata import derived_tabs, filt
 from prog import valuedict
 from utest import testutils
 
@@ -21,7 +21,8 @@ class Test1(unittest.TestCase):
         proj.close_main_database()
 
     def tearDown(self):
-        proj.relocate_and_commit_all_changes('a.db')
+        ''
+        proj.relocate_and_commit_all_changes('~a.db')
 
     def test_load_from_txt_1(self):
         opt = Object()
@@ -143,6 +144,111 @@ class Test1(unittest.TestCase):
                               'b5p', 'b4p', 'b5g', 'b5p', ''])
         self.assertListEqual(testutils.get_dtab_raw_column(dt, 1),
                              [1, 4, 3, 4, 4, 2, 3, 4, 5, 3, 0])
+
+    def test_adddict(self):
+        # load dictionaries
+        dct = valuedict.Dictionary('a', 'BOOL', [0, 1],
+                                   ['', 'Q'])
+        proj.add_dictionary(dct)
+        dct = valuedict.Dictionary('b', 'ENUM', [0, 10, 20, 30, 40],
+                                   ['A', 'B', 'AA', 'AB', 'BB'])
+        proj.add_dictionary(dct)
+
+        # load database from t3.dat
+        opt = Object()
+        opt.firstline = 4
+        opt.lastline = 5
+        opt.comment_sign = '#'
+        opt.ignore_blank = 'True'
+        opt.col_sep = 'in double quotes'
+        opt.row_sep = 'no (use column count)'
+        opt.colcount = 3
+
+        t = import_tab.split_plain_text('test_db/t3.dat', opt)
+        self.assertEqual(len(t), 6)
+        self.assertEqual(len(t[0]), 3)
+
+        frm = [('c1', 'BOOL', 'a'), ('c2', 'REAL', None), ('c3', 'ENUM', 'b')]
+
+        # import with dictionaries
+        dt = derived_tabs.explicit_table('t1', frm, t, proj)
+        dt.update()
+        proj.add_table(dt)
+
+        self.assertListEqual(testutils.get_dtab(dt),
+                             [[1, 2, 3, 4, 5, 6],
+                              ['', '', 'Q', 'Q', 'Q', ''],
+                              ['A', 'B', None, 'AB', 'BB', 'AB'],
+                              [3.0, 43.0, None, 3.0, 22.0, None]])
+
+        self.assertListEqual(testutils.get_dtab_raw(dt),
+                             [[1, 2, 3, 4, 5, 6],
+                              [0, 0, 1, 1, 1, 0],
+                              [0, 10, None, 30, 40, 30],
+                              [3.0, 43.0, None, 3.0, 22.0, None]])
+
+        # save database
+        self.assertTrue(dt.need_rewrite)
+        proj.relocate_and_commit_all_changes('~a.db')
+        self.assertFalse(dt.need_rewrite)
+
+        # change dictionaries values only
+        anew = valuedict.Dictionary('a', 'BOOL', [0, 1], ['A', 'B'])
+        bnew = valuedict.Dictionary('b2', 'ENUM', [0, 10, 30, 40],
+                                    ['A', 'B', 'C', 'D'])
+        proj.change_dictionaries({'a': anew, 'b': bnew})
+        self.assertFalse(dt.need_rewrite)
+        dt.update()
+        self.assertListEqual(testutils.get_dtab(dt), [[1, 2, 3, 4, 5, 6], ['A', 'A', 'B', 'B', 'B', 'A'], ['A', 'B', None, 'C', 'D', 'C'], [3.0, 43.0, None, 3.0, 22.0, None]])  # noqa
+        self.assertListEqual(testutils.get_dtab_raw(dt), [[1, 2, 3, 4, 5, 6], [0, 0, 1, 1, 1, 0], [0, 10, None, 30, 40, 30], [3.0, 43.0, None, 3.0, 22.0, None]])  # noqa
+
+        # change dictionaries with converting to None
+        bnew = valuedict.Dictionary('b2', 'ENUM', [0, 20, 30, 40],
+                                    ['A', 'B', 'C', 'D'])
+        proj.change_dictionaries({'b2': bnew})
+        self.assertTrue(dt.need_rewrite)
+        dt.update()
+        self.assertListEqual(testutils.get_dtab(dt), [[1, 2, 3, 4, 5, 6], ['A', 'A', 'B', 'B', 'B', 'A'], ['A', None, None, 'C', 'D', 'C'], [3.0, 43.0, None, 3.0, 22.0, None]])  # noqa
+        self.assertListEqual(testutils.get_dtab_raw(dt), [[1, 2, 3, 4, 5, 6], [0, 0, 1, 1, 1, 0], [0, None, None, 30, 40, 30], [3.0, 43.0, None, 3.0, 22.0, None]])   # noqa
+
+        # remove dictionaries with filters and convert to int
+        flt1 = filt.Filter.from_xml_string("""<F><NAME>f1</NAME><DO_REMOVE>1</DO_REMOVE><E>['AND','','',"('c1', 'BOOL', 'a')",'==','0']</E></F>""")    # noqa
+        flt2 = filt.Filter.from_xml_string("""<F><NAME/><DO_REMOVE>1</DO_REMOVE><E>['AND','','',"('c2', 'REAL', None)",'>',"('c3', 'ENUM', 'b2')"]</E></F>""")    # noqa
+        dt.add_filter(flt1, True)
+        dt.add_filter(flt2, True)
+        dt.update()
+        self.assertEqual(len(dt.all_anon_filters), 1)
+        self.assertEqual(len(dt.used_filters), 2)
+        self.assertEqual(len(proj.named_filters), 1)
+        self.assertListEqual(testutils.get_dtab(dt), [[4, 5], ['B', 'B'], ['C', 'D'], [3.0, 22.0]])   # noqa
+
+        proj.change_dictionaries({'a': None})
+        dt.update()
+        self.assertEqual(len(dt.all_anon_filters), 1)
+        self.assertEqual(len(dt.used_filters), 1)
+        self.assertEqual(len(proj.named_filters), 0)
+        self.assertListEqual(testutils.get_dtab(dt), [[4, 5], [1, 1], ['C', 'D'], [3.0, 22.0]])  # noqa
+
+        # rename dictionary: all filters should remain
+        bnew = valuedict.Dictionary('b3', 'ENUM', [0, 20, 30, 40],
+                                    ['A', 'BB', 'CC', 'DD'])
+        proj.change_dictionaries({'b2': bnew})
+        dt.update()
+        self.assertListEqual(testutils.get_dtab(dt), [[4, 5], [1, 1], ['CC', 'DD'], [3.0, 22.0]])  # noqa
+
+        # change key structure: filters should be removed
+        bnew = valuedict.Dictionary('b3', 'ENUM', [0, 20, 30, 40, 50],
+                                    ['A', 'B', 'C', 'D', 'E'])
+        proj.change_dictionaries({'b3': bnew})
+        dt.update()
+        self.assertEqual(len(dt.used_filters), 0)
+
+        # remove dict: all columns should be numeric
+        proj.change_dictionaries({'b3': None})
+        dt.update()
+        self.assertListEqual(testutils.get_dtab(dt),
+                             testutils.get_dtab_raw(dt))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -12,7 +12,7 @@ def split_plain_text(fname, options):
     f.close()
 
     # firstline-lastline
-    firstline = options.firstline
+    firstline = max(0, options.firstline - 1)
     lastline = options.lastline if options.lastline > 0 else len(lines)-1
     lines = lines[firstline:lastline+1]
     # remove text after comments

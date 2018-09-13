@@ -1,6 +1,7 @@
 import collections
 import traceback
 import resources   # noqa
+from prog import basic
 from PyQt5 import QtWidgets, QtCore, QtGui
 
 
@@ -21,6 +22,8 @@ def message_exc(parent=None, title="Error", text=None, e=None):
         dlg.setDetailedText(traceback.format_exc())
     dlg.setText(txt)
     dlg.setDefaultButton(dlg.button(QtWidgets.QMessageBox.Ok))
+    if basic.log_message != basic._log_message:
+        basic.log_message(txt)
     return dlg.exec_()
 
 

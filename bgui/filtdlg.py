@@ -2,6 +2,7 @@
 import copy
 from PyQt5 import QtWidgets, QtCore
 from bgui import qtcommon
+from bgui import dlgs
 from bdata import filt
 
 
@@ -9,6 +10,8 @@ class FilterRow:
     def __init__(self, dlg, irow):
         self.dlg = dlg
         self._ret_value = None
+        # 0 - concat, 1 - left paren, 2 - target,
+        # 3 - action, 4 - value 5 - right paren
         self.cb = [QtWidgets.QComboBox(dlg.ff) for _ in range(6)]
         self.cb[4].setEditable(True)
         self.columns = list(dlg.datatab.columns.values())
@@ -96,9 +99,9 @@ class FilterRow:
 
 
 @qtcommon.hold_position
-class EditFilterDialog(QtWidgets.QDialog):
+class EditFilterDialog(dlgs.OkCancelDialog):
     def __init__(self, filt, datatab, used_names, parent):
-        super().__init__(parent)
+        super().__init__("Edit filter", parent, "vertical")
         self.resize(300, 400)
         self.__deactivate_update_filter_entries = False
         self.__last_frow = -1
@@ -112,19 +115,9 @@ class EditFilterDialog(QtWidgets.QDialog):
             self.used_names.remove(filt.name)
         self.datatab = datatab
         self.frows = []
-        buttonbox = QtWidgets.QDialogButtonBox(
-                QtWidgets.QDialogButtonBox.Ok |
-                QtWidgets.QDialogButtonBox.Cancel)
-        buttonbox.accepted.connect(self.accept)
-        buttonbox.rejected.connect(self.reject)
-        mainframe = QtWidgets.QFrame(self)
-        mainframe.setLayout(QtWidgets.QVBoxLayout())
-        self._add_nameframe(filt, mainframe)
-        self._add_filterframe(filt, mainframe)
-        mainframe.layout().addStretch(1)
-        self.setLayout(QtWidgets.QVBoxLayout())
-        self.layout().addWidget(mainframe)
-        self.layout().addWidget(buttonbox)
+        self._add_nameframe(filt, self.mainframe)
+        self._add_filterframe(filt, self.mainframe)
+        self.mainframe.layout().addStretch(1)
 
     def named_filter_next_name(self):
         i = 1
@@ -158,6 +151,7 @@ class EditFilterDialog(QtWidgets.QDialog):
             if filt.name:
                 edw.setText(filt.name)
         self.filter_name = edw
+        self.filter_cb = chw
         frame.layout().addWidget(gb)
 
         gb = QtWidgets.QGroupBox(frame)

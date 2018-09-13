@@ -245,7 +245,6 @@ class DataTable(object):
     def qresults(self):
         return self.proj.sql.qresults()
 
-    
     def update(self):
         self.query(self._compile_query())
         self.tab.fill(self.qresults())
@@ -353,25 +352,53 @@ class DataTable(object):
         if col.is_original():
             self.set_need_rewrite(True)
 
+    def _inscribe_column_into_dict(self, cname, dct):
+        col = self.columns[cname]
+        # return if column is not original
+        if not col.is_original():
+            return
+        # return if new and old dictionary have same keys
+        if not col.uses_dict(None):
+            diff = set(col.repr_delegate.dict.keys()).difference(dct.keys())
+            if len(diff) == 0:
+                return
+        if col.dt_type in ['INT', 'REAL', 'ENUM', 'BOOL']:
+            # remove all entries outside availible keys
+            ivals = ', '.join(map(str, dct.keys()))
+            qr = 'UPDATE "{0}" SET {1} = NULL WHERE {1} NOT IN ({2})'.format(
+                self.ttab_name, col.sql_line(), ivals)
+            self.query(qr)
+        elif col.dt_type in ['TEXT']:
+            # convert text into int keys
+            raise NotImplementedError
+        self.query("SELECT CHANGES()")
+        # if smth was changed require rewrite
+        if self.qresult()[0] > 0:
+            self.set_need_rewrite(True)
+
     def convert_column(self, cname, newtype, dct=None):
         """ converts given column to a given newtype
         """
         col = self.columns[cname]
         if col.dt_type in ['BOOL', 'ENUM'] and newtype == 'INT':
             col.set_repr_delegate(bcol.IntRepr())
-        elif col.dt_type == 'INT' and newtype == 'BOOL':
+        elif col.dt_type in ['REAL', 'INT', 'BOOL', 'ENUM']\
+                and newtype == 'BOOL':
+            self._inscribe_column_into_dict(cname, dct)
             col.set_repr_delegate(bcol.BoolRepr(dct))
-        elif col.dt_type == 'INT' and newtype == 'ENUM':
+        elif col.dt_type in ['REAL', 'INT', 'BOOL', 'ENUM']\
+                and newtype == 'ENUM':
+            self._inscribe_column_into_dict(cname, dct)
             col.set_repr_delegate(bcol.EnumRepr(dct))
         else:
             raise NotImplementedError
 
     def remove_entries(self, flt):
         """ Removes entries according to a given filter,
-            retruns number of removed lines.
+            returns number of removed lines.
         """
         qr = 'DELETE FROM "{}" WHERE ({})'.format(
-            self.ttab_name, flt.to_sqlline())
+            self.ttab_name, flt.to_sqlline(self))
         self.query(qr)
         self.query("SELECT CHANGES()")
         ret = self.qresult()[0]
@@ -397,7 +424,18 @@ class DataTable(object):
                 if not f.reset_id(old_id):
                     self.all_anon_filters.remove(f)
         # update id column
-        self.query('UPDATE "{}" SET id = ?', ((x,) for x in nums))
+        # set to none to evade unique constraint
+        # print("UPDATE")
+        # self.query('UPDATE "{}" SET id = NULL'.format(self.ttab_name))
+        self.query('SELECT id FROM "{}" ORDER BY id'.format(self.ttab_name))
+        newold = zip(nums, (x[0] for x in self.qresults()))
+        self.query(
+            'UPDATE "{}" SET id = ? WHERE id = ?'.format(self.ttab_name),
+            newold)
+        # self.query('UPDATE "{}" SET id = ?'.format(self.ttab_name),
+        #            ((111,),(112,),(113,),(114,),(115,),(116,),(117,)))
+        # self.query('UPDATE "{}" SET id = ?'.format(self.ttab_name),
+        #            ((x,) for x in nums))
         self.set_need_rewrite(True)
 
     def set_visibility(self, col, do_show):
@@ -418,6 +456,7 @@ class DataTable(object):
                 self.visible_columns.append(c)
 
     def add_filter(self, f, use=True):
+        f.proj = self.proj
         if f.name is None:
             if f not in self.all_anon_filters:
                 self.all_anon_filters.append(f)

@@ -90,7 +90,7 @@ class Filter:
                     e.column.dict_name = new
             if isinstance(e.value, ColumnDef):
                 if e.value.dict_name == old:
-                    e.value.dict_name == new
+                    e.value.dict_name = new
 
     def copy_from(self, flt):
         self.proj = flt.proj
@@ -103,7 +103,7 @@ class Filter:
         if dn is None or self.proj is None:
             return str(value)
         else:
-            return self.proj.get_dictionary(dn).key_to_value[value]
+            return self.proj.get_dictionary(dn).key_to_value(value)
 
     def to_singleline(self):
         ret = self.to_multiline()
@@ -241,7 +241,9 @@ class Filter:
     @classmethod
     def from_xml(cls, node):
         ret = cls()
-        ret.name = unescape(node.find('NAME').text)
+        ret.name = None
+        if node.find('NAME').text is not None:
+            ret.name = unescape(node.find('NAME').text)
         ret.do_remove = bool(int(node.find('DO_REMOVE').text))
         for nd in node.findall('E'):
             ret.entries.append(FilterEntry.from_xml(nd))
@@ -310,7 +312,6 @@ class FilterEntry:
                                 str(self.column),
                                 self.action,
                                 self.value]))
-        print(node.text)
 
     @classmethod
     def from_xml(cls, node):
@@ -324,12 +325,17 @@ class FilterEntry:
          ret.action,
          ret.value] = literal_eval(unescape(node.text))
         ret.column = ColumnDef(*literal_eval(ret.column))
+        if isinstance(ret.value, str):
+            try:
+                ret.value = ColumnDef(*literal_eval(ret.value))
+            except:
+                pass
         return ret
 
 
 class IdFilter(Filter):
     def __init__(self):
-        super().__init__(self)
+        super().__init__()
 
     def reset_id(self, used_ids):
         """ used ids should be sorted.

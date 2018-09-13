@@ -146,7 +146,7 @@ class PreloadModel(QtCore.QAbstractTableModel):
             return None
 
         r, c = index.row(), index.column()
-        if role == QtCore.Qt.DisplayRole:
+        if role in [QtCore.Qt.DisplayRole, QtCore.Qt.EditRole]:
             if r == 0:
                 return self.caps[c]
             elif r == 1:
@@ -195,7 +195,7 @@ class PreloadModel(QtCore.QAbstractTableModel):
             if r == 0:
                 try:
                     value = value.strip()
-                    self.proj.is_possible_column_name(value)
+                    # self.proj.is_possible_column_name(value)
                     self.caps[c] = value
                 except:
                     return False
@@ -333,6 +333,9 @@ class PreloadTable(QtWidgets.QTableView):
             self.dict_delegate.set_values(posdicts)
             self.model().setData(self.model().createIndex(2, column),
                                  posdicts[0], QtCore.Qt.EditRole)
+            self.model().dataChanged.emit(
+                self.model().createIndex(0, column),
+                self.model().createIndex(self.model().rowCount(), column))
 
     def load(self, caps, tab):
         self.model().load(caps, tab)
@@ -351,7 +354,7 @@ class PlainTextOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
     def _default_odata(self, obj):
         "-> options struct with default values"
         obj.tabname = ''
-        obj.firstline = 0
+        obj.firstline = 1
         obj.lastline = -1
         obj.read_cap = True
         obj.col_sep = "whitespaces"
@@ -368,7 +371,7 @@ class PlainTextOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
             ("Import", "New table name", optwdg.SimpleOptionEntry(
                 self, "tabname", dostrip=True)),
             ("Ranges", "First line", optwdg.BoundedIntOptionEntry(
-                self, 'firstline', 0)),
+                self, 'firstline', 1)),
             ("Ranges", "Last line", optwdg.BoundedIntOptionEntry(
                 self, 'lastline', -1)),
             ("Ranges", "Caption from first row", optwdg.BoolOptionEntry(

@@ -11,7 +11,7 @@ class TabModel(QtCore.QAbstractTableModel):
         It also connects directly to a View object and works as
         a controller.
     """
-    repr_updated = QtCore.pyqtSignal(QtCore.QAbstractTableModel, int)
+    repr_updated = QtCore.pyqtSignal('PyQt_PyObject', int)
     # additional roles for data(...) execution
     RawValueRole = QtCore.Qt.UserRole
     RawSubValuesRole = QtCore.Qt.UserRole+1
@@ -304,7 +304,8 @@ class TabModel(QtCore.QAbstractTableModel):
         if what == 'all':
             cats = []
             for c in self.dt.columns.values():
-                if hasattr(c, "_collapsed_categories"):
+                if not c.is_original() and\
+                        c.sql_delegate.function_type == "collapsed_categories":
                     cats.append(c.name)
             return self.remove_collapsed(cats, do_show)
         if len(what) == 0:
@@ -312,7 +313,7 @@ class TabModel(QtCore.QAbstractTableModel):
         cols = [self.dt.columns[w] for w in what]
         showthis = set()
         for c in cols:
-            for c2 in c.deps:
+            for c2 in c.sql_delegate.deps:
                 if c2 in self.dt.all_columns:
                     showthis.add(c2)
             self.dt.remove_column(c)

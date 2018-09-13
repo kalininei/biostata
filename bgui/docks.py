@@ -9,12 +9,18 @@ class DockWidget(QtWidgets.QDockWidget):
     def __init__(self, parent, name, menu):
         super().__init__(name, parent)
         self.setObjectName(name)
+        self.mainwindow = parent
         self.tmodel = None
         self.dt = None
         parent.addDockWidget(QtCore.Qt.RightDockWidgetArea, self)
         self.setVisible(False)
-        parent.active_model_changed.connect(self.active_model_changed)
-        parent.active_model_repr_changed.connect(self.repr_changed)
+        # using calls through lambdas
+        # because those are virtual functions.
+        # Otherwise program crushes unexpectedly.
+        parent.active_model_changed.connect(
+                lambda: self.active_model_changed())
+        parent.active_model_repr_changed.connect(
+                lambda: self.repr_changed())
 
         menu_action = QtWidgets.QAction(name, self)
         menu_action.setCheckable(True)
@@ -26,7 +32,7 @@ class DockWidget(QtWidgets.QDockWidget):
         pass
 
     def active_model_changed(self):
-        self.tmodel = self.parent().active_model
+        self.tmodel = self.mainwindow.active_model
         if self.tmodel is not None:
             self.dt = self.tmodel.dt
         else:
@@ -85,7 +91,7 @@ class ColorDockWidget(DockWidget):
         # settings button
         buttons[1].setIcon(QtGui.QIcon(':/settings'))
         buttons[1].setToolTip("Coloring settings")
-        buttons[1].clicked.connect(self.parent()._act_set_coloring)
+        buttons[1].clicked.connect(self.mainwindow._act_set_coloring)
         # next color scheme
         buttons[2].setIcon(QtGui.QIcon(':/next-item'))
         buttons[2].setToolTip("Next color scheme")
@@ -346,6 +352,14 @@ class TwoLevelTreeModel(QtGui.QStandardItemModel):
             ret = ret | QtCore.Qt.ItemIsDropEnabled
         return ret
 
+    def set_checked(self, vislist):
+        for it in self.tli:
+            for ich in range(it.rowCount()):
+                ch = it.child(ich)
+                cond = ch.data(QtCore.Qt.DisplayRole) in vislist
+                nv = QtCore.Qt.Checked if cond else QtCore.Qt.Unchecked
+                ch.setData(nv, QtCore.Qt.CheckStateRole)
+
     def remove_row(self, index):
         self.removeRow(index.row(), index.parent())
         self._set_tli_checks()
@@ -442,7 +456,7 @@ class TwoLevelTreeDockWidget(DockWidget):
         if br == QtWidgets.QDialogButtonBox.ApplyRole:
             # make changes
             self.tab.model().external_from_this()
-            self.parent().active_model.update()
+            self.mainwindow.active_model.update()
         else:
             # return to original state
             self.refill()
@@ -476,7 +490,6 @@ class ColumnInfoModel(TwoLevelTreeModel):
         self.setColumnCount(3)
 
     def _imp_this_from_external(self):
-        self.newcolumns.clear()
         for c in self.dt.all_columns[1:]:
             itm = []
             itm.append(QtGui.QStandardItem())
@@ -667,7 +680,6 @@ class FiltersDockWidget(TwoLevelTreeDockWidget):
         index = ind.sibling(ind.row(), 0)
         used_names = self._used_named_filters()
         f = self.tab.model().data(index, TwoLevelTreeModel.SubDataRole)
-        # print(f.to_sqlline())
         dialog = filtdlg.EditFilterDialog(
                 f, self.tab.model().dt, used_names, self)
         if dialog.exec_():

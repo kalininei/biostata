@@ -243,7 +243,7 @@ class ProjectDB:
         self.data_tables.remove(tab)
         del tab
 
-    def change_dictionaries(self, oldnew, shrink=True):
+    def change_dictionaries(self, oldnew):
         """ odlnew - {'olddict name': newdict}
         """
         removed_filters = []
@@ -259,39 +259,35 @@ class ProjectDB:
             for f in self.all_filters():
                 if f.uses_dict(d):
                     removed_filters.append(f)
-            # remove dictionary
-            self.dictionaries.pop(k)
 
         # 2) change dictionaries
-        newnames = False
         for k, v in [(k1, v1) for k1, v1 in oldnew.items() if v1 is not None]:
             d = self.dictionaries[k]
             what_changed = valuedict.Dictionary.compare(d, v)
-            if 'name' in what_changed:
-                newnames = True
+            if 'keys added' in what_changed or 'keys removed' in what_changed:
+                # remove filters
+                for f in self.all_filters():
+                    if f.uses_dict(d):
+                        removed_filters.append(f)
+            elif 'name' in what_changed:
                 # changed name in filters
                 for f in filter(lambda x: x.uses_dict(d), self.all_filters()):
                     f.change_dict_name(d.name, v.name)
-            if shrink and 'keys removed' in what_changed:
-                # shrink column data
-                for t in self.data_tables:
-                    for column in t.columns.values():
-                        if column.uses_dict(d):
-                            # create fake filter and use it to shrink data
-                            t.convert_column(column.name, 'INT')
-                            flt = filt.Filter.filter_by_datalist(
-                                t, column, v.keys(), True)
-                            t.remove_entries(flt)
-                            t.convert_column(column.name, d.dt_type, d)
+            for t in self.data_tables:
+                for c in filter(lambda x: x.uses_dict(d), t.columns.values()):
+                    t.convert_column(c.name, v.dt_type, v)
             # update dictionaries
             d.copy_from(v)
-        if newnames:
-            d2 = collections.OrderedDict()
-            for v in self.dictionaries.values():
-                d2[v.name] = v
-            self.dictionaries = d2
 
-        # 3) remove filters
+        # 3) remove changed dicts
+        for nm in filter(lambda x: x in self.dictionaries, oldnew.keys()):
+            self.dictionaries.pop(nm)
+
+        # 4) add new dicts
+        for d in filter(lambda x: x is not None, oldnew.values()):
+            self.dictionaries[d.name] = d
+
+        # 5) remove filters
         for f in removed_filters:
             self.remove_filter_anywhere(f)
 

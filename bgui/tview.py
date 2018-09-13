@@ -69,7 +69,6 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         """
         # create widget frame
         wdg = _vert_layout_frame()
-        self._set_palette(wdg, index)
         # group count, does this group is unfolded, number of unique
         n_tot, is_unfolded, n_uni = index.data(
                 tmodel.TabModel.GroupedStatusRole)
@@ -126,6 +125,7 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
                     w.setAlignment(QtCore.Qt.AlignLeft)
                 wdg.layout().addWidget(w)
         wdg.setAutoFillBackground(True)
+        self._set_palette(wdg, index)
         return wdg
 
     def _set_palette(self, wdg, index):
@@ -208,9 +208,14 @@ class HorizontalHeader(QtWidgets.QHeaderView):
         self.setSectionsClickable(False)
 
 
+tv = None
+
+
 class TableView(QtWidgets.QTableView):
     def __init__(self, model, parent):
+        global tv
         super().__init__(parent)
+        tv = self
         self.setModel(model)
         self.setItemDelegate(TabDelegate(model, parent))
         self.model().repr_updated.connect(self._repr_changed)

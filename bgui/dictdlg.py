@@ -100,10 +100,16 @@ class EditDictModel(QtCore.QAbstractTableModel):
             return list(map(int, self.keys))
 
     def get_values(self):
-        return list(map(lambda x: x.strip() if x else '', self.values))
+        ks = self.values
+        if self.mode == "BOOL":
+            ks = ks[:2]
+        return list(map(lambda x: x.strip() if x else '', ks))
 
     def get_comms(self):
-        return list(map(lambda x: x.strip() if x else '', self.comments))
+        ks = self.comments
+        if self.mode == "BOOL":
+            ks = ks[:2]
+        return list(map(lambda x: x.strip() if x else '', ks))
 
 
 class EditDictView(QtWidgets.QTableView):
@@ -262,7 +268,7 @@ class DictInfoItem:
             r = d.olditem.compare(d.newitem)
             if len(r) == 0:
                 continue
-            if 'keys removed' in r:
+            if 'keys removed' in r or 'keys added' in r:
                 ret.append((d.olditem.name, d.newitem, True))
             else:
                 ret.append((d.olditem.name, d.newitem, False))
@@ -329,14 +335,19 @@ class DictTree(QtWidgets.QTreeWidget):
             d = selected.indexes()[0].data(self.ItemRole)
             self.item_changed.emit(d)
 
-    def select_by_cap(self, cap):
+    def index_by_cap(self, cap):
+        return self.indexFromItem(self.item_by_cap(cap))
+
+    def item_by_cap(self, cap):
         for it in range(self.topLevelItemCount()):
             t = self.topLevelItem(it)
             for ic in range(t.childCount()):
                 c = t.child(ic)
                 if cap is None or c.data(0, QtCore.Qt.DisplayRole) == cap:
-                    c.setSelected(True)
-                    return
+                    return c
+
+    def select_by_cap(self, cap):
+        self.item_by_cap(cap).setSelected(True)
 
     def init_fill(self):
         self.clear()
@@ -444,55 +455,39 @@ class DictInformation(dlgs.OkCancelDialog):
 
     def accept(self):
         try:
-            ret1, ret2 = {}, {'Shrink': False}
+            ret = {}
             # Find removed dicts
             # [(removed name, was it in use?)]
             rem_dicts = DictInfoItem.search_for_removed(self.ditems, self.proj)
             # [(changed name, new dict, was it shrinked?)]
             changed_dicts = DictInfoItem.search_for_changed(self.ditems)
             # removed
-            ask_convert = False
+            ask_reconvert = False
             for a in rem_dicts:
-                ret1[a[0]] = None
+                ret[a[0]] = None
                 if a[1]:
-                    ask_convert = True
+                    ask_reconvert = True
             # changed
-            ask_shrink = False
             for a in changed_dicts:
-                ret1[a[0]] = a[1]
+                ret[a[0]] = a[1]
                 if a[2]:
-                    ask_shrink = True
-            if ask_convert:
+                    ask_reconvert = True
+            if ask_reconvert:
                 r = QtWidgets.QMessageBox.question(
-                    self,
-                    "Confirmation",
-                    "Deleted dictionaries were used by "
-                    "table data. Respective columns "
-                    "will be converted to integers. Continue?",
+                    self, "Confirmation",
+                    "Edited dictionaries were used by "
+                    "table data. Related columns "
+                    "will be reconverted, "
+                    "related filters will be removed. Continue?",
                     QtWidgets.QMessageBox.Ok | QtWidgets.QMessageBox.Cancel)
                 if r != QtWidgets.QMessageBox.Ok:
                     return
-            if ask_shrink:
-                r = QtWidgets.QMessageBox.question(
-                    self,
-                    "Confirmation",
-                    "Some dictionary keys were removed. Would you like to "
-                    "shrink respective column data to fit new dictionaries?",
-                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No |
-                    QtWidgets.QMessageBox.Cancel)
-                if r == QtWidgets.QMessageBox.Yes:
-                    ret2['Shrink'] = True
-                elif r == QtWidgets.QMessageBox.No:
-                    ret2['Shrink'] = False
-                else:
-                    return
-            self._ret_value = ret1, ret2
+            self._ret_value = ret
             super().accept()
         except Exception as e:
             qtcommon.message_exc(self, "Invalid input", e=e)
 
     def ret_value(self):
-        """ -> {oldname -> new Dictionary},
-               {'Shrink': bool}
+        """ -> {oldname -> new Dictionary}
         """
         return self._ret_value

@@ -366,12 +366,17 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = dlgs.ImportTablesDlg()
         if dialog.exec_():
             fname, frmt = dialog.ret_value()
-            if frmt == "plain text":
-                dialog2 = importdlgs.ImportPlainText(self.proj, fname, self)
-            elif frmt == "xlsx":
-                dialog2 = importdlgs.ImportXlsx(self.proj, fname, self)
-            else:
-                raise Exception("Unknow format {}".format(frmt))
+            try:
+                if frmt == "plain text":
+                    dialog2 = importdlgs.ImportPlainText(self.proj, fname,
+                                                         self)
+                elif frmt == "xlsx":
+                    dialog2 = importdlgs.ImportXlsx(self.proj, fname, self)
+                else:
+                    raise Exception("Unknow format {}".format(frmt))
+            except Exception as e:
+                qtcommon.message_exc(self, "Import error", e=e)
+                return
             if dialog2.exec_():
                 name, tab, cols = dialog2.ret_value()
                 newdt = derived_tabs.explicit_table(name, cols, tab, self.proj)
@@ -388,7 +393,7 @@ class MainWindow(QtWidgets.QMainWindow):
         dialog = dictdlg.DictInformation(self.proj, self)
         if dialog.exec_():
             ret = dialog.ret_value()
-            self.proj.change_dictionaries(ret[0], shrink=ret[1]['Shrink'])
+            self.proj.change_dictionaries(ret)
             self.update()
 
     def _on_quit(self):
@@ -402,22 +407,25 @@ class MainWindow(QtWidgets.QMainWindow):
             self.opts.save()
             self.reload_options(self.opts)
 
-    def _act_saveas(self):
-        flt = "Databases (*.db, *.sqlite)(*.db *.sqlite)"
-        filename = QtWidgets.QFileDialog.getSaveFileName(
-            self, "Save database as", self.proj.curdir(), flt)
-        if filename[0]:
+    def _act_saveas(self, fname=None):
+        if fname is None:
+            flt = "Databases (*.db, *.sqlite)(*.db *.sqlite)"
+            fname = QtWidgets.QFileDialog.getSaveFileName(
+                self, "Save database as", self.proj.curdir(), flt)[0]
+        if fname:
             try:
-                self.proj.relocate_and_commit_all_changes(filename[0])
-                self._set_actual_file(filename[0])
+                self.proj.relocate_and_commit_all_changes(fname)
+                self._set_actual_file(fname)
             except Exception as e:
                 qtcommon.message_exc(self, "Save error", e=e)
+        self.update_tabnames()
 
     def _act_save(self):
         try:
             self.proj.commit_all_changes()
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
+        self.update_tabnames()
 
     # ============== Procedures
     def _load_database(self, fname):
@@ -495,13 +503,16 @@ class MainWindow(QtWidgets.QMainWindow):
             self.active_model = None
             self.active_model_changed.emit()
 
+    def update_tabnames(self):
+        for i, t in enumerate(self.models):
+            cap = t.table_name()
+            if t.dt.need_rewrite:
+                cap += '*'
+            self.wtab.setTabText(i, cap)
+
     def update(self):
+        self.update_tabnames()
         if self.active_model:
-            for i, t in enumerate(self.models):
-                cap = t.table_name()
-                if t.dt.need_rewrite:
-                    cap += '*'
-                self.wtab.setTabText(i, cap)
             self.active_model.update()
 
     def view_update(self):
