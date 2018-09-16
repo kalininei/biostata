@@ -2,32 +2,39 @@ import traceback
 import logging
 
 
+class CustomObject(object):
+    pass
+
+
 def _ignore_exception(e, text=None):
-    traceback.print_exc()
+    log_message(traceback.format_exc(), "ERROR")
     if text:
-        print(text)
+        log_message(text, "ERROR")
 
 
 def _do_not_ignore_exception(e, text=None):
-    traceback.print_exc()
-    if text:
-        print(text)
+    _ignore_exception(e, text)
     raise e
 
 
-def _log_message(txt):
+def _log_message(txt, lv="INFO"):
     print('* ' + txt + '\n')
 
 
-def _no_log_message(txt):
+def _no_log_message(txt, lv="INFO"):
     pass
 
 
 def _log_to_file(fname):
     logging.basicConfig(filename=fname, filemode='w', level=logging.DEBUG)
 
-    def msg(txt):
-        logging.info(txt)
+    def msg(txt, lv="INFO"):
+        if lv == "INFO":
+            logging.info(txt)
+        elif lv == "ERROR":
+            logging.error(txt)
+        elif lv == "WARNING":
+            logging.warning(txt)
 
     return msg
 

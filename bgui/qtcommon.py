@@ -18,7 +18,7 @@ def message_exc(parent=None, title="Error", text=None, e=None):
             txt = txt + ' ' + str(e)
         else:
             txt = str(e)
-        traceback.print_exc()
+        basic.log_message(traceback.format_exc(), "ERROR")
         dlg.setDetailedText(traceback.format_exc())
     dlg.setText(txt)
     dlg.setDefaultButton(dlg.button(QtWidgets.QMessageBox.Ok))
@@ -150,3 +150,37 @@ class BMenu(QtWidgets.QMenu):
         for a in self.menus.values():
             if a[1] is not None:
                 a[1](a[0])
+
+
+class BLineEdit(QtWidgets.QLineEdit):
+    text_changed = QtCore.pyqtSignal(str)
+
+    def __init__(self, txt, parent):
+        super().__init__(txt, parent)
+        self.__curtext = txt
+
+    def focusOutEvent(self, event):   # noqa
+        if self.text() != self.__curtext:
+            self.text_changed.emit(self.text())
+        super().focusOutEvent(event)
+
+    def focusInEvent(self, event):   # noqa
+        self.__curtext = self.text()
+        super().focusInEvent(event)
+
+
+class BTextEdit(QtWidgets.QTextEdit):
+    text_changed = QtCore.pyqtSignal(str)
+
+    def __init__(self, txt, parent):
+        super().__init__(txt, parent)
+        self.__curtext = txt
+
+    def focusOutEvent(self, event):   # noqa
+        if self.toPlainText() != self.__curtext:
+            self.text_changed.emit(self.toPlainText())
+        super().focusOutEvent(event)
+
+    def focusInEvent(self, event):   # noqa
+        self.__curtext = self.toPlainText()
+        super().focusInEvent(event)

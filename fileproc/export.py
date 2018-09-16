@@ -104,3 +104,13 @@ def xlsx_export(datatab, opt, model, view):
                 ws1.row_dimensions[i+1].height = h
 
     wb.save(opt.filename)
+
+
+def get_unused_tmp_file(ext):
+    import tempfile
+    if ext:
+        s = '.' + ext
+    else:
+        s = ''
+    handle, fn = tempfile.mkstemp(suffix=s)
+    return fn

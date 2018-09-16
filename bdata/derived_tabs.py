@@ -17,6 +17,7 @@ def _insert_query(self, origquery):
             collist=", ".join(itertools.chain(sqlcols, sqlcols2)),
             select_from_orig=origquery)
     self.query(qr)
+    self.reset_id()
 
 
 # ============================== Original table
@@ -181,7 +182,7 @@ def explicit_table(tab_name, colformats, tab, proj):
         colformats = [(name, dt_type, dict), ...]
         tab[][] - table in python types format. None for NULL.
 
-        !!! This procedure modificates tab (converts string values to format
+        !!! This procedure modifies tab (converts string values to format
         values). Use deepcopy in order to keep tab unchanged.
     """
     for i, t in enumerate(tab):

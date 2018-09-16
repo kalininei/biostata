@@ -265,7 +265,10 @@ class EditFilterDialog(dlgs.OkCancelDialog):
                         e.value = list(map(int, atxt.split(',')))
                 elif e.column.dt_type in ["REAL"]:
                     e.value = float(atxt)
-                elif e.value.dt_type in ["TEXT"]:
+                elif e.column.dt_type in ["TEXT"]:
+                    if len(atxt) < 2 or atxt[0] != "'" or atxt[-1] != "'":
+                        raise Exception("Use single quotes to set "
+                                        "text parameter.")
                     e.value = atxt
             ret.entries.append(e)
         self._ret_value = ret

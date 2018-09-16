@@ -169,12 +169,13 @@ class GroupRowsDlg(SimpleAbstractDialog):
         e = collections.OrderedDict([(
             "All categories", collections.OrderedDict())])
         for c in self.cats:
-            e["All categories"][c] = True
+            e["All categories"][c] = False
         self.set_odata_entry("cat", e)
 
     def _default_odata(self, obj):
         "-> options struct with default values"
         obj.algo = 'arithmetic mean'
+        obj.cat = None
 
     def olist(self):
         return optview.OptionsList([

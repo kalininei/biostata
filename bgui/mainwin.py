@@ -81,9 +81,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filemenu.add_action('Save as...', self._act_saveas)
         self.filemenu.addSeparator()
         # export, import
+        self.filemenu.add_action('Import tables...', self._act_import_table)
         self.filemenu.add_action('Export tables...', self._act_export,
                                  vis=self.has_model)
-        self.filemenu.add_action('Import tables...', self._act_import_table)
+        self.filemenu.add_action('Open table in external viewer',
+                                 self._act_tab_external_viewer,
+                                 vis=self.has_model)
         self.filemenu.addSeparator()
         # config
         self.filemenu.add_action('Configuration', self._act_opts)
@@ -124,7 +127,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.columnsmenu.add_action('Collapse all categories',
                                     self._act_collapse_all, self.has_model)
         self.columnsmenu.add_action('Remove all collapses',
-                                    self._act_collapse_all, self.has_model)
+                                    self._act_uncollapse_all, self.has_model)
         self.columnsmenu.add_action('Collapse ...', self._act_collapse,
                                     self.has_model)
         # add columns
@@ -156,7 +159,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.tablesmenu = qtcommon.BMenu('Data', self, menubar)
 
         # tables and columns info
-        self.tablesmenu.add_action("Tables...", self._act_tab_col,
+        self.tablesmenu.add_action("Tables && columns...", self._act_tab_col,
                                    lambda: len(self.models) > 0)
         # dictionaries
         self.tablesmenu.add_action("Dictionaries...", self._act_dictinfo)
@@ -368,10 +371,13 @@ class MainWindow(QtWidgets.QMainWindow):
             fname, frmt = dialog.ret_value()
             try:
                 if frmt == "plain text":
-                    dialog2 = importdlgs.ImportPlainText(self.proj, fname,
-                                                         self)
+                    dialog2 = importdlgs.ImportPlainText(
+                        self.proj, fname,
+                        lambda: self.require_editor('text'), self)
                 elif frmt == "xlsx":
-                    dialog2 = importdlgs.ImportXlsx(self.proj, fname, self)
+                    dialog2 = importdlgs.ImportXlsx(
+                        self.proj, fname,
+                        lambda: self.require_editor('xlsx'), self)
                 else:
                     raise Exception("Unknow format {}".format(frmt))
             except Exception as e:
@@ -386,14 +392,28 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.wtab.setCurrentIndex(index)
 
     def _act_tab_col(self):
-        pass
+        from bgui import colinfodlg
+        dialog = colinfodlg.TablesInfo(self.proj, self)
+        if dialog.exec_():
+            ret = dialog.ret_value()
+            if not ret:
+                return
+            else:
+                for r in ret:
+                    r.apply()
+                self.update()
 
     def _act_dictinfo(self):
         from bgui import dictdlg
-        dialog = dictdlg.DictInformation(self.proj, self)
-        if dialog.exec_():
-            ret = dialog.ret_value()
-            self.proj.change_dictionaries(ret)
+        try:
+            dialog = dictdlg.DictInformation(self.proj, self)
+            if dialog.exec_():
+                ret = dialog.ret_value()
+                if ret:
+                    self.proj.change_dictionaries(ret)
+                    self.update()
+        except Exception as e:
+            qtcommon.message_exc(self, "Error", e=e)
             self.update()
 
     def _on_quit(self):
@@ -426,6 +446,34 @@ class MainWindow(QtWidgets.QMainWindow):
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
         self.update_tabnames()
+
+    def _act_tab_external_viewer(self):
+        import subprocess
+        try:
+            # temporary filename
+            fname = export.get_unused_tmp_file('xlsx')
+
+            # choose editor
+            prog = self.require_editor('xlsx')
+            if not prog:
+                return
+            # export to a temporary
+            opts = basic.CustomObject()
+            opts.filename = fname
+            opts.with_caption = True
+            opts.with_id = True
+            opts.format = 'xlsx'
+            opts.numeric_enums = False
+            opts.grouped_categories = 'None'
+            opts.with_formatting = True
+            actview = self.tabframes[self.models.index(self.active_model)]
+            export.model_export(self.active_model.dt, opts,
+                                self.active_model, actview)
+            # open with editor
+            path = ' '.join([prog, fname])
+            subprocess.Popen(path.split())
+        except Exception as e:
+            qtcommon.message_exc(self, "Open error", e=e)
 
     # ============== Procedures
     def _load_database(self, fname):
@@ -531,3 +579,26 @@ class MainWindow(QtWidgets.QMainWindow):
              'Yes/No': cfg.ViewConfig.BOOL_AS_YESNO}[opts.show_bool_as]
         cfg.ViewConfig.get().refresh()
         self.view_update()
+
+    def require_editor(self, ftype):
+        if ftype == 'xlsx':
+            ret = self.opts.external_xlsx_editor.strip()
+        elif ftype == 'text':
+            ret = self.opts.external_txt_editor.strip()
+        else:
+            raise Exception("Unknown file type: {}".format(ftype))
+
+        if not ret:
+            r = QtWidgets.QMessageBox.question(
+                self, "External editor not set",
+                "External {} editor was not set. "
+                "Would you like to define it now?".format(ftype),
+                buttons=QtWidgets.QMessageBox.Yes |
+                QtWidgets.QMessageBox.No)
+            if r == QtWidgets.QMessageBox.No:
+                return None
+            else:
+                self._act_opts()
+                return self.require_editor(ftype)
+
+        return ret

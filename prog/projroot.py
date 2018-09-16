@@ -1,3 +1,4 @@
+import copy
 import os
 import pathlib
 import collections
@@ -32,11 +33,11 @@ class ProjectDB:
         self.data_tables.clear()
         self._tables_to_remove.clear()
         self.dictionaries = collections.OrderedDict([
-            ('ABC', valuedict.dict_abc),
-            ('0-9', valuedict.dict_09),
-            ('0-1', valuedict.dict_01),
-            ('True/False', valuedict.dict_truefalse),
-            ('Yes/No', valuedict.dict_yesno)])
+            ('A-Z', copy.deepcopy(valuedict.dict_az)),
+            ('0-9', copy.deepcopy(valuedict.dict_09)),
+            ('0-1', copy.deepcopy(valuedict.dict_01)),
+            ('True/False', copy.deepcopy(valuedict.dict_truefalse)),
+            ('Yes/No', copy.deepcopy(valuedict.dict_yesno))])
 
     # ================= Database procedures
     def set_main_database(self, filedb):
@@ -243,22 +244,42 @@ class ProjectDB:
         self.data_tables.remove(tab)
         del tab
 
+    def remove_dictionary(self, k, lastcheck=True):
+        try:
+            d = self.dictionaries[k]
+        except KeyError:
+            return
+        # forbid removing of last type dictionary.
+        if lastcheck:
+            if d.dt_type == 'ENUM' and len(self.enum_dictionaries()) == 1:
+                raise Exception(
+                    "Can not remove last enum dictionary {}".format(k))
+            if d.dt_type == 'BOOL' and len(self.bool_dictionaries()) == 1:
+                raise Exception(
+                    "Can not remove last bool dictionary {}".format(k))
+        # search for columns containing this dict and convert them to int.
+        for t in self.data_tables:
+            for column in t.columns.values():
+                if column.uses_dict(d):
+                    t.convert_column(column.name, 'INT')
+        # search for filters containing this dict and remove them
+        for f in self.all_filters():
+            if f.uses_dict(d):
+                self.remove_filter_anywhere(f)
+        # remove from project
+        self.dictionaries.pop(k)
+
     def change_dictionaries(self, oldnew):
         """ odlnew - {'olddict name': newdict}
         """
-        removed_filters = []
+        try:
+            newd = oldnew['__new__']
+            oldnew.pop('__new__')
+        except KeyError:
+            newd = []
         # 1) remove dictionaries
         for k in [k1 for k1, v1 in oldnew.items() if v1 is None]:
-            d = self.dictionaries[k]
-            # search for columns containing this dict and convert them to int.
-            for t in self.data_tables:
-                for column in t.columns.values():
-                    if column.uses_dict(d):
-                        t.convert_column(column.name, 'INT')
-            # search for filters containing this dict and remove them
-            for f in self.all_filters():
-                if f.uses_dict(d):
-                    removed_filters.append(f)
+            self.remove_dictionary(k, False)
 
         # 2) change dictionaries
         for k, v in [(k1, v1) for k1, v1 in oldnew.items() if v1 is not None]:
@@ -268,11 +289,12 @@ class ProjectDB:
                 # remove filters
                 for f in self.all_filters():
                     if f.uses_dict(d):
-                        removed_filters.append(f)
+                        self.remove_filter_anywhere(f)
             elif 'name' in what_changed:
                 # changed name in filters
                 for f in filter(lambda x: x.uses_dict(d), self.all_filters()):
                     f.change_dict_name(d.name, v.name)
+            # convert columns
             for t in self.data_tables:
                 for c in filter(lambda x: x.uses_dict(d), t.columns.values()):
                     t.convert_column(c.name, v.dt_type, v)
@@ -286,10 +308,8 @@ class ProjectDB:
         # 4) add new dicts
         for d in filter(lambda x: x is not None, oldnew.values()):
             self.dictionaries[d.name] = d
-
-        # 5) remove filters
-        for f in removed_filters:
-            self.remove_filter_anywhere(f)
+        for d in newd:
+            self.dictionaries[d.name] = d
 
     def remove_filter_anywhere(self, f):
         for t in self.data_tables:
@@ -311,6 +331,10 @@ class ProjectDB:
             if nm.find(c) >= 0:
                 raise Exception("{} should not contain "
                                 "ampersand or quotes signs.".format(descr))
+
+    def is_possible_table_name(self, nm):
+        m = 'Table name "{}"'.format(nm)
+        self.valid_tech_string(m, nm)
 
     def is_valid_table_name(self, nm):
         """ checks if nm could be used as a new table name

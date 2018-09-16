@@ -84,6 +84,26 @@ def max_per_list(*args):
         basic.ignore_exception(e, 'error: max_per_list')
 
 
+def cast_txt_to_real(a):
+    try:
+        return float(a)
+    except (ValueError, TypeError):
+        return None
+
+
+def cast_txt_to_int(a):
+    try:
+        return round(float(a))
+    except (ValueError, TypeError):
+        return None
+
+
+def cast_real_to_int(a):
+    if a is None or a >= 9223372036854775807 or a <= -9223372036854775808:
+        return None
+    else:
+        return round(a)
+
 # those functions will be added to each connection passed to TabModel
 registered_aggregate_functions = [
         ("category_group", 1, CategoryGrouping),
@@ -93,6 +113,9 @@ registered_aggregate_functions = [
 ]
 registered_sql_functions = [
         ("max_per_list", -1, max_per_list),
+        ("cast_txt_to_int", 1, cast_txt_to_int),
+        ("cast_txt_to_real", 1, cast_txt_to_real),
+        ("cast_real_to_int", 1, cast_real_to_int),
 ]
 
 

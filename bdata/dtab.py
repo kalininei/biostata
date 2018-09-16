@@ -20,7 +20,7 @@ class DataTable(object):
         isorig:bool - do we have table named self.name in the database
         """
         self.proj = proj
-        self.comment = None
+        self.comment = ''
         self._isorig = isorig
         self.need_rewrite = not isorig
         # =========== data declaration
@@ -63,18 +63,40 @@ class DataTable(object):
         # fills all columns, visible columns
         self._complete_columns_lists()
 
-    def _create_ttab(self):
+    def _original_collist(self, with_type=True):
         collist = []
+        if with_type:
+            tp = "{} {}"
+        else:
+            tp = "{}"
         for c in filter(lambda x: x.is_original(), self.columns.values()):
             if c.name != 'id':
-                collist.append("{} {}".format(c.sql_line(False),
-                                              c.sql_data_type()))
+                collist.append(tp.format(c.sql_line(False),
+                                         c.sql_data_type()))
             else:
-                collist.append("id INTEGER UNIQUE")
-            collist.append("{} INTEGER DEFAULT 0".format(
-                self.columns[c.name].status_column.sql_line(False)))
+                collist.append(tp.format('"id"', "INTEGER UNIQUE"))
+            collist.append(tp.format(
+                c.status_column.sql_line(False), "INTEGER DEFAULT 0"))
+        return collist
 
-        self.query('DROP TABLE IF EXISTS "{}"'.format(self.ttab_name))
+    def _create_ttab(self):
+        # [(colname, col sql type)]
+        collist = self._original_collist()
+
+        # choose proper name
+        self.query("SELECT name FROM sqlite_master WHERE type='table'")
+        enames = [x[0] for x in self.qresults()]
+        if self.ttab_name in enames:
+            for i in range(999999):
+                nm = self.ttab_name + str(i)
+                if nm not in enames:
+                    self.ttab_name = nm
+                    break
+            else:
+                raise Exception("Failed to create temporary table {}".format(
+                        self.ttab_name))
+
+        # create table
         qr = """CREATE TABLE "{0}" ({1})
         """.format(self.ttab_name, ', '.join(collist))
         self.query(qr)
@@ -269,6 +291,8 @@ class DataTable(object):
         for i, c in enumerate(self.visible_columns):
             if not c.is_category():
                 break
+        else:
+            i += 1
         self.visible_columns.insert(i, col)
         return col
 
@@ -295,9 +319,6 @@ class DataTable(object):
             c.real_data_groupfun = m
 
     def remove_column(self, col):
-        if col.is_original():
-            raise Exception(
-                "Can not remove original column {}".format(col.name))
         try:
             self.columns.pop(col.name)
         except:
@@ -379,14 +400,15 @@ class DataTable(object):
     def convert_column(self, cname, newtype, dct=None):
         """ converts given column to a given newtype
         """
+        # TODO use common procedure from bdata/convert.py
         col = self.columns[cname]
         if col.dt_type in ['BOOL', 'ENUM'] and newtype == 'INT':
             col.set_repr_delegate(bcol.IntRepr())
-        elif col.dt_type in ['REAL', 'INT', 'BOOL', 'ENUM']\
+        elif col.dt_type in ['INT', 'BOOL', 'ENUM']\
                 and newtype == 'BOOL':
             self._inscribe_column_into_dict(cname, dct)
             col.set_repr_delegate(bcol.BoolRepr(dct))
-        elif col.dt_type in ['REAL', 'INT', 'BOOL', 'ENUM']\
+        elif col.dt_type in ['INT', 'BOOL', 'ENUM']\
                 and newtype == 'ENUM':
             self._inscribe_column_into_dict(cname, dct)
             col.set_repr_delegate(bcol.EnumRepr(dct))
@@ -411,7 +433,7 @@ class DataTable(object):
             Does not check if id values are already in correct order.
             Set need_rewrite to true.
         """
-        self.query('SELECT COUNT(id) from "{}"'.format(self.ttab_name))
+        self.query('SELECT COUNT(*) from "{}"'.format(self.ttab_name))
         nums = range(1, self.qresult()[0] + 1)
         # update filters that use id
         idfilters = list(filter(lambda x: isinstance(x, filt.IdFilter),
@@ -419,23 +441,17 @@ class DataTable(object):
         if len(idfilters) > 0:
             self.query('SELECT id FROM "{}" ORDER BY id'.format(
                 self.ttab_name))
-            old_id = [x[0] for x in self.qresults()]
+            old_id = [x[0] for x in self.qresults() if x[0] is not None]
             for f in idfilters:
                 if not f.reset_id(old_id):
                     self.all_anon_filters.remove(f)
         # update id column
-        # set to none to evade unique constraint
-        # print("UPDATE")
-        # self.query('UPDATE "{}" SET id = NULL'.format(self.ttab_name))
-        self.query('SELECT id FROM "{}" ORDER BY id'.format(self.ttab_name))
+        self.query('SELECT rowid FROM "{}" ORDER BY rowid'.format(
+            self.ttab_name))
         newold = zip(nums, (x[0] for x in self.qresults()))
-        self.query(
-            'UPDATE "{}" SET id = ? WHERE id = ?'.format(self.ttab_name),
-            newold)
-        # self.query('UPDATE "{}" SET id = ?'.format(self.ttab_name),
-        #            ((111,),(112,),(113,),(114,),(115,),(116,),(117,)))
-        # self.query('UPDATE "{}" SET id = ?'.format(self.ttab_name),
-        #            ((x,) for x in nums))
+        self.query("""
+            UPDATE "{}" SET id = ? WHERE rowid = ?
+        """.format(self.ttab_name), newold)
         self.set_need_rewrite(True)
 
     def set_visibility(self, col, do_show):
@@ -456,6 +472,9 @@ class DataTable(object):
                 self.visible_columns.append(c)
 
     def add_filter(self, f, use=True):
+        if not f.is_applicable(self):
+            raise Exception('filter "{}" can not be used with "{}"'.format(
+                f.name, self.name))
         f.proj = self.proj
         if f.name is None:
             if f not in self.all_anon_filters:
@@ -733,6 +752,14 @@ class DataTable(object):
         self.query(qr)
         return [x[0] for x in self.qresults()]
 
+    def get_distinct_column_vals(self, cname, is_global=True):
+        """ -> distinct vals in global scope (ignores filters, groups etc)
+               or local scope (including all settings)
+        """
+        col = self.columns[cname]
+        rv = self.get_distinct_column_raw_vals(cname, is_global)
+        return [col.repr(x) for x in rv]
+
     def redstatus_bytearray(self, colname):
         """ returns bytearray of column redstatuses if there are
             any positive values, else returns None
@@ -810,9 +837,9 @@ class ViewedData:
                         ret[n] = self.model.qresult()[0]
                     # if field is TEXT we have to use quotes to
                     # assemble SQL query row in _request_subvalues:
-                    # WHERE field = "value"
+                    # WHERE field = 'value'
                     if self.model.columns[n].dt_type == 'TEXT':
-                        ret[n] = '"' + ret[n] + '"'
+                        ret[n] = "'" + ret[n] + "'"
                 return ret
 
         def _request_subvalues(self):

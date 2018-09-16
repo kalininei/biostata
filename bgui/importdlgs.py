@@ -1,3 +1,4 @@
+import subprocess
 import copy
 from PyQt5 import QtWidgets, QtCore, QtGui
 from bgui import optview
@@ -12,12 +13,13 @@ from fileproc import import_tab
 class _ImportDialog(dlgs.OkCancelDialog):
     data_was_loaded = QtCore.pyqtSignal()
 
-    def __init__(self, proj, fn, parent):
+    def __init__(self, proj, fn, require_editor, parent):
         title = 'Import table as {} from "{}"'.format(self.get_format(), fn)
         super().__init__(title, parent, "vertical")
         self._ret_value = None
         self.proj = proj
         self.fn = fn
+        self.require_editor = require_editor
 
         self.buttonbox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         # mainframe = upperframe + lowerframe
@@ -27,16 +29,22 @@ class _ImportDialog(dlgs.OkCancelDialog):
         self.mainframe.layout().addWidget(self.upper_frame)
         self.mainframe.layout().addWidget(self.lower_frame)
 
-        # upper_frame = specific widget + load button
+        # upper_frame = specific widget + buttonbox
         self.upper_frame.setLayout(QtWidgets.QVBoxLayout())
         self.spec = self.specific_frame()
         self.upper_frame.layout().addWidget(self.spec)
 
+        self.preview_button = QtWidgets.QPushButton("Preview...")
+        self.preview_button.clicked.connect(self.ext_preview)
+
         self.load_button = QtWidgets.QPushButton("Load")
         self.load_button.clicked.connect(self.do_load)
-        self.load_button.setFixedWidth(80)
-        self.upper_frame.layout().addWidget(
-                self.load_button, 1, QtCore.Qt.AlignRight)
+        bbox = QtWidgets.QDialogButtonBox(self)
+        if self.require_editor:
+            bbox.addButton(self.preview_button,
+                           QtWidgets.QDialogButtonBox.NoRole)
+        bbox.addButton(self.load_button, QtWidgets.QDialogButtonBox.NoRole)
+        self.upper_frame.layout().addWidget(bbox)
 
         # lower frame = table widget
         self.table = PreloadTable(self.proj, self)
@@ -67,6 +75,15 @@ class _ImportDialog(dlgs.OkCancelDialog):
             self.data_was_loaded.emit()
         except Exception as e:
             qtcommon.message_exc(self, "File parsing error", e=e)
+
+    def ext_preview(self):
+        try:
+            prog = self.require_editor()
+            if prog:
+                    path = ' '.join([prog, self.fn])
+                    subprocess.Popen(path.split())
+        except Exception as e:
+            qtcommon.message_exc(self, "Open editor error", e=e)
 
     def specific_frame(self):
         raise NotImplementedError
@@ -297,9 +314,10 @@ class DictComboboxDelegate(ComboboxDelegate):
         if value == '_ create new dict':
             c = index.column()
             uvals = self.model.get_unique_data_values(c)
+            ukeys = list(range(len(uvals)))
             dialog = dictdlg.CreateNewDictionary(
                 self.model.proj.dictionaries, self.parent(),
-                self.model.columns_format[c], uvals, False)
+                self.model.columns_format[c], ukeys, uvals, False)
             if dialog.exec_():
                 dct = dialog.ret_value()
                 self.model.proj.add_dictionary(dct)
@@ -395,8 +413,8 @@ class PlainTextOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
 
 @qtcommon.hold_position
 class ImportPlainText(_ImportDialog):
-    def __init__(self, proj, fname, parent):
-        super().__init__(proj, fname, parent)
+    def __init__(self, proj, fname, require_editor, parent):
+        super().__init__(proj, fname, require_editor, parent)
         self.resize(400, 500)
 
     def get_format(self):
@@ -449,8 +467,8 @@ class XlsxOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
 
 @qtcommon.hold_position
 class ImportXlsx(_ImportDialog):
-    def __init__(self, proj, fname, parent):
-        super().__init__(proj, fname, parent)
+    def __init__(self, proj, fname, require_editor, parent):
+        super().__init__(proj, fname, require_editor, parent)
         self.resize(400, 500)
 
     def get_format(self):

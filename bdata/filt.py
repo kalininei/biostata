@@ -92,6 +92,25 @@ class Filter:
                 if e.value.dict_name == old:
                     e.value.dict_name = new
 
+    def uses_column(self, column):
+        for e in self.entries:
+            if isinstance(e.column, ColumnDef):
+                if e.column.name == column.name:
+                    return True
+            if isinstance(e.value, ColumnDef):
+                if e.value.name == column.name:
+                    return True
+        return False
+
+    def change_column_name(self, old, new):
+        for e in self.entries:
+            if isinstance(e.column, ColumnDef):
+                if e.column.name == old:
+                    e.column.name = new
+            if isinstance(e.value, ColumnDef):
+                if e.value.name == old:
+                    e.value.name = new
+
     def copy_from(self, flt):
         self.proj = flt.proj
         self.name = flt.name
@@ -118,12 +137,13 @@ class Filter:
             ret.append(e.paren1)
             ret.append(e.column.name)
             ret.append(e.action)
-            if isinstance(e.value, ColumnDef):
-                ret.append(e.value.name)
-            elif isinstance(e.value, list):
-                ret.append(str(e.value))
-            else:
-                ret.append(self.repr(e.column, e.value))
+            if e.action not in ['NULL', 'not NULL']:
+                if isinstance(e.value, ColumnDef):
+                    ret.append(e.value.name)
+                elif isinstance(e.value, list):
+                    ret.append(str(e.value))
+                else:
+                    ret.append(self.repr(e.column, e.value))
             ret.append(e.paren2)
             ret2.append(" ".join(ret))
         ret3 = "\n".join(ret2)
@@ -197,8 +217,11 @@ class Filter:
             e = FilterEntry()
             e.concat = "AND" if use_and else "OR"
             e.column = ColumnDef.from_column(datatab.columns[k])
-            e.action = "=="
-            e.value = v
+            if v is not None:
+                e.action = "=="
+                e.value = v
+            else:
+                e.action = "NULL"
             ret.entries.append(e)
         return ret
 
@@ -213,7 +236,7 @@ class Filter:
         if len(vals) == 0:
             return cls()
         if col.dt_type == "INT":
-            IdFilter.set_from_ilist(ret, col, vals)
+            IdFilter.set_from_ilist(ret, vals, col)
             return ret
         else:
             return cls.filter_by_values(datatab, [cname]*len(vals), vals,
@@ -295,6 +318,10 @@ class ColumnDef:
         else:
             return cls(col.name, col.dt_type, None)
 
+    @classmethod
+    def id_column(cls):
+        return cls('id', 'INT', None)
+
 
 class FilterEntry:
     def __init__(self):
@@ -348,13 +375,14 @@ class IdFilter(Filter):
                 ret.append(oldnew[x])
             except KeyError:
                 break
-        col = self.entries[0].column
         self.entries.clear()
-        self.set_from_ilist(self, col)
+        IdFilter.set_from_ilist(self, ret)
         return len(self.entries) > 0
 
     @staticmethod
-    def set_from_ilist(ret, col, ilist):
+    def set_from_ilist(ret, ilist, col=None):
+        if col is None:
+            col = ColumnDef.id_column()
         slist = IdFilter.simplify_integer_list(ilist, 4)
         dist_ints = list(filter(lambda x: isinstance(x, int), slist))
         range_ints = list(filter(lambda x: isinstance(x, list), slist))

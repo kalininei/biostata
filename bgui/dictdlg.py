@@ -7,18 +7,22 @@ from bgui import qtcommon
 
 
 class EditDictModel(QtCore.QAbstractTableModel):
-    def __init__(self, uvals=None, editdict=None):
+    def __init__(self, ukeys=None, uvals=None, editdict=None):
         super().__init__()
         self.mode = "ENUM"
         self.editable = True
         self.keys = [None] * 2
         self.values = [''] * 2
         self.comments = [''] * 2
-        if uvals is not None:
-            self.values = uvals[:]
-            self.keys = list(range(len(uvals)))
+        if ukeys is None:
+            ukeys = [None, None]
+        if uvals is None:
+            uvals = [None, None]
+        if editdict is None:
+            self.values = list(map(lambda x: '' if x is None else x, uvals))
+            self.keys = ukeys[:]
             self.comments = [''] * len(uvals)
-        elif editdict is not None:
+        else:
             self.reset_dict(editdict)
 
     def columnCount(self, index=None):   # noqa
@@ -97,7 +101,8 @@ class EditDictModel(QtCore.QAbstractTableModel):
         if self.mode == "BOOL":
             return [0, 1]
         else:
-            return list(map(int, self.keys))
+            return list(map(lambda x: int(x) if x is not None else None,
+                            self.keys))
 
     def get_values(self):
         ks = self.values
@@ -113,26 +118,32 @@ class EditDictModel(QtCore.QAbstractTableModel):
 
 
 class EditDictView(QtWidgets.QTableView):
-    def __init__(self, parent, uvals=None, editdict=None):
+    def __init__(self, parent, ukeys=None, uvals=None, editdict=None):
         super().__init__(parent)
-        self.setModel(EditDictModel(uvals, editdict))
+        self.setModel(EditDictModel(ukeys, uvals, editdict))
         self.verticalHeader().setVisible(False)
 
 
 @qtcommon.hold_position
 class CreateNewDictionary(dlgs.OkCancelDialog):
-    def __init__(self, projdict, parent, tp=None,
-                 uvals=None, can_change_type=True):
+    def __init__(self, projdict, parent,
+                 tp=None, ukeys=None, uvals=None, can_change_type=True):
         super().__init__("Create/Edit dictionary", parent, "grid")
         self.resize(400, 300)
         self._ret_value = None
         self._ignore_name = ''
         self.projdict = projdict
-        if uvals is not None:
-            if len(uvals) == 0:
-                uvals = [None, None]
-            elif len(uvals) == 1:
-                uvals = [uvals[0], None]
+
+        # set initial keys, values
+        if ukeys is None:
+            ukeys = [None, None]
+        if uvals is None:
+            uvals = [None, None]
+        maxlen = max(2, len(ukeys), len(uvals))
+        if len(ukeys) < maxlen:
+            ukeys = ukeys + [None]*(maxlen-len(ukeys))
+        if len(uvals) < maxlen:
+            uvals = uvals + [None]*(maxlen-len(uvals))
 
         self.mainframe.layout().addWidget(
                 QtWidgets.QLabel("Dictionary name"), 0, 0)
@@ -151,10 +162,7 @@ class CreateNewDictionary(dlgs.OkCancelDialog):
 
         self.e_spin = QtWidgets.QSpinBox(self)
         self.e_spin.setMinimum(2)
-        if uvals is not None:
-            self.e_spin.setValue(len(uvals))
-        else:
-            self.e_spin.setValue(2)
+        self.e_spin.setValue(len(uvals))
         if tp and tp == "BOOL":
             self.e_spin.setEnabled(False)
         self.e_type.currentTextChanged.connect(
@@ -170,7 +178,7 @@ class CreateNewDictionary(dlgs.OkCancelDialog):
         p.setHorizontalPolicy(QtWidgets.QSizePolicy.Fixed)
         self.autofill.setSizePolicy(p)
 
-        self.e_table = EditDictView(self, uvals)
+        self.e_table = EditDictView(self, ukeys, uvals)
         if tp is not None:
             self.e_table.model().set_mode(tp)
         self.e_type.currentTextChanged.connect(self.e_table.model().set_mode)
@@ -191,7 +199,7 @@ class CreateNewDictionary(dlgs.OkCancelDialog):
     def get_autoname(self):
         i = 1
         while True:
-            nm = "dictionary {}".format(i)
+            nm = "dict{}".format(i)
             if nm in self.projdict:
                 i += 1
             else:
@@ -249,22 +257,25 @@ class DictInfoItem:
         """-> [(removed name, was it in use?)]
         """
         pdict = proj.dictionaries
-        ret = []
+        ret, ret2 = [], []
         for oldname, olditem in pdict.items():
-            vnew = next((x.newitem for x in ditems
-                        if x.olditem.name == oldname), None)
-            if vnew is None:
+            itm = next((x for x in ditems
+                        if x.olditem is not None and
+                        x.olditem.name == oldname), None)
+            if itm is None:
                 dii = cls(olditem, proj)
                 in_use = dii.uses_count() > 0
                 ret.append((oldname, in_use))
-        return ret
+            else:
+                ret2.append(itm.newitem)
+        return ret, ret2
 
     @classmethod
     def search_for_changed(cls, ditems):
         """ -> [(changed name, new dict, was it shrinked?)]
         """
         ret = []
-        for d in ditems:
+        for d in filter(lambda x: x.olditem is not None, ditems):
             r = d.olditem.compare(d.newitem)
             if len(r) == 0:
                 continue
@@ -272,6 +283,14 @@ class DictInfoItem:
                 ret.append((d.olditem.name, d.newitem, True))
             else:
                 ret.append((d.olditem.name, d.newitem, False))
+        return ret
+
+    @classmethod
+    def search_for_new(cls, ditems):
+        ret = []
+        for d in filter(lambda x: x.olditem is None and x.newitem is not None,
+                        ditems):
+            ret.append(d.newitem)
         return ret
 
 
@@ -457,10 +476,21 @@ class DictInformation(dlgs.OkCancelDialog):
         try:
             ret = {}
             # Find removed dicts
-            # [(removed name, was it in use?)]
-            rem_dicts = DictInfoItem.search_for_removed(self.ditems, self.proj)
+            # [(removed name, was it in use?)], [not removed dicts]
+            rem_dicts, left_dicts =\
+                DictInfoItem.search_for_removed(self.ditems, self.proj)
             # [(changed name, new dict, was it shrinked?)]
             changed_dicts = DictInfoItem.search_for_changed(self.ditems)
+            # new dicts:
+            ret['__new__'] = DictInfoItem.search_for_new(self.ditems)
+            # check if length > 0:
+            rdicts = ret['__new__'] + left_dicts
+            lenum = len([x for x in rdicts if x.dt_type == 'ENUM'])
+            lbool = len([x for x in rdicts if x.dt_type == 'BOOL'])
+            if lenum == 0:
+                raise Exception("At least one enum dictionary is needed.")
+            if lbool == 0:
+                raise Exception("At least one bool dictionary is needed.")
             # removed
             ask_reconvert = False
             for a in rem_dicts:

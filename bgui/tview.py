@@ -271,8 +271,9 @@ class TableView(QtWidgets.QTableView):
 
         # copy to clipboard
         if rr == 'D':
-            act = QtWidgets.QAction("Copy", self)
-            act.triggered.connect(self._act_copy_to_clipboard)
+            act = QtWidgets.QAction("Copy to clipboard", self)
+            act.triggered.connect(
+                    functools.partial(self._act_copy_to_clipboard, index))
             menu.addAction(act)
         # fold/unfold action
         if rr == 'D' and self.model().group_size(index) > 1:
@@ -340,9 +341,11 @@ class TableView(QtWidgets.QTableView):
                     index = self.model().createIndex(i, 0)
                     self.model().unfold_row(index, True)
 
-    def _act_copy_to_clipboard(self):
+    def _act_copy_to_clipboard(self, index=None):
         sel = self.selectionModel()
         si = sel.selectedIndexes()
+        if index is not None and index not in si:
+            si = si + [index]
         maxr = max([x.row() for x in si])
         minr = min([x.row() for x in si])
         maxc = max([x.column() for x in si])

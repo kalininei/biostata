@@ -127,8 +127,8 @@ class Dictionary:
         return Dictionary(name, dt_type, keys, values, comments)
 
 
-dict_abc = Dictionary('ABC', 'ENUM', None, list('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+dict_az = Dictionary('A-Z', 'ENUM', None, list('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
 dict_09 = Dictionary('0-9', 'ENUM', None, list('0123456789'))
 dict_01 = Dictionary('0-1', 'BOOL', None, list('01'))
-dict_truefalse = Dictionary('True/False', 'BOOL', None, ['True', 'False'])
-dict_yesno = Dictionary('Yes/No', 'BOOL', None, ['Yes', 'No'])
+dict_truefalse = Dictionary('True/False', 'BOOL', None, ['False', 'True'])
+dict_yesno = Dictionary('Yes/No', 'BOOL', None, ['No', 'Yes'])

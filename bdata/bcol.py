@@ -9,8 +9,8 @@ class ColumnInfo:
     def __init__(self, name):
         self.name = name
         self.shortname = name
-        self.dim = None
-        self.comment = None
+        self.dim = ''
+        self.comment = ''
         self.dt_type = None
         self.real_data_groupfun = 'AVG'
         # delegates
@@ -51,6 +51,11 @@ class ColumnInfo:
     def set_repr_delegate(self, d):
         self.repr_delegate = d
         self.dt_type = d.dt_type()
+
+    def rename(self, newname):
+        self.name = newname
+        if hasattr(self, 'status_column'):
+            self.status_column.rename('_status ' + newname)
 
     # ------------ delegated to repr_delegate
     def repr(self, x):
@@ -140,10 +145,13 @@ class _BasicRepr:
 
 class IntRepr(_BasicRepr):
     def repr(self, x):
-        return x
+        return int(x)
 
     def from_repr(self, x):
-        return int(x) if x is not None else None
+        if isinstance(x, str):
+            return round(float(x)) if x is not None else None
+        else:
+            return int(x) if x is not None else None
 
     def col_type(self):
         return "INT"
@@ -151,7 +159,7 @@ class IntRepr(_BasicRepr):
 
 class TextRepr(_BasicRepr):
     def repr(self, x):
-        return x
+        return str(x)
 
     def from_repr(self, x):
         return x
@@ -162,7 +170,7 @@ class TextRepr(_BasicRepr):
 
 class RealRepr(_BasicRepr):
     def repr(self, x):
-        return x
+        return float(x)
 
     def from_repr(self, x):
         return float(x)
@@ -322,6 +330,9 @@ def build_deep_copy(orig, newname=None):
     """ copies, breaks all dependencies. Resulting column is original. """
     bu1, bu2 = orig.repr_delegate, orig.sql_delegate
     orig.repr_delegate, orig.sql_delegate = None, None
+    if hasattr(orig, 'status_column'):
+        bu3 = orig.status_column
+        orig.status_column = None
     ret = copy.deepcopy(orig)
     if newname:
         ret.name = newname
@@ -329,6 +340,23 @@ def build_deep_copy(orig, newname=None):
     orig.repr_delegate, orig.sql_delegate = bu1, bu2
     ret.set_repr_delegate(bu1.copy())
     ret.set_sql_delegate(OriginalSqlDelegate())
+    if hasattr(orig, 'status_column'):
+        orig.status_column = bu3
+        ret.status_column = OrigStatusColumn(ret)
+    return ret
+
+
+def build_deep_copy_wo_sql(orig, newname=None):
+    ''' copies all, keeps old repr and status, sql_delegate = None'''
+    bu = orig.repr_delegate, orig.sql_delegate, orig.status_column
+    orig.repr_delegate, orig.sql_delegate, orig.status_column = (None,)*3
+    ret = copy.deepcopy(orig)
+    if newname:
+        ret.name = newname
+        ret.shortname = ret.name
+    orig.repr_delegate, orig.sql_delegate, orig.status_column = bu
+    ret.set_repr_delegate(orig.repr_delegate)
+    ret.status_column = orig.status_column
     return ret
 
 
@@ -374,8 +402,8 @@ def build_from_db(proj, table, name):
 
     # ----------- fill basic data
     ret.shortname = f[3] if f[3] is not None else name
-    ret.dim = f[2]
-    ret.comment = f[4]
+    ret.dim = f[2] if f[2] else ''
+    ret.comment = f[4] if f[4] else ''
     table.columns[name] = ret
     return ret
 
