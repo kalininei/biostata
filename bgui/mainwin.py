@@ -14,6 +14,9 @@ class MainWindow(QtWidgets.QMainWindow):
     "application main window"
     active_model_changed = QtCore.pyqtSignal()
     active_model_repr_changed = QtCore.pyqtSignal()
+    database_saved = QtCore.pyqtSignal(str)
+    database_opened = QtCore.pyqtSignal(str)
+    database_closed = QtCore.pyqtSignal()
 
     def __init__(self, proj):
         'proj - prog.projroot.ProjectDB'
@@ -93,7 +96,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filemenu.addSeparator()
         # exit
         self.filemenu.add_action('Exit', QtWidgets.qApp.quit,
-                                 hotkey=QtGui.QKeySequence.Close)
+                                 hotkey=QtGui.QKeySequence.Quit)
 
         # --- View
         self.viewmenu = qtcommon.BMenu('View', self, menubar)
@@ -101,10 +104,12 @@ class MainWindow(QtWidgets.QMainWindow):
         # zoom
         self.viewmenu.add_action('Increase font',
                                  functools.partial(self._act_zoom, 2),
-                                 vis=self.has_model)
+                                 vis=self.has_model,
+                                 hotkey=QtGui.QKeySequence.ZoomIn)
         self.viewmenu.add_action('Decrease font',
                                  functools.partial(self._act_zoom, -2),
-                                 vis=self.has_model)
+                                 vis=self.has_model,
+                                 hotkey=QtGui.QKeySequence.ZoomOut)
         self.viewmenu.addSeparator()
         # fold/unfold
         self.fold_rows_action = self.viewmenu.add_action(
@@ -222,6 +227,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ungroup_rows_action.setEnabled(has_groups)
 
     def _viewmenu_enabled(self):
+        self.fold_rows_action.setCheckable(True)
+        self.unfold_rows_action.setCheckable(True)
+        self.apply_color_action.setCheckable(True)
         if self.has_model():
             # set checks for fold/unfold
             self.fold_rows_action.setChecked(
@@ -357,12 +365,15 @@ class MainWindow(QtWidgets.QMainWindow):
         from bgui import joindlg
         dialog = joindlg.JoinTablesDialog(self.active_model.dt, self)
         if dialog.exec_():
-            name, tabentries = dialog.ret_value()
-            dt = derived_tabs.join_table(name, tabentries, self.proj)
-            self.proj.add_table(dt)
-            newmodel = tmodel.TabModel(dt)
-            index = self.add_model(newmodel)
-            self.wtab.setCurrentIndex(index)
+            try:
+                name, tabentries = dialog.ret_value()
+                dt = derived_tabs.join_table(name, tabentries, self.proj)
+                self.proj.add_table(dt)
+                newmodel = tmodel.TabModel(dt)
+                index = self.add_model(newmodel)
+                self.wtab.setCurrentIndex(index)
+            except Exception as e:
+                qtcommon.message_exc(self, 'Join error', e=e)
 
     def _act_import_table(self):
         from bgui import importdlgs
@@ -427,22 +438,26 @@ class MainWindow(QtWidgets.QMainWindow):
             self.opts.save()
             self.reload_options(self.opts)
 
-    def _act_saveas(self, fname=None):
-        if fname is None:
-            flt = "Databases (*.db, *.sqlite)(*.db *.sqlite)"
-            fname = QtWidgets.QFileDialog.getSaveFileName(
-                self, "Save database as", self.proj.curdir(), flt)[0]
+    def _act_saveas(self):
+        flt = "Databases (*.db, *.sqlite)(*.db *.sqlite)"
+        fname, _ = QtWidgets.QFileDialog.getSaveFileName(
+            self, "Save database as", self.proj.curdir(), flt)
         if fname:
-            try:
-                self.proj.relocate_and_commit_all_changes(fname)
-                self._set_actual_file(fname)
-            except Exception as e:
-                qtcommon.message_exc(self, "Save error", e=e)
+            self._act_saveto(fname)
+
+    def _act_saveto(self, fname):
+        try:
+            self.proj.relocate_and_commit_all_changes(fname)
+            self._set_actual_file(fname)
+            self.database_saved.emit(fname)
+        except Exception as e:
+            qtcommon.message_exc(self, "Save error", e=e)
         self.update_tabnames()
 
     def _act_save(self):
         try:
             self.proj.commit_all_changes()
+            self.database_saved.emit(self.proj._curname)
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
         self.update_tabnames()
@@ -487,6 +502,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.proj.set_main_database(fname)
             self._init_project()
             self._set_actual_file(fname)
+            self.database_opened.emit(fname)
         except Exception as e:
             m = 'Failed to load database from "{}". '.format(fname)
             qtcommon.message_exc(self, "Load error", text=m, e=e)
@@ -505,6 +521,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.wtab.clear()
         self.tabframes = []
         self.reset_title()
+        self.database_closed.emit()
 
     def _init_project(self):
         self.models = []

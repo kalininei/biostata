@@ -1,3 +1,4 @@
+import collections
 import functools
 import copy
 from PyQt5 import QtWidgets, QtCore, QtGui
@@ -6,6 +7,8 @@ from bdata import derived_tabs
 from bdata import bcol
 from bgui import qtcommon
 from bgui import coloring
+from bgui import dlgs
+from prog import basic
 
 
 @qtcommon.hold_position
@@ -218,7 +221,10 @@ class TabColumnsChoiceFrame(QtWidgets.QFrame):
         return r1, r2
 
     def new_key_column(self, itab, igroup, colname):
-        self.tabs[itab].reset_color_group(igroup, colname)
+        if colname is not None:
+            self.tabs[itab].reset_color_group(igroup, colname)
+        else:
+            self.tabs[itab].remove_color_group(igroup)
 
 
 class TabColumnsChoice(QtWidgets.QGroupBox):
@@ -268,15 +274,22 @@ class TabColumnsChoice(QtWidgets.QGroupBox):
         self.wtab.setMinimumHeight(self.wtab.verticalHeader().length()+100)
         self.setMinimumHeight(self.wtab.verticalHeader().length()+100)
 
-    def reset_color_group(self, igroup, colname):
+    def remove_color_group(self, igroup, do_reset=True):
         for i, c in enumerate(self.color_group):
             if c == igroup:
                 self.color_group[i] = -1
+        if do_reset:
+            self._reset_colors()
+
+    def reset_color_group(self, igroup, colname):
+        self.remove_color_group(igroup, False)
         for i in range(self.wtab.rowCount()):
             if self.wtab.item(i, 0).text() == colname:
                 self.color_group[i] = igroup
                 break
+        self._reset_colors()
 
+    def _reset_colors(self):
         for i, cg in enumerate(self.color_group):
             for j in range(self.wtab.columnCount()):
                 if cg > -1:
@@ -307,8 +320,11 @@ class TabKeysRow:
         self.wid.append(QtWidgets.QPushButton(parent))
         self.wid.append(QtWidgets.QPushButton(parent))
         self.wid.append(QtWidgets.QPushButton(parent))
+        # key columns (combobox)
         self.cb_col = self.wid[:-4]
+        # warning label (label)
         self.w_label = self.wid[-4]
+        # buttons: link, remove, new row
         self.b_link = self.wid[-3]
         self.b_rem = self.wid[-2]
         self.b_add = self.wid[-1]
@@ -347,15 +363,17 @@ class TabKeysRow:
 
         for j, w in enumerate(self.wid):
             w.setFocusPolicy(QtCore.Qt.NoFocus)
-            # parent.layout().addWidget(w, irow, j)
-        # [i_table]{key_value: group_code}
-        self.mapping = [{} for _ in range(len(proj.data_tables))]
+        # {i_table: {key_value: group_code} }
+        self.mapping = {}
+        self.can_use_simple_mapping = False
 
     def remove(self):
         self.is_dead = True
         for w in self.wid:
             w.setEnabled(False)
             w.setVisible(False)
+        for i in range(len(self.proj.data_tables)):
+            self.parent.new_key_column.emit(i, self.irow, None)
 
     def add_row(self):
         if self.parent.is_last_row(self.irow):
@@ -372,37 +390,31 @@ class TabKeysRow:
         self.b_link.setEnabled(self.has_all_data())
         self.parent.new_key_column.emit(
                 ntab, self.irow, self.cb_col[ntab].currentText())
-        show_warning = False
+        self.can_use_simple_mapping = True
         if self.has_all_data():
-            self.prebuild_mapping()
-            # warning sign
+            # if all columns are same we can use simple mapping
             itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
             colnames = [self.wid[itab].currentText() for itab in itabs]
             tabs = [self.proj.data_tables[itab] for itab in itabs]
             cols = [t.columns[c] for t, c in zip(tabs, colnames)]
-            show_warning = not bcol.ColumnInfo.are_same(cols)
-        self.w_label.setVisible(show_warning)
+            self.can_use_simple_mapping = bcol.ColumnInfo.are_same(cols)
+            self.init_mapping()
+        self.set_warning()
 
-    def prebuild_mapping(self):
-        itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
-        # assemble possible values
-        # -> (key value, representation value)
-        possible_values = []
-        for itab in itabs:
-            tab = self.proj.data_tables[itab]
-            colname = self.wid[itab].currentText()
-            col = tab.columns[colname]
-            if col.dt_type in ["ENUM", "BOOL"]:
-                pv1 = col.dict.keys()
-            else:
-                pv1 = tab.get_distinct_column_raw_vals(colname, False)
-            possible_values.append(pv1)
-        # resort possible values
-        # TODO
-        # apply
-        for i, itab in enumerate(itabs):
-            self.mapping[itab] = {x: j for j, x in
-                                  enumerate(possible_values[i])}
+    def set_warning(self):
+        # warning sign if we use non-trivial mapping
+        self.w_label.setVisible(self.has_all_data() and bool(self.mapping))
+
+    def init_mapping(self):
+        if self.can_use_simple_mapping:
+            self.mapping = {}
+        else:
+            itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
+            tabs = [self.proj.data_tables[x] for x in itabs]
+            cols = [tabs[x].columns[self.wid[x].currentText()] for x in itabs]
+            im = prebuild_mapping(tabs, cols)
+            for i, m in zip(itabs, im):
+                self.mapping[i] = m
 
     def has_all_data(self):
         if len(self.wid) < 4:
@@ -427,8 +439,10 @@ class TabKeysRow:
 
     def edit_mapping(self):
         itabs = [i for i, w in enumerate(self.cb_col) if w.isVisible()]
-        columns, captions = [], []
+        # assemble used tabels, columns and column captions
+        tables, columns, captions = [], [], []
         for itab in itabs:
+            tables.append(self.proj.data_tables[itab])
             cn = self.wid[itab].currentText()
             columns.append(self.proj.data_tables[itab].columns[cn])
             cap = columns[-1].name
@@ -436,12 +450,23 @@ class TabKeysRow:
             if cap.find(tname) < 0:
                 cap += " ({})".format(tname)
             captions.append(cap)
-        maps = [self.mapping[i] for i in itabs]
-        dialog = EditMappingsDialog(columns, captions, maps, self.parent)
+        # assemble used mappings or None
+        try:
+            maps = [self.mapping[i] for i in itabs]
+        except KeyError:
+            maps = None
+        assert (maps is not None) or (self.can_use_simple_mapping)
+        dialog = EditMappingsDialog(tables, columns, captions, maps,
+                                    self.can_use_simple_mapping, self.parent)
         if dialog.exec_():
             maps = dialog.ret_value()
-            for i, itab in enumerate(itabs):
-                self.mapping[itab] = maps[i]
+            if maps is not None:
+                for i, itab in enumerate(itabs):
+                    self.mapping[itab] = maps[i]
+            else:
+                assert self.can_use_simple_mapping
+                self.mapping.clear()
+            self.set_warning()
 
 
 class TabKeysChoice(QtWidgets.QFrame):
@@ -498,6 +523,7 @@ class TabKeysChoice(QtWidgets.QFrame):
 class EditMappingsModel(QtCore.QAbstractTableModel):
     GroupRole = QtCore.Qt.UserRole + 1
     ColumnNameRole = QtCore.Qt.UserRole + 2
+    DataRole = QtCore.Qt.UserRole + 3
     repr_updated = QtCore.pyqtSignal()
     bgcolor1 = QtGui.QColor(255, 255, 0, 70)
     bgcolor2 = QtGui.QColor(255, 255, 0, 40)
@@ -505,6 +531,12 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
     def __init__(self, data, columns, names):
         super().__init__()
         self.groups = copy.deepcopy(data)
+        # set Nones
+        for a in self.groups:
+            for b in a:
+                for i in range(len(b)):
+                    if b[i] is None:
+                        b[i] = basic.CustomNone()
         self.names = copy.deepcopy(names)
         self.columns = columns
         self.totrows = []
@@ -527,7 +559,7 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
     def data(self, index, role):
         if not index.isValid():
             return None
-        if role == QtCore.Qt.DisplayRole:
+        if role == EditMappingsModel.DataRole:
             v = self.totrows[index.row()][index.column()]
             if v is not None and index.column() >= 1:
                 col = self.columns[index.column() - 1]
@@ -535,7 +567,15 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
                     v = "{} ({})".format(col.repr(v), True if v else False)
                 elif col.dt_type == "ENUM":
                     v = col.repr(v)
+            if v == '':
+                return basic.CustomEString()
             return v
+        elif role == QtCore.Qt.DisplayRole:
+            v = self.data(index, EditMappingsModel.DataRole)
+            if isinstance(v, basic.CustomObject):
+                return str(v)
+            else:
+                return v
         elif role == EditMappingsModel.GroupRole:
             return self.totrows[index.row()][0]
         elif role == EditMappingsModel.ColumnNameRole:
@@ -548,6 +588,12 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
             else:
                 c = self.bgcolor2
             return QtGui.QBrush(c)
+        elif role == QtCore.Qt.ForegroundRole:
+            v = self.data(index, EditMappingsModel.DataRole)
+            if isinstance(v, basic.CustomObject):
+                return QtGui.QBrush(QtGui.QColor(200, 200, 200))
+            else:
+                return None
         return None
 
     def set_drag_group(self, index):
@@ -565,7 +611,7 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
     def flags(self, index):   # noqa
         ret = QtCore.Qt.ItemIsEnabled
         if index.column() >= 1:
-            if self.data(index, QtCore.Qt.DisplayRole) is not None:
+            if self.data(index, EditMappingsModel.DataRole) is not None:
                 ret = ret | QtCore.Qt.ItemIsSelectable
                 ret = ret | QtCore.Qt.ItemIsDragEnabled
         g1 = self.data(self.__drag_index, EditMappingsModel.GroupRole)
@@ -589,10 +635,11 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
         for i in reversed(rm):
             self.groups.pop(i)
         # add empty row to the end
-        eg = copy.deepcopy(self.groups[0])
-        for v in eg:
-            v.clear()
-        self.groups.append(eg)
+        if len(self.groups) > 0:
+            eg = copy.deepcopy(self.groups[0])
+            for v in eg:
+                v.clear()
+            self.groups.append(eg)
 
     def _reset_data(self):
         self._adjust_groups()
@@ -613,10 +660,8 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
         if not parent.isValid():
             return 0
         self.beginResetModel()
-        oldgroup = self.data(self.__drag_index,
-                             EditMappingsModel.GroupRole)
-        newgroup = self.data(parent,
-                             EditMappingsModel.GroupRole)
+        oldgroup = self.data(self.__drag_index, EditMappingsModel.GroupRole)
+        newgroup = self.data(parent, EditMappingsModel.GroupRole)
         r, c = self.__drag_index.row(), self.__drag_index.column()
         dt = self.totrows[r][c]
         # 1. add to new group
@@ -634,11 +679,10 @@ class EditMappingsModel(QtCore.QAbstractTableModel):
 
 
 class EditMappingsTable(QtWidgets.QTableView):
-    def __init__(self, groups, names, parent):
+    def __init__(self, names, parent):
         super().__init__(parent)
-        self.setModel(EditMappingsModel(groups, parent.columns, names))
-        self.model().repr_updated.connect(self.updated)
-        self.updated()
+        self.names = names
+        self.columns = parent.columns
         # captions
         self.verticalHeader().setVisible(False)
         # selection behaiviour:
@@ -646,6 +690,13 @@ class EditMappingsTable(QtWidgets.QTableView):
                 QtWidgets.QAbstractItemView.SingleSelection)
         # drag drop
         self.setDragDropMode(QtWidgets.QAbstractItemView.InternalMove)
+
+    def init_groups(self, groups):
+        assert self.model() is None
+
+        self.setModel(EditMappingsModel(groups, self.columns, self.names))
+        self.model().repr_updated.connect(self.updated)
+        self.updated()
 
     def startDrag(self, action):   # noqa
         ind = self.selectionModel().currentIndex()
@@ -658,49 +709,110 @@ class EditMappingsTable(QtWidgets.QTableView):
         for s in self.model().spans():
             self.setSpan(s[0], 0, s[1]-s[0]+1, 1)
 
+    def ret_value(self):
+        if self.model() is None:
+            return None
+        ret = copy.deepcopy(self.model().groups)
+        # set from Nones
+        for a in ret:
+            for b in a:
+                for i in range(len(b)):
+                    if isinstance(b[i], basic.CustomNone):
+                        b[i] = None
+        return ret
+
 
 @qtcommon.hold_position
-class EditMappingsDialog(QtWidgets.QDialog):
-    def __init__(self, columns, captions, mappings, parent):
-        super().__init__(parent)
+class EditMappingsDialog(dlgs.OkCancelDialog):
+    def __init__(self, tables, columns, captions, maps,
+                 can_use_simple_mapping, parent):
+        super().__init__("Edit column mappings", parent, "vertical")
         self.resize(300, 400)
-        self.setWindowTitle("Edit column mappings")
         # fill table widget
         self.columns = columns
-        self.init_fill(mappings)
-        # widget = mainframe/buttonbox
-        self.setLayout(QtWidgets.QVBoxLayout())
-        self.mainframe = QtWidgets.QFrame(self)
-        self.buttonbox = QtWidgets.QDialogButtonBox(
-                QtWidgets.QDialogButtonBox.Ok |
-                QtWidgets.QDialogButtonBox.Cancel)
-        self.buttonbox.accepted.connect(self.accept)
-        self.buttonbox.rejected.connect(self.reject)
-        self.layout().addWidget(self.mainframe)
-        self.layout().addWidget(self.buttonbox)
-        # mainframe = QTableWidget
-        self.mainframe.setLayout(QtWidgets.QVBoxLayout())
-        self.tab = EditMappingsTable(self.groups, captions, self)
+        self.tables = tables
+        # [group index][table index] -> [list of possible column values]
+        self.groups = []
+        self.__groups_initialized = False
+        # mainframe = value-to-value checkbox, QTableWidget
+        self.vtv = QtWidgets.QCheckBox("Value-to-value mapping")
+        self.vtv.setChecked(maps is None)
+        self.vtv.setEnabled(can_use_simple_mapping)
+        self.vtv.toggled.connect(self.vtv_toggled)
+        # main table
+        self.tab = EditMappingsTable(captions, self)
+        self.tab.setEnabled(maps is not None)
+        self.mainframe.layout().addWidget(self.vtv)
         self.mainframe.layout().addWidget(self.tab)
+        # initialize edit table
+        if maps is not None:
+            self.init_fill(maps)
 
-    def init_fill(self, maps):
+    def init_fill(self, maps=None):
+        if self.__groups_initialized:
+            return
+        self.__groups_initialized = True
         # init mappings -> groups
+        if maps is None:
+            maps = prebuild_mapping(self.tables, self.columns)
         ngroups = 0
         for e in maps:
             ngroups = max(ngroups, max(e.values()))
         ngroups += 1
         ncols = len(self.columns)
-        self.groups = [[[] for _ in range(ncols)] for _ in range(ngroups)]
+        self.groups.clear()
+        for i in range(ngroups):
+            self.groups.append([[] for j in range(ncols)])
         for itab, d in enumerate(maps):
             for key, gr_code in d.items():
                 self.groups[gr_code][itab].append(key)
+        self.tab.init_groups(self.groups)
+
+    def vtv_toggled(self, status):
+        if not status:
+            self.init_fill()
+        self.tab.setEnabled(not status)
 
     def ret_value(self):
+        # simple mapping was used
+        if self.vtv.isChecked():
+            return None
         # groups -> mappings
-        self.groups = self.tab.model().groups
+        self.groups = self.tab.ret_value()
         maps = [{} for _ in range(len(self.columns))]
         for gr_code, gr in enumerate(self.groups):
             for itab, vals in enumerate(gr):
                 for val in vals:
                     maps[itab][val] = gr_code
         return maps
+
+
+def prebuild_mapping(tabs, columns):
+    # assemble possible values
+    # -> (key value, representation value)
+    possible_values = []
+    for tab, col in zip(tabs, columns):
+        if col.dt_type in ["ENUM", "BOOL"]:
+            pv1 = col.repr_delegate.dict.keys()
+        else:
+            pv1 = tab.get_distinct_column_raw_vals(col.name, False, True)
+        possible_values.append(pv1)
+    # apply
+    ret = []
+    for pv in possible_values:
+        ret.append(collections.OrderedDict(
+            [(x, j) for j, x in enumerate(pv)]))
+
+    # resort possible values
+    keys = []
+    for i, r in enumerate(ret):
+        col = columns[i]
+        for v in r.keys():
+            a = col.repr(v)
+            try:
+                k = keys.index(a)
+                r[v] = k
+            except ValueError:
+                keys.append(a)
+                r[v] = len(keys) - 1
+    return ret

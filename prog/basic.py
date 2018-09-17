@@ -6,6 +6,22 @@ class CustomObject(object):
     pass
 
 
+class CustomNone(CustomObject):
+    def __str__(self):
+        return 'None'
+
+    def __repr__(self):
+        return 'None'
+
+
+class CustomEString(CustomObject):
+    def __str__(self):
+        return 'empty str'
+
+    def __repr__(self):
+        return 'empty str'
+
+
 def _ignore_exception(e, text=None):
     log_message(traceback.format_exc(), "ERROR")
     if text:

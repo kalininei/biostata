@@ -363,6 +363,8 @@ def build_deep_copy_wo_sql(orig, newname=None):
 def restore_function_column(name, func_name, columns, **kwargs):
     if func_name == "collapsed_categories":
         return collapsed_categories(columns, kwargs['delimiter'])
+    elif func_name == "custom_tmp_function":
+        raise Exception("custom functions can not be restored")
     else:
         raise Exception("unknown function name {}".format(kwargs['func_name']))
 
@@ -380,7 +382,7 @@ def build_from_db(proj, table, name):
 
     qr = """
         SELECT type, dict, dim, shortname, comment, state, isorig
-        FROM A."_COLINFO {}" WHERE colname="{}"
+        FROM A."_COLINFO {}" WHERE colname='{}'
     """.format(table.table_name(), name)
     proj.sql.query(qr)
     f = proj.sql.qresult()
@@ -388,7 +390,7 @@ def build_from_db(proj, table, name):
     state = ET.fromstring(f[5]) if f[5] else None
     if f[6]:
         # ------ original column
-        ret = build_original_column(name, f[0], state, dct)
+        ret = build_original_column(name, f[0], dct, state)
     else:
         # ------ functional column
         colnames = literal_eval(unescape(state.find("ARGUMENTS").text))
@@ -396,7 +398,7 @@ def build_from_db(proj, table, name):
         colargs = [build_from_db(proj, table, x) for x in colnames]
         kwargs = literal_eval(unescape(
             state.find("DESCRIPTION").text))
-        func_name = unescape(state.find("FUNCTION"))
+        func_name = unescape(state.find("FUNCTION").text)
         ret = restore_function_column(name, func_name, colargs, **kwargs)
         ret.set_repr_delegate(_BasicRepr.default(f[0], dct))
 
@@ -420,6 +422,8 @@ def build_function_sql_delegate(deps, before_grouping, func, func_type, kw):
 
 # ======================= functional columns list
 def collapsed_categories(columns, delimiter='-'):
+    """ collapse categories function
+    """
     def func(*args):
         try:
             ret = []
@@ -441,5 +445,19 @@ def collapsed_categories(columns, delimiter='-'):
     ret.set_repr_delegate(rep)
     ret.set_sql_delegate(sql)
 
+    ret.status_column = FuncStatusColumn(ret)
+    return ret
+
+
+def custom_tmp_function(name, func, deplist, before_grouping, rettype):
+    """ This function type is for temporary usage only.
+        It can not be saved and restored
+    """
+    rep = _BasicRepr.default(rettype)
+    sql = build_function_sql_delegate(deplist, before_grouping, func,
+                                      "custom_tmp_function", {})
+    ret = ColumnInfo(name)
+    ret.set_repr_delegate(rep)
+    ret.set_sql_delegate(sql)
     ret.status_column = FuncStatusColumn(ret)
     return ret

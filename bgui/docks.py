@@ -107,7 +107,7 @@ class ColorDockWidget(DockWidget):
 
     def active_model_changed(self):
         super().active_model_changed()
-        if self.tmodel is None:
+        if self.tmodel is not None:
             self.refill()
 
     def refill(self):
@@ -553,6 +553,11 @@ class ColumnInfoDockWidget(TwoLevelTreeDockWidget):
             self.tab.setColumnWidth(2, 20)
         else:
             self.tab.setModel(None)
+
+    def refill(self):
+        super().refill()
+        self.tab.resizeColumnToContents(0)
+        self.tab.resizeColumnToContents(1)
 
 
 # ============================= Filters Dock

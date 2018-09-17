@@ -1,3 +1,9 @@
+""" Usage:
+    1) from parent project directory execute
+       > python3 -m unittest utest.algotest
+    2) to run specific tests invoke
+       > python3 -m unittest utest.algotest.Test1.<spec test>
+"""
 import copy
 import unittest
 from prog import basic, projroot
@@ -23,7 +29,7 @@ class Test1(unittest.TestCase):
 
     def tearDown(self):
         ''
-        proj.relocate_and_commit_all_changes('~a.db')
+        proj.relocate_and_commit_all_changes('dbg.db')
 
     def test_load_from_txt_1(self):
         opt = Object()
@@ -190,7 +196,7 @@ class Test1(unittest.TestCase):
 
         # save database
         self.assertTrue(dt.need_rewrite)
-        proj.relocate_and_commit_all_changes('~a.db')
+        proj.relocate_and_commit_all_changes('dbg.db')
         self.assertFalse(dt.need_rewrite)
 
         # change dictionaries values only
@@ -480,5 +486,3 @@ class Test1(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
-    # a = Test1()
-    # a.test_converts()

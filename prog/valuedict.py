@@ -115,7 +115,7 @@ class Dictionary:
         import ast
         qr = """
             SELECT "type", "keys", "values", "comments" FROM A._DICTIONARIES_
-            WHERE name="{}" """.format(name)
+            WHERE name='{}' """.format(name)
         proj.sql.query(qr)
         f = proj.sql.qresult()
         dt_type = f[0]

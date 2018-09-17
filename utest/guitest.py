@@ -20,7 +20,7 @@ import sys
 import unittest
 from PyQt5 import QtWidgets, QtCore
 from prog import basic, projroot
-from bgui import mainwin, dlgs, importdlgs, dictdlg, filtdlg, colinfodlg  # noqa
+from bgui import mainwin, dlgs, importdlgs, dictdlg, filtdlg, colinfodlg, joindlg  # noqa
 from utest import testutils     # noqa
 
 basic.set_log_message('file: ~log')
@@ -40,7 +40,7 @@ alltests_run = {x: True for x in alltests}
 class TestRunner(unittest.TestCase):
     def tearDown(self):
         ''
-        # tt.eval_now(win._act_saveas, ('~a.db',))
+        # tt.eval_now(win._act_saveto, ('.a.db',))
 
     def test_import_txt(self):
         if not alltests_run['test_import_txt']:
@@ -232,7 +232,7 @@ class TestRunner(unittest.TestCase):
 
         # check shown table name
         self.assertEqual(w.wtab.tabText(0).replace('&', ''), 'Table1*')
-        tt.eval_and_wait_true(w._act_saveas, ('~a.db',),
+        tt.eval_and_wait_true(w._act_saveto, ('dbg.db',),
                               'w.wtab.tabText(0).replace("&","")=="Table1"',
                               {'w': w})
 
@@ -644,7 +644,216 @@ class TestRunner(unittest.TestCase):
         if not alltests_run['test_jointabs']:
             return
         tt.eval_now(win._close_database, ())
-        # w = tt.wait_window(mainwin.MainWindow)
+        w = tt.wait_window(mainwin.MainWindow)
+
+        # import dialog
+        w = tt.eval_and_wait_window(
+            w.filemenu.acts['Import tables...'].trigger, (),
+            dlgs.ImportTablesDlg)
+        # enter filename
+        tt.emit_and_wait_true(
+            w.sig_set_odata_entry, ('filename', 'test_db/t4.xlsx'),
+            "w.odata().format == 'xlsx'", {'w': w})
+        # ok
+        w = tt.eval_and_wait_window(mto.dialog_okclick, (w.buttonbox,),
+                                    importdlgs.ImportXlsx)
+        tt.emit_now(w.spec.sig_set_odata_entry, ('range', ''))
+        tt.emit_now(w.spec.sig_set_odata_entry, ('read_cap', True))
+        tt.emit_now(w.spec.sig_set_odata_entry, ('sheetname', 'Sheet1'))
+        tt.emit_now(w.spec.sig_set_odata_entry, ('tabname', 'Tab1'))
+        tt.eval_now(mto.button_click, (w.load_button))
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+        # import dialog
+        w = tt.eval_and_wait_window(
+            w.filemenu.acts['Import tables...'].trigger, (),
+            dlgs.ImportTablesDlg)
+        # enter filename
+        tt.emit_and_wait_true(
+            w.sig_set_odata_entry, ('filename', 'test_db/t4.xlsx'),
+            "w.odata().format == 'xlsx'", {'w': w})
+        # ok
+        w = tt.eval_and_wait_window(mto.dialog_okclick, (w.buttonbox,),
+                                    importdlgs.ImportXlsx)
+        tt.emit_now(w.spec.sig_set_odata_entry, ('range', ''))
+        tt.emit_now(w.spec.sig_set_odata_entry, ('read_cap', True))
+        tt.emit_now(w.spec.sig_set_odata_entry, ('sheetname', 'Sheet2'))
+        tt.emit_now(w.spec.sig_set_odata_entry, ('tabname', 'Tab2'))
+        tt.eval_now(mto.button_click, (w.load_button))
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+
+        # join dialog
+        w = tt.eval_and_wait_window(
+                w.tablesmenu.acts['Join tables...'].trigger, (),
+                joindlg.JoinTablesDialog)
+        tt.eval_now(w.e_tabname.setText, 'JoinTab')
+        itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm1, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        itm2 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab2')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm2, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        # set keys
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[0].setCurrentText, ("А.4"))
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[1].setCurrentText, ("Б.2"))
+        # tt.eval_now(mto.button_click, (w.e_tabkeys.frows[0].b_add))
+        # tt.eval_now(w.e_tabkeys.frows[1].cb_col[0].setCurrentText, ("А.2"))
+        # tt.eval_now(w.e_tabkeys.frows[1].cb_col[1].setCurrentText, ("Б.1"))
+
+        # check columns
+        tt.eval_now(mto.table_cell_check, (0, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (4, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (0, 0, w.e_tabcols.tabs[1].wtab))
+
+        # ok
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+        self.assertListEqual(testutils.get_tmodel(w.active_model), [[1, 2], [1, 2], [2, 8], [2.3, 3.1]])  # noqa
+        self.assertEqual(
+            w.wtab.tabText(w.wtab.currentIndex()).replace('&', ''), "JoinTab*")
+
+        tt.eval_and_wait_signal(
+                w.tablesmenu.acts['Remove active table'].trigger, (),
+                w.active_model_changed)
+
+        # join dialog
+        w = tt.eval_and_wait_window(
+                w.tablesmenu.acts['Join tables...'].trigger, (),
+                joindlg.JoinTablesDialog)
+        itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm1, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        itm2 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab2')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm2, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        # set keys
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[0].setCurrentText, ("А.1"))
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[1].setCurrentText, ("А.1"))
+        tt.eval_now(mto.button_click, (w.e_tabkeys.frows[0].b_add))
+        tt.eval_now(w.e_tabkeys.frows[1].cb_col[0].setCurrentText, ("А.4"))
+        tt.eval_now(w.e_tabkeys.frows[1].cb_col[1].setCurrentText, ("Б.2"))
+
+        # check columns
+        tt.eval_now(mto.table_cell_check, (0, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (1, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (4, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (0, 0, w.e_tabcols.tabs[1].wtab))
+
+        # ok
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    QtWidgets.QMessageBox)
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w, mainwin.MainWindow)
+        self.assertListEqual(testutils.get_tmodel(w.active_model), [[1], [1], ['Да'], [2], [2.3]])  # noqa
+
+        # create dictionaries
+        w = tt.eval_and_wait_window(
+                w.tablesmenu.acts['Tables && columns...'].trigger, (),
+                colinfodlg.TablesInfo)
+        tt.eval_now(mto.view_item_click, (w.e_tree, 'А.1'))
+        frame = w.info_frame.frames['Tab1,А.1']
+        w = tt.eval_and_wait_window(mto.button_click, (frame.tpconv_button),
+                                    colinfodlg.ConvertDialog)
+        tt.eval_now(w.cb.setCurrentIndex, 5)
+        w = tt.eval_and_wait_window(
+                w.dictcb.setCurrentText, '_ create new dict',
+                dictdlg.CreateNewDictionary)
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    colinfodlg.ConvertDialog)
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    colinfodlg.TablesInfo)
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+
+        # join dialog
+        w = tt.eval_and_wait_window(
+                w.tablesmenu.acts['Join tables...'].trigger, (),
+                joindlg.JoinTablesDialog)
+        itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm1, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        itm2 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab2')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm2, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        # set keys
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[0].setCurrentText, ("А.1"))
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[1].setCurrentText, ("А.1"))
+        self.assertTrue(w.e_tabkeys.frows[0].w_label.isVisible())
+        # check
+        tt.eval_now(mto.table_cell_check, (1, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (1, 0, w.e_tabcols.tabs[1].wtab))
+        # rename Tab1.A1
+        tt.eval_now(mto.table_cell_dclick, (1, 2, w.e_tabcols.tabs[1].wtab))
+        tt.eval_now(mto.type_text, ('AAAA'))
+        tt.eval_now(mto.press_enter, ())
+        # ok
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+        self.assertEqual(w.active_model.dt.n_rows(), 22)
+
+        # with grouping
+        tt.eval_and_wait_signal(
+                w.wtab.setCurrentIndex, 0, w.active_model_changed)
+        w = tt.eval_and_wait_window(
+                w.rowsmenu.acts['Group rows...'].trigger, (),
+                dlgs.GroupRowsDlg)
+        e = w.odata().cat
+        e['All categories']['А.1'] = True
+        tt.emit_now(w.sig_set_odata_entry, ('cat', e))
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+
+        tt.eval_and_wait_signal(
+                w.wtab.setCurrentIndex, 1, w.active_model_changed)
+        w = tt.eval_and_wait_window(
+                w.rowsmenu.acts['Group rows...'].trigger, (),
+                dlgs.GroupRowsDlg)
+        e = w.odata().cat
+        e['All categories']['А.1'] = True
+        tt.emit_now(w.sig_set_odata_entry, ('cat', e))
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+        w = tt.eval_and_wait_window(
+                w.tablesmenu.acts['Join tables...'].trigger, (),
+                joindlg.JoinTablesDialog)
+        itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm1, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        itm2 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab2')
+        tt.eval_now(w.e_tabchoice.model().setData,
+                    (itm2, QtCore.Qt.Checked, QtCore.Qt.CheckStateRole))
+        # set keys
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[0].setCurrentText, ("А.1"))
+        tt.eval_now(w.e_tabkeys.frows[0].cb_col[1].setCurrentText, ("А.1"))
+        self.assertTrue(w.e_tabkeys.frows[0].w_label.isVisible())
+        # check
+        tt.eval_now(mto.table_cell_check, (1, 0, w.e_tabcols.tabs[0].wtab))
+        tt.eval_now(mto.table_cell_check, (1, 0, w.e_tabcols.tabs[1].wtab))
+        # rename Tab1.A1
+        tt.eval_now(mto.table_cell_dclick, (1, 2, w.e_tabcols.tabs[1].wtab))
+        tt.eval_now(mto.type_text, ('AAAA'))
+        tt.eval_now(mto.press_enter, ())
+        # ok
+        w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
+                                    mainwin.MainWindow)
+        self.assertEqual(w.active_model.dt.n_rows(), 3)
+
+        # save and load
+        tt.set_tmp_wait_times(1, 100)
+        tt.eval_and_wait_signal(w._act_saveto, ('dbg.db'),
+                                w.database_saved)
+        self.assertEqual(w.windowTitle(), 'dbg.db - BioStat Analyser')
+        tt.eval_and_wait_signal(w._close_database, (),
+                                w.database_closed)
+        tt.eval_and_wait_signal(w._load_database, ('dbg.db'),
+                                w.database_opened)
+        tt.recover_wait_times()
+
+        tt.eval_and_wait_signal(
+                w.wtab.setCurrentIndex, 4, w.active_model_changed)
+        self.assertEqual(w.active_model.dt.n_rows(), 3)
+        d = [next((x for x in y.dt.columns.keys())) for y in w.models]
+        self.assertListEqual(['id']*5, d)
 
 proj = projroot.ProjectDB()
 qApp = QtWidgets.QApplication(sys.argv)

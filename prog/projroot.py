@@ -50,7 +50,7 @@ class ProjectDB:
         # data types
         self.dictionaries = collections.OrderedDict()
         try:
-            self.sql.query("SELECT name FROM A._DICTIONARIES_")
+            self.sql.query("SELECT name FROM A._DICTIONARIES_ ORDER BY rowid")
         except Exception as e:
             basic.ignore_exception(e)
         else:
@@ -61,7 +61,8 @@ class ProjectDB:
         # named filters
         self.named_filters = []
         try:
-            self.sql.query("SELECT name, description FROM A._FILTERS_")
+            self.sql.query("SELECT name, description FROM A._FILTERS_ "
+                           "ORDER BY rowid")
         except Exception as e:
             basic.ignore_exception(e)
         else:
@@ -72,7 +73,8 @@ class ProjectDB:
         # (after data_types because the latter is used in table constructors)
         self.data_tables = []
         try:
-            self.sql.query("SELECT name, comment, state FROM A._DATA_TABLES_")
+            self.sql.query("SELECT name, comment, state FROM A._DATA_TABLES_ "
+                           "ORDER BY rowid")
         except Exception as e:
             basic.ignore_exception(e)
         else:

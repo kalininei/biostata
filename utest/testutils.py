@@ -1,6 +1,6 @@
 import time
 import unittest
-from PyQt5 import QtCore, QtTest
+from PyQt5 import QtCore, QtTest, QtWidgets
 
 
 def print_dtab(dt):
@@ -101,30 +101,35 @@ def all_qindexes(aview):
     ret = []
     model = aview.model()
 
-    def iterate(index, qtab):
+    def iterate(index, tp):
         if index.isValid():
             ret.append(index)
-            if qtab:
+            if tp in ['Table', 'List']:
                 return
-        if not qtab and not model.hasChildren(index):
+        if tp == 'Tree' and not model.hasChildren(index):
             return
         rows = model.rowCount(index)
-        cols = model.columnCount(index)
+        cols = model.columnCount(index) if tp != 'List' else 1
         for i in range(rows):
             for j in range(cols):
-                iterate(model.index(i, j, index), qtab)
+                iterate(model.index(i, j, index), tp)
 
+    tp = 'Tree'
     if isinstance(model, QtCore.QAbstractTableModel):
-        iterate(QtCore.QModelIndex(), True)
-    else:
-        iterate(aview.rootIndex(), False)
+        tp = 'Table'
+    if isinstance(model, QtCore.QAbstractListModel):
+        tp = 'List'
+    iterate(aview.rootIndex(), tp)
     return ret
 
 
-def search_index_by_contents(aview, dt, role=QtCore.Qt.DisplayRole):
+def search_index_by_contents(aview, dt, skip=0, role=QtCore.Qt.DisplayRole):
+    s = 0
     for ind in all_qindexes(aview):
         if ind.data(role) == dt:
-            return ind
+            s += 1
+            if s > skip:
+                return ind
     return None
 
 
@@ -217,18 +222,21 @@ class MainThreadObject(QtCore.QObject):
         self.emitter.emit(func)
         time.sleep(self.sleepafter)
 
-    def table_cell_check(self, row, col, wtab, status):
+    def table_cell_check(self, row, col, wtab, status=True):
         def func():
-            wtab.model().setData(
-                wtab.model().createIndex(row, col),
-                QtCore.Qt.Checked if status else QtCore.Qt.Unchecked,
-                QtCore.Qt.CheckStateRole)
+            cs = QtCore.Qt.Checked if status else QtCore.Qt.Unchecked
+            if not isinstance(wtab, QtWidgets.QTableWidget):
+                wtab.model().setData(
+                    wtab.model().createIndex(row, col),
+                    cs, QtCore.Qt.CheckStateRole)
+            else:
+                wtab.item(row, col).setCheckState(cs)
         self.emitter.emit(func)
         time.sleep(self.sleepafter)
 
-    def view_item_click(self, aview, content):
+    def view_item_click(self, aview, content, skip=0):
         def func():
-            ind = search_index_by_contents(aview, content)
+            ind = search_index_by_contents(aview, content, skip)
             if ind is None:
                 raise Exception("{} not found".format(content))
             pnt = aview.visualRect(ind).center()
@@ -289,6 +297,16 @@ class TestThread(QtCore.QThread):
         self.cls_test_runner = cls_test_runner
         self.qApp = q_app
         self.wait_flag = False
+
+    def set_tmp_wait_times(self, ntries, maxwait):
+        self.bu_ntries, TestThread.ntries = TestThread.ntries, ntries
+        self.bu_maxwait, TestThread.maxwait = TestThread.maxwait, maxwait
+
+    def recover_wait_times(self):
+        TestThread.ntries = self.bu_ntries
+        TestThread.maxwait = self.bu_maxwait
+        del self.bu_ntries
+        del self.bu_maxwait
 
     def _receiver(self, *args):
         self.wait_flag = True

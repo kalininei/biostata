@@ -225,8 +225,9 @@ class ColumnInfoFrame(QtWidgets.QFrame):
 
         # origin
         i += 1
-        self.e_origin = QtWidgets.QLineEdit()
-        self.e_origin.setReadOnly(True)
+        # self.e_origin = QtWidgets.QLineEdit()
+        # self.e_origin.setReadOnly(True)
+        self.e_origin = QtWidgets.QLabel(self)
         self.layout().addWidget(QtWidgets.QLabel("Origin"), i, 0)
         self.layout().addWidget(self.e_origin, i, 1)
 
@@ -256,12 +257,20 @@ class ColumnInfoFrame(QtWidgets.QFrame):
         etpframe = QtWidgets.QFrame(self)
         etpframe.setLayout(QtWidgets.QHBoxLayout())
         etpframe.layout().setContentsMargins(0, 0, 0, 0)
-        self.e_type = QtWidgets.QLineEdit(self)
-        self.e_type.setReadOnly(True)
+        # self.e_type = QtWidgets.QLineEdit(self)
+        # self.e_type.setReadOnly(True)
+        self.e_type = QtWidgets.QLabel(self)
         self.tpconv_button = QtWidgets.QPushButton("Convert")
         self.tpconv_button.clicked.connect(self._act_tpconv)
+        # Conversion is availible only for original columns.
+        # I don't see any reason why it should present for functional columns.
+        # but maybe i'm wrong.
+        self.tpconv_button.setEnabled(colitem.col.is_original())
+
         etpframe.layout().addWidget(self.e_type)
         etpframe.layout().addWidget(self.tpconv_button)
+        etpframe.layout().setStretch(0, 1)
+        etpframe.layout().setStretch(1, 0)
         self.layout().addWidget(QtWidgets.QLabel("Type"), i, 0)
         self.layout().addWidget(etpframe, i, 1)
 
@@ -431,6 +440,7 @@ class ConvertDialog(dlgs.OkCancelDialog):
             self.dictcb.setEnabled(False)
 
     def dictcb_changed(self, dname):
+        self.dictcb.currentTextChanged.disconnect(self.dictcb_changed)
         if dname == '_ create new dict':
             cc = self.pc[self.current_index]
             keys, vals = self.colitem.dictionary_prototype(cc[2])
@@ -439,10 +449,12 @@ class ConvertDialog(dlgs.OkCancelDialog):
                 ukeys=keys, uvals=vals, can_change_type=False)
             if dialog.exec_():
                 nd = dialog.ret_value()
+                self.proj.add_dictionary(nd)
                 self.dictcb.insertItem(self.dictcb.count()-1, nd.name)
-                self.dictcb.setCurrentText(nd.name)
+                self.dictcb.setCurrentIndex(self.dictcb.count()-2)
             else:
                 self.dictcb.setCurrentIndex(0)
+        self.dictcb.currentTextChanged.connect(self.dictcb_changed)
 
     def ret_value(self):
         ret = self.pc[self.current_index]

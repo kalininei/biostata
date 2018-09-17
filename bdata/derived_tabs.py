@@ -25,7 +25,8 @@ def original_table(tab_name, proj):
 
     def init_columns(self):
         self.columns = collections.OrderedDict()
-        self.query('SELECT colname from A."_COLINFO {}"'.format(self.name))
+        self.query('SELECT colname from A."_COLINFO {}" '
+                   'ORDER BY rowid'.format(self.name))
         id_found = False
         for v in self.qresults():
             if v[0] == 'id':
@@ -121,8 +122,8 @@ def join_table(tab_name, joinentries, proj):
                                      te.key_columns,
                                      te.key_mappings):
                 depcol = table.columns[kcol]
-                newcol = bcol.build_function_column("__k{}".format(i), kfun,
-                                                    [depcol], False, "INT")
+                newcol = bcol.custom_tmp_function("__k{}".format(i), kfun,
+                                                  [depcol], False, "INT")
                 table.add_column(newcol)
         # 2. build table queries
         tabqueries = []

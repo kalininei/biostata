@@ -62,3 +62,5 @@ dbg/b.py
 
 # biostata options
 .biostatarc
+# debug database
+dbg.db

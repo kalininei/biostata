@@ -737,17 +737,23 @@ class DataTable(object):
             self.query(qr)
             return [x[0] for x in self.qresults()]
 
-    def get_distinct_column_raw_vals(self, cname, is_global=True):
+    def get_distinct_column_raw_vals(self, cname, is_global=True, sort=False):
         """ -> distinct vals in global scope (ignores filters, groups etc)
                or local scope (including all settings)
         """
         col = self.columns[cname]
         if is_global:
-            qr = 'SELECT DISTINCT({0}) FROM "{1}"'.format(
-                    col.sql_line(), self.ttab_name)
+            s = "ORDER BY {}".format(col.sql_line()) if sort else ''
+            qr = 'SELECT DISTINCT({0}) FROM "{1}" {2}'.format(
+                    col.sql_line(), self.ttab_name, s)
         else:
+            if sort:
+                bu = self.ordering
+                self.ordering = (col.name, 'ASC')
             qr = self._compile_query([col], status_adds=False,
                                      group_adds=False)
+            if sort:
+                self.ordering = bu
             qr = qr.replace("SELECT", "SELECT DISTINCT", 1)
         self.query(qr)
         return [x[0] for x in self.qresults()]

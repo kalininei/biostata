@@ -68,7 +68,8 @@ def hold_position(cls):
             super().moveEvent(event)
 
     _window_classes[Ret._internal_name] = Ret
-    _window_positions[Ret._internal_name] = {}
+    if Ret._internal_name not in _window_positions:
+        _window_positions[Ret._internal_name] = {}
 
     return Ret
 
@@ -86,10 +87,14 @@ def save_window_positions(xmlnode):
 def set_window_positions(xmlnode):
     global _window_positions, _window_classes
 
-    for c, p in _window_positions.items():
-        nd = xmlnode.find(c)
-        if nd is None:
+    # for c, p in _window_positions.items():
+    #     nd = xmlnode.find(c)
+    #     if nd is None:
+    #         continue
+    for nd in xmlnode:
+        if nd.tag == 'MAIN':
             continue
+        p = {}
         x, y, h, w = nd.find('X'), nd.find('Y'), nd.find('H'), nd.find('W')
         if x is not None and y is not None:
             p['X'], p['Y'] = int(x.text), int(y.text)
@@ -98,6 +103,7 @@ def set_window_positions(xmlnode):
         st = nd.find('STATE')
         if st is not None:
             p['STATE'] = int(st.text)
+        _window_positions[nd.tag] = p
 
 
 class BAct(QtWidgets.QAction):
