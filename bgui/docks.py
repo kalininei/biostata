@@ -6,7 +6,7 @@ from bgui import filtdlg
 
 
 class DockWidget(QtWidgets.QDockWidget):
-    def __init__(self, parent, name, menu):
+    def __init__(self, parent, name):
         super().__init__(name, parent)
         self.setObjectName(name)
         self.mainwindow = parent
@@ -21,12 +21,6 @@ class DockWidget(QtWidgets.QDockWidget):
                 lambda: self.active_model_changed())
         parent.active_model_repr_changed.connect(
                 lambda: self.repr_changed())
-
-        menu_action = QtWidgets.QAction(name, self)
-        menu_action.setCheckable(True)
-        menu_action.triggered.connect(self.setVisible)
-        self.visibilityChanged.connect(menu_action.setChecked)
-        menu.addAction(menu_action)
 
     def refill(self):
         pass
@@ -45,8 +39,8 @@ class DockWidget(QtWidgets.QDockWidget):
 
 # ======================= Color legend
 class ColorDockWidget(DockWidget):
-    def __init__(self, parent, menu):
-        super().__init__(parent, "Color legend", menu)
+    def __init__(self, parent):
+        super().__init__(parent, "Color legend")
         # mainframe
         mainframe = QtWidgets.QFrame(self)
         mainframe.setLayout(QtWidgets.QHBoxLayout())
@@ -91,7 +85,7 @@ class ColorDockWidget(DockWidget):
         # settings button
         buttons[1].setIcon(QtGui.QIcon(':/settings'))
         buttons[1].setToolTip("Coloring settings")
-        buttons[1].clicked.connect(self.mainwindow._act_set_coloring)
+        buttons[1].clicked.connect(self.mainwindow.acts['Set coloring...'].do)
         # next color scheme
         buttons[2].setIcon(QtGui.QIcon(':/next-item'))
         buttons[2].setToolTip("Next color scheme")
@@ -422,8 +416,8 @@ class TwoLevelTreeModel(QtGui.QStandardItemModel):
 class TwoLevelTreeDockWidget(DockWidget):
     """ base class for filter and column info docks
     """
-    def __init__(self, parent, name, menu):
-        super().__init__(parent, name, menu)
+    def __init__(self, parent, name):
+        super().__init__(parent, name)
         # main frame = TreeWidget + buttonbox
         frame = QtWidgets.QFrame(self)
         self.setWidget(frame)
@@ -531,8 +525,8 @@ class ColumnInfoModel(TwoLevelTreeModel):
 
 
 class ColumnInfoDockWidget(TwoLevelTreeDockWidget):
-    def __init__(self, parent, menu):
-        super().__init__(parent, "Columns visibility", menu)
+    def __init__(self, parent):
+        super().__init__(parent, "Columns visibility")
         # selection behaiviour: allow selection for child lines only
         self.tab.setSelectionMode(
                 QtWidgets.QAbstractItemView.ExtendedSelection)
@@ -617,8 +611,8 @@ class FiltersInfoModel(TwoLevelTreeModel):
 
 
 class FiltersDockWidget(TwoLevelTreeDockWidget):
-    def __init__(self, parent, menu):
-        super().__init__(parent, "Filters", menu)
+    def __init__(self, parent):
+        super().__init__(parent, "Filters")
         # tab
         self.tab.setSelectionMode(
             QtWidgets.QAbstractItemView.ExtendedSelection)

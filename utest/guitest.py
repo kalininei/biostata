@@ -40,7 +40,7 @@ alltests_run = {x: True for x in alltests}
 class TestRunner(unittest.TestCase):
     def tearDown(self):
         ''
-        # tt.eval_now(win._act_saveto, ('.a.db',))
+        # tt.eval_now(win.saveto, ('.a.db',))
 
     def test_import_txt(self):
         if not alltests_run['test_import_txt']:
@@ -50,7 +50,7 @@ class TestRunner(unittest.TestCase):
 
         # open import dialog import table
         w = tt.eval_and_wait_window(
-            w.filemenu.acts['Import tables...'].trigger, (),
+            w.run_act, 'Import tables...',
             dlgs.ImportTablesDlg)
 
         # enter filename
@@ -123,7 +123,7 @@ class TestRunner(unittest.TestCase):
 
         # collapse
         w = win
-        tt.eval_and_wait_signal(w._act_collapse_all, (),
+        tt.eval_and_wait_signal(w.run_act, "Collapse all categories",
                                 w.active_model_repr_changed)
         col = testutils.get_tmodel_raw_column(w.active_model, 1)
         self.assertListEqual(
@@ -143,7 +143,7 @@ class TestRunner(unittest.TestCase):
 
         # import dialog
         w = tt.eval_and_wait_window(
-            w.filemenu.acts['Import tables...'].trigger, (),
+            w.run_act, 'Import tables...',
             dlgs.ImportTablesDlg)
 
         # enter filename
@@ -232,7 +232,7 @@ class TestRunner(unittest.TestCase):
 
         # check shown table name
         self.assertEqual(w.wtab.tabText(0).replace('&', ''), 'Table1*')
-        tt.eval_and_wait_true(w._act_saveto, ('dbg.db',),
+        tt.eval_and_wait_true(w.saveto, ('dbg.db',),
                               'w.wtab.tabText(0).replace("&","")=="Table1"',
                               {'w': w})
 
@@ -244,7 +244,7 @@ class TestRunner(unittest.TestCase):
 
         # import dialog
         w = tt.eval_and_wait_window(
-            w.filemenu.acts['Import tables...'].trigger, (),
+            w.run_act, 'Import tables...',
             dlgs.ImportTablesDlg)
 
         # enter filename
@@ -298,7 +298,7 @@ class TestRunner(unittest.TestCase):
 
         # add anon filter for enum1
         w = tt.eval_and_wait_window(
-            w._act_filter, (), filtdlg.EditFilterDialog)
+            w.run_act, 'Add filter...', filtdlg.EditFilterDialog)
         tt.eval_now(w.frows[0].cb[2].setCurrentText, '"biochar type"')
         tt.eval_now(w.frows[0].cb[3].setCurrentText, '==')
         tt.eval_now(w.frows[0].cb[4].setCurrentText, 'no')
@@ -314,7 +314,7 @@ class TestRunner(unittest.TestCase):
 
         # add named filter for enum1
         w = tt.eval_and_wait_window(
-            w._act_filter, (), filtdlg.EditFilterDialog)
+            w.run_act, "Add filter...", filtdlg.EditFilterDialog)
         tt.eval_now(w.frows[0].cb[2].setCurrentText, '"biochar type"')
         tt.eval_now(w.frows[0].cb[3].setCurrentText, '!=')
         tt.eval_now(w.frows[0].cb[4].setCurrentText, 'b5p')
@@ -325,7 +325,7 @@ class TestRunner(unittest.TestCase):
         self.assertListEqual(testutils.get_tmodel(w.active_model), [[3, 7, 10], ['b5p', 'b5p', 'b5p'], [1.2, 2.2, 2.2]])   # noqa
 
         # change dictionary values
-        w = tt.eval_and_wait_window(w._act_dictinfo, (),
+        w = tt.eval_and_wait_window(w.run_act, "Dictionaries...",
                                     dictdlg.DictInformation)
         tt.eval_now(w.tree.setFocus, QtCore.Qt.MouseFocusReason)
         ind = w.tree.index_by_cap('enum1')
@@ -345,7 +345,7 @@ class TestRunner(unittest.TestCase):
         self.assertListEqual(testutils.get_tmodel(w.active_model), [[3, 7, 10], ['B5', 'B5', 'B5'], [1.2, 2.2, 2.2]])   # noqa
 
         # change dictionary name
-        w = tt.eval_and_wait_window(w._act_dictinfo, (),
+        w = tt.eval_and_wait_window(w.run_act, "Dictionaries...",
                                     dictdlg.DictInformation)
         tt.eval_now(w.tree.setFocus, QtCore.Qt.MouseFocusReason)
         ind = w.tree.index_by_cap('enum1')
@@ -359,7 +359,7 @@ class TestRunner(unittest.TestCase):
         self.assertListEqual(testutils.get_tmodel(w.active_model), [[3, 7, 10], ['B5', 'B5', 'B5'], [1.2, 2.2, 2.2]])   # noqa
 
         # change dictionary keys
-        w = tt.eval_and_wait_window(w._act_dictinfo, (),
+        w = tt.eval_and_wait_window(w.run_act, "Dictionaries...",
                                     dictdlg.DictInformation)
         tt.eval_now(w.tree.setFocus, QtCore.Qt.MouseFocusReason)
         ind = w.tree.index_by_cap('enum2')
@@ -376,10 +376,10 @@ class TestRunner(unittest.TestCase):
         self.assertListEqual(testutils.get_tmodel_raw(w.active_model), [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11], [0, 2, None, 2, 2, 1, None, 2, 3, None, None], [1.2, 2.3, 1.2, 1.3, 2.5, 1.2, 2.2, 1.1, 2.8, 2.2, None]])  # noqa
 
         # collapse + change dict values and keys
-        tt.eval_and_wait_signal(w._act_collapse_all, (),
+        tt.eval_and_wait_signal(w.run_act, 'Collapse all categories',
                                 w.active_model_repr_changed)
         self.assertListEqual(testutils.get_tmodel_column(w.active_model, 1), ["cont-1-2-noF", "b4p-2-5-F", "##-1-5-noF", "b4p-3-5-F", "b4p-4-5-F", "b4g-2-5-F", "##-5-3-noF", "b4p-2-5-noF", "b5g-1-3-noF", "##-1-5-noF", "##-10-20-"])   # noqa
-        w = tt.eval_and_wait_window(w._act_dictinfo, (),
+        w = tt.eval_and_wait_window(w.run_act, 'Dictionaries...',
                                     dictdlg.DictInformation)
         tt.eval_now(w.tree.setFocus, QtCore.Qt.MouseFocusReason)
         ind = w.tree.index_by_cap('enum2')
@@ -396,11 +396,11 @@ class TestRunner(unittest.TestCase):
         w = tt.eval_and_wait_window(mto.dialog_okclick, w,
                                     mainwin.MainWindow)
         self.assertListEqual(testutils.get_tmodel_column(w.active_model, 1), ["CONT-1-2-noF", "b4p-2-5-F", "##-1-5-noF", "b4p-3-5-F", "b4p-4-5-F", "b4g-2-5-F", "##-5-3-noF", "b4p-2-5-noF", "##-1-3-noF", "##-1-5-noF", "##-10-20-"])   # noqa
-        tt.eval_and_wait_signal(w._act_uncollapse_all, (),
+        tt.eval_and_wait_signal(w.run_act, 'Remove all collapses',
                                 w.active_model_repr_changed)
 
         # remove dictionary
-        w = tt.eval_and_wait_window(w._act_dictinfo, (),
+        w = tt.eval_and_wait_window(w.run_act, 'Dictionaries...',
                                     dictdlg.DictInformation)
         tt.eval_now(w.tree.setFocus, QtCore.Qt.MouseFocusReason)
         ind = w.tree.index_by_cap('enum2')
@@ -420,7 +420,7 @@ class TestRunner(unittest.TestCase):
 
         # import dialog
         w = tt.eval_and_wait_window(
-            w.filemenu.acts['Import tables...'].trigger, (),
+            w.run_act, 'Import tables...',
             dlgs.ImportTablesDlg)
 
         # enter filename
@@ -441,7 +441,7 @@ class TestRunner(unittest.TestCase):
 
         # Column 5 to ENUM and change shortname
         w = tt.eval_and_wait_window(
-            w.tablesmenu.acts['Tables && columns...'].trigger, (),
+            w.run_act, 'Tables && columns...',
             colinfodlg.TablesInfo)
 
         tt.eval_and_wait_signal(mto.view_item_click, (w.e_tree, 'Column 5'),
@@ -476,18 +476,18 @@ class TestRunner(unittest.TestCase):
         self.assertListEqual(testutils.get_tmodel_column(w.active_model, 4), ['C', 'J', 'C', 'I', 'C', 'K', 'C', 'H', None, 'C'])  # noqa
 
         # collapse all
-        tt.eval_and_wait_signal(w._act_collapse_all, (),
+        tt.eval_and_wait_signal(w.run_act, 'Collapse all categories',
                                 w.active_model_repr_changed)
         self.assertEqual(w.active_model.dt.visible_columns[1].name, 'Column 1-Column 2-Column 3-5')   # noqa
         # uncollapse all
         tt.eval_and_wait_signal(
-                w.columnsmenu.acts['Remove all collapses'].trigger, (),
+                w.run_act, 'Remove all collapses',
                 w.active_model_repr_changed)
         self.assertEqual(w.active_model.dt.n_cols(), 7)
 
         # add a global filter
         w = tt.eval_and_wait_window(
-                w.rowsmenu.acts['Add filter...'].trigger, (),
+                w.run_act, 'Add filter...',
                 filtdlg.EditFilterDialog)
         tt.eval_and_wait_true(w.filter_cb.setChecked, (QtCore.Qt.Unchecked),
                               "w.filter_name.isEnabled()", {'w': w})
@@ -516,7 +516,7 @@ class TestRunner(unittest.TestCase):
 
         # make a copied table
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['New table from visible...'].trigger, (),
+                w.run_act, 'New table from visible...',
                 dlgs.NewTableFromVisible)
         tt.emit_and_wait_true(
             w.sig_set_odata_entry, ('include_source_id', True),
@@ -529,7 +529,7 @@ class TestRunner(unittest.TestCase):
 
         # rename Table 1 to t3 (repeating name)
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Tables && columns...'].trigger, (),
+                w.run_act, 'Tables && columns...',
                 colinfodlg.TablesInfo)
         frame = w.info_frame.frames['Table 1']
         tt.eval_and_wait_true(
@@ -562,7 +562,7 @@ class TestRunner(unittest.TestCase):
 
         # modify dictionary A-Z
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Dictionaries...'].trigger, (),
+                w.run_act, 'Dictionaries...',
                 dictdlg.DictInformation)
         ind = testutils.search_index_by_contents(w.tree, 'A-Z')
         w = tt.eval_and_wait_window(w.tree._act_edit, (ind),
@@ -585,7 +585,7 @@ class TestRunner(unittest.TestCase):
 
         # remove dictionary A-Z
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Dictionaries...'].trigger, (),
+                w.run_act, 'Dictionaries...',
                 dictdlg.DictInformation)
         ind = testutils.search_index_by_contents(w.tree, 'A-Z')
         tt.eval_now(w.tree._act_rem, (ind))
@@ -602,7 +602,7 @@ class TestRunner(unittest.TestCase):
         tt.eval_and_wait_signal(w.wtab.setCurrentIndex, 0,
                                 w.active_model_changed)
         w = tt.eval_and_wait_window(
-                w.rowsmenu.acts['Group rows...'].trigger, (),
+                w.run_act, 'Group rows...',
                 dlgs.GroupRowsDlg)
         e = w.odata().cat
         e['All categories']['Col5'] = True
@@ -648,7 +648,7 @@ class TestRunner(unittest.TestCase):
 
         # import dialog
         w = tt.eval_and_wait_window(
-            w.filemenu.acts['Import tables...'].trigger, (),
+            w.run_act, 'Import tables...',
             dlgs.ImportTablesDlg)
         # enter filename
         tt.emit_and_wait_true(
@@ -666,7 +666,7 @@ class TestRunner(unittest.TestCase):
                                     mainwin.MainWindow)
         # import dialog
         w = tt.eval_and_wait_window(
-            w.filemenu.acts['Import tables...'].trigger, (),
+            w.run_act, 'Import tables...',
             dlgs.ImportTablesDlg)
         # enter filename
         tt.emit_and_wait_true(
@@ -685,7 +685,7 @@ class TestRunner(unittest.TestCase):
 
         # join dialog
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Join tables...'].trigger, (),
+                w.run_act, 'Join tables...',
                 joindlg.JoinTablesDialog)
         tt.eval_now(w.e_tabname.setText, 'JoinTab')
         itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
@@ -714,12 +714,12 @@ class TestRunner(unittest.TestCase):
             w.wtab.tabText(w.wtab.currentIndex()).replace('&', ''), "JoinTab*")
 
         tt.eval_and_wait_signal(
-                w.tablesmenu.acts['Remove active table'].trigger, (),
+                w.run_act, 'Remove active table',
                 w.active_model_changed)
 
         # join dialog
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Join tables...'].trigger, (),
+                w.run_act, 'Join tables...',
                 joindlg.JoinTablesDialog)
         itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
         tt.eval_now(w.e_tabchoice.model().setData,
@@ -748,7 +748,7 @@ class TestRunner(unittest.TestCase):
 
         # create dictionaries
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Tables && columns...'].trigger, (),
+                w.run_act, 'Tables && columns...',
                 colinfodlg.TablesInfo)
         tt.eval_now(mto.view_item_click, (w.e_tree, 'А.1'))
         frame = w.info_frame.frames['Tab1,А.1']
@@ -767,7 +767,7 @@ class TestRunner(unittest.TestCase):
 
         # join dialog
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Join tables...'].trigger, (),
+                w.run_act, 'Join tables...',
                 joindlg.JoinTablesDialog)
         itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
         tt.eval_now(w.e_tabchoice.model().setData,
@@ -795,7 +795,7 @@ class TestRunner(unittest.TestCase):
         tt.eval_and_wait_signal(
                 w.wtab.setCurrentIndex, 0, w.active_model_changed)
         w = tt.eval_and_wait_window(
-                w.rowsmenu.acts['Group rows...'].trigger, (),
+                w.run_act, 'Group rows...',
                 dlgs.GroupRowsDlg)
         e = w.odata().cat
         e['All categories']['А.1'] = True
@@ -806,7 +806,7 @@ class TestRunner(unittest.TestCase):
         tt.eval_and_wait_signal(
                 w.wtab.setCurrentIndex, 1, w.active_model_changed)
         w = tt.eval_and_wait_window(
-                w.rowsmenu.acts['Group rows...'].trigger, (),
+                w.run_act, 'Group rows...',
                 dlgs.GroupRowsDlg)
         e = w.odata().cat
         e['All categories']['А.1'] = True
@@ -814,7 +814,7 @@ class TestRunner(unittest.TestCase):
         w = tt.eval_and_wait_window(mto.dialog_okclick, w.buttonbox,
                                     mainwin.MainWindow)
         w = tt.eval_and_wait_window(
-                w.tablesmenu.acts['Join tables...'].trigger, (),
+                w.run_act, 'Join tables...',
                 joindlg.JoinTablesDialog)
         itm1 = testutils.search_index_by_contents(w.e_tabchoice, 'Tab1')
         tt.eval_now(w.e_tabchoice.model().setData,
@@ -840,7 +840,7 @@ class TestRunner(unittest.TestCase):
 
         # save and load
         tt.set_tmp_wait_times(1, 100)
-        tt.eval_and_wait_signal(w._act_saveto, ('dbg.db'),
+        tt.eval_and_wait_signal(w.saveto, ('dbg.db'),
                                 w.database_saved)
         self.assertEqual(w.windowTitle(), 'dbg.db - BioStat Analyser')
         tt.eval_and_wait_signal(w._close_database, (),

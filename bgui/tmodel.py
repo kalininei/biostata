@@ -292,6 +292,14 @@ class TabModel(QtCore.QAbstractTableModel):
                 self.dt.set_visibility(c, False)
         return ret
 
+    def collapsed_categories_columns(self):
+        cats = []
+        for c in self.dt.columns.values():
+            if not c.is_original() and\
+                    c.sql_delegate.function_type == "collapsed_categories":
+                cats.append(c.name)
+        return cats
+
     def remove_collapsed(self, what, do_show=True):
         """ removes collapsed column, show all categories which were collapsed
 
@@ -302,11 +310,7 @@ class TabModel(QtCore.QAbstractTableModel):
                     False otherwise
         """
         if what == 'all':
-            cats = []
-            for c in self.dt.columns.values():
-                if not c.is_original() and\
-                        c.sql_delegate.function_type == "collapsed_categories":
-                    cats.append(c.name)
+            cats = self.collapsed_categories_columns()
             return self.remove_collapsed(cats, do_show)
         if len(what) == 0:
             return False

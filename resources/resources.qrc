@@ -16,5 +16,22 @@
     <file alias="link">link.svg</file>
     <file alias="new-row">new-row.svg</file>
     <file alias="warning">warning.svg</file>
+    <file alias="open">open.svg</file>
+    <file alias="import">import.svg</file>
+    <file alias="export">export.svg</file>
+    <file alias="save">save.svg</file>
+    <file alias="share">share.svg</file>
+    <file alias="copy">copy.svg</file>
+    <file alias="join">join.svg</file>
+    <file alias="excel">excel.svg</file>
+    <file alias="group">group.svg</file>
+    <file alias="ungroup">ungroup.svg</file>
+    <file alias="filter">filter.svg</file>
+    <file alias="unfilter">unfilter.svg</file>
+    <file alias="new">new.svg</file>
+    <file alias="zoomin">zoom-in.svg</file>
+    <file alias="zoomout">zoom-out.svg</file>
+    <file alias="fold">fold.svg</file>
+    <file alias="unfold">unfold.svg</file>
 </qresource>
 </RCC>
