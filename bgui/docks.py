@@ -1,6 +1,5 @@
 import collections
 from PyQt5 import QtWidgets, QtCore, QtGui
-import resource   # noqa
 from bgui import coloring
 from bgui import filtdlg
 

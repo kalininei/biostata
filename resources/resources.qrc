@@ -1,5 +1,6 @@
 <!DOCTYPE RCC><RCC version="1.0">
 <qresource>
+    <file alias="biostata">biostata.svg</file>
     <file alias="more16">more16.png</file>
     <file alias="green-plus">green-plus.svg</file>
     <file alias="green-plus-border">green-plus-alter.svg</file>

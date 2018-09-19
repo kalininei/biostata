@@ -1,5 +1,4 @@
 from PyQt5 import QtGui, QtCore
-import resources   # noqa
 
 
 class ViewConfig(object):

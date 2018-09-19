@@ -6,13 +6,13 @@
 """
 import copy
 import unittest
-from prog import basic, projroot
+from prog import basic, projroot, bopts
 from fileproc import import_tab
 from bdata import derived_tabs, filt, convert
 from prog import valuedict
 from utest import testutils
 
-basic.set_log_message('file: ~log')
+basic.set_log_message('file: ' + bopts.BiostataOptions.logfile())
 basic.set_ignore_exception(False)
 
 proj = projroot.ProjectDB()

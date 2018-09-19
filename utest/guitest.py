@@ -19,11 +19,11 @@
 import sys
 import unittest
 from PyQt5 import QtWidgets, QtCore
-from prog import basic, projroot
+from prog import basic, projroot, bopts
 from bgui import mainwin, dlgs, importdlgs, dictdlg, filtdlg, colinfodlg, joindlg  # noqa
 from utest import testutils     # noqa
 
-basic.set_log_message('file: ~log')
+basic.set_log_message('file: ' + bopts.BiostataOptions.logfile())
 basic.set_ignore_exception(False)
 
 alltests = ['test_import_txt', 'test_import_xls', 'test_changedict',

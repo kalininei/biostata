@@ -2,7 +2,6 @@ import collections
 import functools
 import copy
 from PyQt5 import QtWidgets, QtCore, QtGui
-import resource   # noqa
 from bdata import derived_tabs
 from bdata import bcol
 from bgui import qtcommon

@@ -42,7 +42,11 @@ def _no_log_message(txt, lv="INFO"):
 
 
 def _log_to_file(fname):
-    logging.basicConfig(filename=fname, filemode='w', level=logging.DEBUG)
+    logging.basicConfig(
+        handlers=[logging.FileHandler(fname, 'w', 'utf-8')],
+        format='%(asctime)s.%(msecs)03d -- %(levelname)s: %(message)s',
+        datefmt='%H:%M:%S',
+        level=logging.DEBUG)
 
     def msg(txt, lv="INFO"):
         if lv == "INFO":
@@ -55,9 +59,7 @@ def _log_to_file(fname):
     return msg
 
 ignore_exception = _ignore_exception
-
 log_message = _log_message
-
 
 def set_ignore_exception(ignore):
     'ignore non-critical exceptions'
@@ -79,3 +81,25 @@ def set_log_message(tplog):
         log_message = _no_log_message
     elif tplog[:4] == 'file':
         log_message = _log_to_file(tplog[5:].strip())
+
+
+# xml indent
+def xmlindent(elem, level=0):
+    """ http://effbot.org/zone/element-lib.htm#prettyprint.
+        It basically walks your tree and adds spaces and newlines so the tree
+        is printed in a nice way
+    """
+    tabsym = "  "
+    i = "\n" + level * tabsym
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = i + tabsym
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+        for elem in elem:
+            xmlindent(elem, level + 1)
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+    else:
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = i

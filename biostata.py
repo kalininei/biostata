@@ -2,10 +2,18 @@
 import sys
 from PyQt5 import QtWidgets
 from bgui import mainwin
-from prog import projroot
+from prog import projroot, basic, bopts
 
 
 def main(app):
+    # logging
+    if __debug__:
+        basic.set_log_message('console')
+        basic.set_ignore_exception(True)
+    else:
+        basic.set_log_message('file: ' + bopts.BiostataOptions.logfile())
+        basic.set_ignore_exception(True)
+
     # program initialization
     b = projroot.ProjectDB()
 

@@ -1,5 +1,5 @@
 import functools
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 from bgui import tmodel
 from bgui import tview
 from bgui import docks
@@ -21,6 +21,7 @@ class MainWindow(QtWidgets.QMainWindow):
         super().__init__()
         # init position (will be changed by opts data)
         self.resize(800, 600)
+        self.setWindowIcon(QtGui.QIcon(":/biostata"))
         self.setGeometry(QtWidgets.QStyle.alignedRect(
             QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter,
             self.size(), QtWidgets.qApp.desktop().availableGeometry()))
@@ -36,12 +37,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # interface
         self._ui()
-
-        # Load data
-        self.reset_title()
-        filename = self.opts.default_project_filename()
-        if filename is not None:
-            self._load_database(filename)
 
         # restore
         try:
@@ -59,6 +54,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.database_opened.connect(lambda x: self._update_menu_status())
         self.database_closed.connect(self._update_menu_status)
         QtWidgets.qApp.aboutToQuit.connect(self._on_quit)
+
+        # Load data
+        self.reset_title()
+        filename = self.opts.default_project_filename()
+        if filename is not None:
+            self._load_database(filename)
 
     def _build_acts(self):
         self.acts = {}
@@ -150,6 +151,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # --- About
         self.aboutmenu = menubar.addMenu('About')
+        aboutbiostata = QtWidgets.QAction('About BioStatA', self)
+        aboutbiostata.triggered.connect(functools.partial(
+            QtWidgets.QMessageBox.about,
+            self,
+            'BioStat Analyser',
+            '<b>BioStat Analyser</b> <br><br>'
+            'Version {0} <br><br>'
+            '<a href="http://{1}/releases/latest">{1}</a>'
+            ''.format(self.opts.version(),
+                      "www.github.com/kalininei/biostata/")))
+        self.aboutmenu.addAction(aboutbiostata)
+        aboutqt = QtWidgets.QAction('About Qt', self)
+        aboutqt.triggered.connect(QtWidgets.QApplication.aboutQt)
+        self.aboutmenu.addAction(aboutqt)
 
     def _build_toolbar(self):
         self.toolbar = self.addToolBar('Toolbar')
@@ -384,6 +399,6 @@ class MainWindow(QtWidgets.QMainWindow):
             if r == QtWidgets.QMessageBox.No:
                 return None
             else:
-                self._act_opts()
+                self.run_act('Configuration')
                 return self.require_editor(ftype)
         return ret

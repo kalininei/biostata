@@ -157,6 +157,8 @@ class SqlConnection:
 
     def detach_database(self, alias):
         try:
+            # Fails to detach with 'locked' error without this commit
+            self.connection.commit()
             self.query('DETACH DATABASE "{}"'.format(alias))
         except:
             pass

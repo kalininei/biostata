@@ -26,11 +26,13 @@ def get_group_color_light(igr):
     m = igr % len(Random220.c)
     return QtGui.QColor(*Random220.c[m])
 
+
 def get_bg2_color(igr):
     if igr % 2:
         return QtGui.QColor(255, 255, 0, 70)
     else:
         return QtGui.QColor(255, 255, 0, 40)
+
 
 class Coloring:
     def __init__(self, datatab):
@@ -62,8 +64,9 @@ class Coloring:
             self._global_limits = list(datatab.get_raw_minmax(cname, True))
         elif self.dt_type in ["BOOL", "TEXT", "ENUM"]:
             # raw_value -> (index, representation value)
-            posible_values = sorted(
-                    datatab.get_distinct_column_raw_vals(cname))
+            posible_values = datatab.get_distinct_column_raw_vals(cname, True)
+            if None in posible_values:
+                posible_values.remove(None)
             col = datatab.columns[cname]
             self._global_values_dictionary = collections.OrderedDict()
             for i, pv in enumerate(posible_values):

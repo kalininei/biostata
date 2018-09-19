@@ -1,8 +1,7 @@
-import collections
 import traceback
 import resources   # noqa
 from prog import basic
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtCore
 
 
 def message_exc(parent=None, title="Error", text=None, e=None):
@@ -104,58 +103,6 @@ def set_window_positions(xmlnode):
         if st is not None:
             p['STATE'] = int(st.text)
         _window_positions[nd.tag] = p
-
-
-class BAct(QtWidgets.QAction):
-    def __init__(self, name, parent, actfun,
-                 visfun=None, icon_code=None, hotkey=None):
-        super().__init__(name, parent)
-        self.triggered.connect(actfun)
-
-        if visfun is None:
-            self.visfun = lambda: True
-        else:
-            self.visfun = visfun
-
-        if icon_code is not None:
-            self.setIcon(QtGui.QIcon(icon_code))
-
-        if hotkey is not None:
-            self.setShortcut(hotkey)
-
-    def define_vis(self):
-        self.setEnabled(self.visfun())
-
-
-class BMenu(QtWidgets.QMenu):
-    def __init__(self, name, parent, menubar=None):
-        super().__init__(name, parent)
-        menubar.addMenu(self)
-        self.aboutToShow.connect(self.define_vis)
-        self.acts = collections.OrderedDict()
-        self.menus = collections.OrderedDict()
-
-    def add_action(self, name, actfun,
-                   vis=None, icon_code=None, hotkey=None):
-        act = BAct(name, self.parent(), actfun, vis, icon_code, hotkey)
-        self.addAction(act)
-        self.acts[name] = act
-
-        return act
-
-    def add_menu(self, menu, menufun=None):
-        self.addMenu(menu)
-        self.menus[menu.title()] = (menu, menufun)
-
-    def define_vis(self):
-        # actions
-        for a in self.acts.values():
-            a.define_vis()
-
-        # menu
-        for a in self.menus.values():
-            if a[1] is not None:
-                a[1](a[0])
 
 
 class BLineEdit(QtWidgets.QLineEdit):

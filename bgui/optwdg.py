@@ -22,7 +22,6 @@ import copy
 import os
 from PyQt5 import QtCore, QtWidgets, QtGui
 from bgui import optview
-import resources    # noqa
 
 _tmp = None
 

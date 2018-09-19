@@ -1,16 +1,46 @@
+import os
+import os.path
 import xml.etree.ElementTree as ET
 import base64
 from prog import basic
 
+_version = '0.1'
+if __debug__:
+    _version = _version + ' (debug)'
+
+# directory where configuration information (like .biostatarc, .biostata-log)
+# will be stored
+_progoutpath = '.'
+if not __debug__:
+    if os.name == 'nt':
+        try:
+            # on windows try to read config.txt file which should be located
+            # in main executable directory
+            cfgpath = os.path.join(os.path.dirname(__file__),
+                                   '..', 'config.txt')
+            if os.path.exists(cfgpath):
+                out = None
+                with open(cfgpath, 'r') as fid:
+                    lines = fid.readlines()
+                    for ln in lines:
+                        if ln.strip().startswith('datadir:'):
+                            out = ln[8:].strip()
+                            break
+                if out is not None and os.path.exists(out):
+                    _progoutpath = os.path.abspath(out)
+        except Exception as e:
+            basic.ignore_exception(e)
+            _progoutpath = '.'
+    if _progoutpath == '.':
+        # otherwise get user local folder
+        _progoutpath = os.path.expanduser('~')
+
 
 class BiostataOptions:
-    filename = '.biostatarc'
-    version = '0.1'
-
     def __init__(self):
         # representation
         self.basic_font_size = 10
-        self.show_bool_as = 'icons'   # [icons, codes, 0/1, 'Yes'/'No']
+        self.show_bool_as = 'icons'   # [icons, codes, 0/1, Yes/No]
         self.real_numbers_prec = 6
 
         # external programs
@@ -18,12 +48,26 @@ class BiostataOptions:
         self.external_txt_editor = ''
 
         # start behaviour
-        self.open_recent_db_on_start = 1
+        self.open_recent_db_on_start = 0
 
         # additional data
+        # list of recently opened databases
         self.recent_db = []
+        # main window state and geometry encoded in b64
         self.mw_state = ''
         self.mw_geom = ''
+
+    @staticmethod
+    def version():
+        return _version
+
+    @staticmethod
+    def rcfile():
+        return os.path.join(_progoutpath, '.biostatarc')
+
+    @staticmethod
+    def logfile():
+        return os.path.join(_progoutpath, '.biostata-log')
 
     def set_mainwindow_state(self, state, geom):
         'state, geom -- bytearray data'
@@ -36,44 +80,48 @@ class BiostataOptions:
 
     def save(self):
         from bgui import qtcommon
+        from prog import basic
+        try:
+            root = ET.Element('BiostataOptions')
+            root.attrib['version'] = self.version()
 
-        root = ET.Element('BiostataOptions')
-        root.attrib['version'] = self.version
+            # representation
+            orepr = ET.SubElement(root, "TABLE")
+            ET.SubElement(ET.SubElement(orepr, 'FONT'), 'SIZE').text = str(
+                    self.basic_font_size)
+            ET.SubElement(orepr, 'BOOL_AS').text = self.show_bool_as
+            ET.SubElement(orepr, 'REAL_PREC').text = str(
+                    self.real_numbers_prec)
 
-        # representation
-        orepr = ET.SubElement(root, "TABLE")
-        ET.SubElement(ET.SubElement(orepr, 'FONT'), 'SIZE').text = str(
-                self.basic_font_size)
-        ET.SubElement(orepr, 'BOOL_AS').text = self.show_bool_as
-        ET.SubElement(orepr, 'REAL_PREC').text = str(self.real_numbers_prec)
+            # external programs
+            exrepr = ET.SubElement(root, "EXTERNAL")
+            ET.SubElement(exrepr, "XLSX").text = self.external_xlsx_editor
+            ET.SubElement(exrepr, "TXT").text = self.external_txt_editor
 
-        # external programs
-        exrepr = ET.SubElement(root, "EXTERNAL")
-        ET.SubElement(exrepr, "XLSX").text = self.external_xlsx_editor
-        ET.SubElement(exrepr, "TXT").text = self.external_txt_editor
+            # behaviour
+            brepr = ET.SubElement(root, "BEHAVIOUR")
+            ET.SubElement(brepr, "OPEN_RECENT").text = str(
+                    self.open_recent_db_on_start)
 
-        # behaviour
-        brepr = ET.SubElement(root, "BEHAVIOUR")
-        ET.SubElement(brepr, "OPEN_RECENT").text = str(
-                self.open_recent_db_on_start)
+            # recent databases
+            rdb = ET.SubElement(root, "RECENT_DB")
+            for r in self.recent_db:
+                ET.SubElement(rdb, "PATH_DB").text = r
 
-        # recent databases
-        rdb = ET.SubElement(root, "RECENT_DB")
-        for r in self.recent_db:
-            ET.SubElement(rdb, "PATH_DB").text = r
+            # forms positions
+            wnd = ET.SubElement(root, "WINDOWS")
+            qtcommon.save_window_positions(wnd)
+            # mainwindow state
+            mainstate = ET.SubElement(wnd, "MAIN")
+            ET.SubElement(mainstate, "GEOMETRY").text = self.mw_geom
+            ET.SubElement(mainstate, "STATE").text = self.mw_state
 
-        # forms positions
-        wnd = ET.SubElement(root, "WINDOWS")
-        qtcommon.save_window_positions(wnd)
-        # mainwindow state
-        mainstate = ET.SubElement(wnd, "MAIN")
-        ET.SubElement(mainstate, "GEOMETRY").text = self.mw_geom
-        ET.SubElement(mainstate, "STATE").text = self.mw_state
-
-        # save to file
-        xmlindent(root)
-        tree = ET.ElementTree(root)
-        tree.write(self.filename, xml_declaration=True, encoding='utf-8')
+            # save to file
+            basic.xmlindent(root)
+            tree = ET.ElementTree(root)
+            tree.write(self.rcfile(), xml_declaration=True, encoding='utf-8')
+        except Exception as e:
+            basic.ignore_exception(e)
 
     def load(self):
         from bgui import qtcommon
@@ -92,7 +140,7 @@ class BiostataOptions:
                 basic.ignore_exception(e, "xmlnode {} failed".format(path))
 
         try:
-            root = ET.parse(self.filename)
+            root = ET.parse(self.rcfile())
         except Exception as e:
             basic.ignore_exception(e, "Loading options file failed")
             return
@@ -122,25 +170,3 @@ class BiostataOptions:
     def default_project_filename(self):
         if self.open_recent_db_on_start and len(self.recent_db) > 0:
             return self.recent_db[0]
-
-
-# xml indent
-def xmlindent(elem, level=0):
-    """ http://effbot.org/zone/element-lib.htm#prettyprint.
-        It basically walks your tree and adds spaces and newlines so the tree
-        is printed in a nice way
-    """
-    tabsym = "  "
-    i = "\n" + level * tabsym
-    if len(elem):
-        if not elem.text or not elem.text.strip():
-            elem.text = i + tabsym
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-        for elem in elem:
-            xmlindent(elem, level + 1)
-        if not elem.tail or not elem.tail.strip():
-            elem.tail = i
-    else:
-        if level and (not elem.tail or not elem.tail.strip()):
-            elem.tail = i

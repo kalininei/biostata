@@ -108,11 +108,13 @@ class ProjectDB:
 
     def relocate_and_commit_all_changes(self, newfile):
         basic.log_message("Relocate database into {}".format(newfile))
+        # 0) Detach A table firlst so that we can delete newfile even
+        #    if it is used by this application
+        self.sql.detach_database('A')
         # 1) delete newfile if it exists
         if pathlib.Path(newfile).exists():
             os.remove(newfile)
         # 2) detach old A database and open newfile as A database
-        self.sql.detach_database('A')
         self.sql.attach_database('A', newfile)
         self.set_current_filename(newfile)
         # 3) mark all tables as 'need for rewrite'
