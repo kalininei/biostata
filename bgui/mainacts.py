@@ -2,6 +2,7 @@ from PyQt5 import QtWidgets, QtGui
 from prog import basic
 from bgui import dlgs
 from bgui import qtcommon
+from bgui import tview
 from bgui import tmodel
 from bdata import derived_tabs
 from fileproc import export
@@ -26,6 +27,7 @@ class MainAct(QtWidgets.QAction):
         self.mainwin = mainwin
         self.proj = mainwin.proj
         self.amodel = lambda: mainwin.active_model
+        self.aview = lambda: mainwin.active_tview()
 
     def isactive(self):
         return True
@@ -155,8 +157,7 @@ class ActExport(MainAct):
         if dialog.exec_():
             export.model_export(self.amodel().dt,
                                 dialog.ret_value(),
-                                self.amodel(),
-                                self.mainwin.active_tview())
+                                self.amodel(), self.aview())
 
 
 class ActExternalXlsxView(MainAct):
@@ -188,8 +189,7 @@ class ActExternalXlsxView(MainAct):
             opts.with_formatting = True
             export.model_export(self.amodel().dt,
                                 opts,
-                                self.amodel(),
-                                self.mainwin.active_tview())
+                                self.amodel(), self.aview())
             # open with editor
             path = ' '.join([prog, fname])
             subprocess.Popen(path.split())
@@ -221,6 +221,45 @@ class ActDecreaseFont(MainAct):
 
     def do(self):
         self.mainwin.zoom_font(-2)
+
+
+class ActToDataWidth(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, 'Fit to data width',
+                         icon=':/width')
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        self.aview().width_adjust('data')
+
+
+class ActToCaptionDataWidth(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, 'Fit to data and caption width')
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        self.aview().width_adjust('data/caption')
+
+
+class ActToConstantWidth(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, 'Set constant width...')
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        dv = self.aview().columnWidth(0)
+        mv = tview.TableView._minimum_column_width
+        dialog = dlgs.InputInteger("Enter width", self.mainwin,
+                                   dv, minvalue=mv)
+        if dialog.exec_():
+            self.aview().width_adjust(dialog.ret_value())
 
 
 class ActConfig(MainAct):

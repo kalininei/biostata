@@ -6,6 +6,8 @@ from prog import basic, bsqlproc
 
 
 class ColumnInfo:
+    __tot_column_ids = 0
+
     def __init__(self, name):
         self.name = name
         self.shortname = name
@@ -16,6 +18,9 @@ class ColumnInfo:
         # delegates
         self.repr_delegate = None
         self.sql_delegate = None
+        # ids - identifiyer which remains unique forever
+        self.id = ColumnInfo.__tot_column_ids
+        ColumnInfo.__tot_column_ids += 1
 
     # ----------- basic functional
     def sql_data_type(self):

@@ -34,5 +34,6 @@
     <file alias="zoomout">zoom-out.svg</file>
     <file alias="fold">fold.svg</file>
     <file alias="unfold">unfold.svg</file>
+    <file alias="width">width.svg</file>
 </qresource>
 </RCC>

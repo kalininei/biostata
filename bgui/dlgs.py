@@ -626,3 +626,20 @@ class OptionsDlg(SimpleAbstractDialog):
             self.opts.__dict__[a] = od.__dict__[a]
         self.opts.open_recent_db_on_start = int(od.open_recent_db_on_start)
         return need_view_update
+
+@qtcommon.hold_position
+class InputInteger(OkCancelDialog):
+    def __init__(self, title, parent,
+                 defvalue=None, minvalue=None, maxvalue=None):
+        super().__init__(title, parent)
+        self.wid = QtWidgets.QSpinBox(self)
+        if defvalue is not None:
+            self.wid.setValue(defvalue)
+        if minvalue is not None:
+            self.wid.setMinimum(minvalue)
+        if maxvalue is not None:
+            self.wid.setMaximum(maxvalue)
+        self.mainframe.layout().addWidget(self.wid)
+
+    def ret_value(self):
+        return self.wid.value()

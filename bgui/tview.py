@@ -4,6 +4,7 @@ from prog import bsqlproc
 from bdata import filt
 from bgui import cfg
 from bgui import tmodel
+from bgui import qtcommon
 
 
 def _is_selected(option):
@@ -11,16 +12,39 @@ def _is_selected(option):
     return bool(QtWidgets.QStyle.State_Selected & option.state)
 
 
-def _vert_layout_frame():
-    wdg = QtWidgets.QFrame()
-    lab = QtWidgets.QVBoxLayout()
-    lab.setContentsMargins(0, 0, 0, 0)
-    lab.setSpacing(0)
-    wdg.setLayout(lab)
-    return wdg
+class TabCellWidget(QtWidgets.QFrame):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.labels = []
+        self.setLayout(QtWidgets.QVBoxLayout())
+        self.layout().setContentsMargins(0, 0, 0, 0)
+        self.layout().setSpacing(0)
+
+    def add_elabel(self, elab):
+        assert isinstance(elab, qtcommon.ELabel)
+        if len(self.labels) == 1:
+            # to have a stretchable distance between main value and subvalues
+            self.layout().addStretch(1)
+        self.labels.append(elab)
+        self.layout().addWidget(elab)
+
+    def preferred_width(self):
+        if len(self.labels) == 0:
+            return 0
+        return max([x.preferred_width() for x in self.labels])
+
+    def preferred_height(self):
+        if len(self.labels) == 0:
+            return 0
+        ret = sum([x.preferred_height() for x in self.labels])
+        # space between main data and subdata
+        if len(self.labels) > 1:
+            ret += cfg.ViewConfig.get().margin()
+        return ret
 
 
 class TabDelegate(QtWidgets.QStyledItemDelegate):
+
     def __init__(self, mod, parent):
         super().__init__(parent)
         self.conf = cfg.ViewConfig.get()
@@ -45,7 +69,8 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
         return ir * self._nc + ic
 
     def _label(self, txt, parent):
-        w = QtWidgets.QLabel(parent)
+        w = qtcommon.ELabel(parent)
+        w.set_elide_mode(QtCore.Qt.ElideRight)
         if txt is not None:
             if isinstance(txt, float):
                 w.setText(self.conf.ftos(txt))
@@ -68,7 +93,7 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
             and minimum height
         """
         # create widget frame
-        wdg = _vert_layout_frame()
+        wdg = TabCellWidget()
         # group count, does this group is unfolded, number of unique
         n_tot, is_unfolded, n_uni = index.data(
                 tmodel.TabModel.GroupedStatusRole)
@@ -96,12 +121,10 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
             w.setAlignment(QtCore.Qt.Alignment(
                 index.data(QtCore.Qt.TextAlignmentRole)))
         w.setMargin(self.conf.margin())
-        wdg.layout().addWidget(w)
+        wdg.add_elabel(w)
 
         # subdata labels
         if is_unfolded:
-            # to have a stretchable distance between main value and subvalues
-            wdg.layout().addStretch(1)
             # get subdata
             dt1 = subicons = [None] * n_tot
             if n_uni > 1:
@@ -123,7 +146,7 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
                     w.setAlignment(QtCore.Qt.AlignCenter)
                 else:
                     w.setAlignment(QtCore.Qt.AlignLeft)
-                wdg.layout().addWidget(w)
+                wdg.add_elabel(w)
         wdg.setAutoFillBackground(True)
         self._set_palette(wdg, index)
         return wdg
@@ -137,24 +160,13 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
 
         wdg.setPalette(p)
 
-    def sizeHint(self, option, index):   # noqa
-        if self.row_heights[index.row()] is None:
-            f1 = index.data(QtCore.Qt.FontRole)
-            # main data font
-            height = QtGui.QFontMetrics(f1).height()
-            # margins for main data
-            height += 2 * self.conf.margin()
-            n, unfolded, _ = index.data(tmodel.TabModel.GroupedStatusRole)
-            if unfolded:
-                f2 = index.data(tmodel.TabModel.SubFontRole)
-                # subrows data font
-                height += n * QtGui.QFontMetrics(f2).height()
-            # space between main data and subdata
-            if unfolded:
-                height += self.conf.margin()
-            self.row_heights[index.row()] = QtCore.QSize(-1, height)
-
-        return self.row_heights[index.row()]
+    def get_row_height(self, irow):
+        height = self.row_heights[irow]
+        if height is None:
+            index = self.parent().model().createIndex(irow, 0)
+            height = self._get_widget(index).preferred_height()
+            self.row_heights[index.row()] = height
+        return height
 
     def paint(self, painter, option, index):   # noqa
         wdg = self._get_widget(index)
@@ -207,17 +219,19 @@ class HorizontalHeader(QtWidgets.QHeaderView):
         super().mouseMoveEvent(event)
         self.setSectionsClickable(False)
 
-
-tv = None
+    def resizeSection(self, icol, inew):   # noqa
+        inew = max(TableView._minimum_column_width, inew)
+        super().resizeSection(icol, inew)
 
 
 class TableView(QtWidgets.QTableView):
+    _default_column_width = 70
+    _minimum_column_width = 25
+
     def __init__(self, model, parent):
-        global tv
         super().__init__(parent)
-        tv = self
         self.setModel(model)
-        self.setItemDelegate(TabDelegate(model, parent))
+        self.setItemDelegate(TabDelegate(model, self))
         self.model().repr_updated.connect(self._repr_changed)
 
         # header
@@ -227,10 +241,15 @@ class TableView(QtWidgets.QTableView):
         self.horizontalHeader().setSortIndicatorShown(True)
         self.horizontalHeader().sortIndicatorChanged.connect(
             self._act_sort_column)
+        self.horizontalHeader().sectionResized.connect(
+            self._section_resized)
 
         # context menu
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._context_menu)
+
+        # column width: {column id: width}
+        self.colwidth = {}
 
     def table_name(self):
         return self.model().table_name()
@@ -258,9 +277,25 @@ class TableView(QtWidgets.QTableView):
 
         # ---------- set vertical sizes
         for i in range(model.rowCount()):
-            index = model.createIndex(i, 0)
-            h = self.itemDelegate().sizeHint(None, index).height()
-            self.verticalHeader().resizeSection(i, h)
+            self.verticalHeader().resizeSection(i, self._get_row_height(i))
+
+        # ---------- set horizontal sizes
+        for i in range(model.columnCount()):
+            self.horizontalHeader().resizeSection(i, self._get_column_width(i))
+
+    def _get_row_height(self, irow):
+        return self.itemDelegate().get_row_height(irow)
+
+    def _get_column_width(self, icol):
+        colid = self.model().get_column(icol).id
+        try:
+            return self.colwidth[colid]
+        except KeyError:
+            return self._default_column_width
+
+    def _section_resized(self, icol, oldsize, newsize):
+        colid = self.model().get_column(icol).id
+        self.colwidth[colid] = newsize
 
     def _context_menu(self, pnt):
         index = self.indexAt(pnt)
@@ -371,3 +406,32 @@ class TableView(QtWidgets.QTableView):
             txt.append('\t'.join(map(str, row)))
         txt = '\n'.join(txt)
         QtWidgets.QApplication.clipboard().setText(txt)
+
+    def width_adjust(self, how):
+        """ how = 'data', 'data/caption', int value
+        """
+        for i in range(self.model().columnCount()):
+            self.width_adjust_for_column(i, how)
+
+    def width_adjust_for_column(self, icol, how):
+        if isinstance(how, int):
+            self.horizontalHeader().resizeSection(icol, how)
+        else:
+            if how == 'data':
+                r0 = 2
+            elif how == 'data/caption':
+                r0 = 1
+            else:
+                assert False
+            deleg = self.itemDelegate()
+            ind1 = deleg._linear_index(r0, icol)
+            ind2 = deleg._linear_index(self.model().rowCount(), icol)
+            step = self.model().columnCount()
+            wmax = 0
+            for j in range(ind1, ind2, step):
+                w = self.itemDelegate().display_widgets[j]
+                if w is None:
+                    continue
+                wmax = max(wmax, w.preferred_width())
+            wmax += self.lineWidth()
+            self.horizontalHeader().resizeSection(icol, wmax)

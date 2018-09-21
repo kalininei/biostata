@@ -145,9 +145,6 @@ class TabModel(QtCore.QAbstractTableModel):
                     elif a == 0:
                         ret[i] = self.conf.false_subicon(self.use_coloring())
             return ret
-        else:
-            if role not in [3, 4]:
-                raise NotImplementedError
 
         return None
 
@@ -234,6 +231,9 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def get_color_scheme(self):
         return self.coloring.color_scheme
+
+    def get_column(self, icol):
+        return self.dt.visible_columns[icol]
 
     # ------------------------ modification procedures
     def add_filter(self, flt):
@@ -324,11 +324,6 @@ class TabModel(QtCore.QAbstractTableModel):
         for c in showthis:
             self.dt.set_visibility(c, True)
         return True
-
-    def zoom_font(self, delta):
-        self.conf._basic_font_size += delta
-        self.conf.refresh()
-        self.view_update()
 
     def switch_coloring_mode(self):
         self.coloring.use = not self.coloring.use

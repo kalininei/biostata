@@ -48,6 +48,7 @@ class ViewConfig(object):
         self.refresh()
 
     def refresh(self):
+        self._basic_font_size = max(self._basic_font_size, 4)
         self._main_font = QtGui.QFont()
         self._main_font.setPointSize(self._basic_font_size)
         self._caption_font = QtGui.QFont(self._main_font)

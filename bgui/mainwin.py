@@ -108,6 +108,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.viewmenu = menubar.addMenu('View')
         self.viewmenu.addAction(self.acts['Increase font'])
         self.viewmenu.addAction(self.acts['Decrease font'])
+        self.setwidthmenu = QtWidgets.QMenu("Set columns width")
+        self.setwidthmenu.addAction(self.acts['Fit to data width'])
+        self.setwidthmenu.addAction(self.acts['Fit to data and caption width'])
+        self.setwidthmenu.addAction(self.acts['Set constant width...'])
+        self.viewmenu.addMenu(self.setwidthmenu)
         self.viewmenu.addSeparator()
         self.viewmenu.addAction(self.acts['Fold all groups'])
         self.viewmenu.addAction(self.acts['Unfold all groups'])
@@ -182,6 +187,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.toolbar.addAction(self.acts['Increase font'])
         self.toolbar.addAction(self.acts['Decrease font'])
+        self.toolbar.addAction(self.acts['Fit to data width'])
         self.toolbar.addAction(self.acts['Configuration'])
         self.toolbar.addSeparator()
 
@@ -379,6 +385,7 @@ class MainWindow(QtWidgets.QMainWindow):
              'codes': cfg.ViewConfig.BOOL_AS_CODES,
              'Yes/No': cfg.ViewConfig.BOOL_AS_YESNO}[opts.show_bool_as]
         cfg.ViewConfig.get().refresh()
+        self.opts.basic_font_size = cfg.ViewConfig.get()._basic_font_size
         self.view_update()
 
     def require_editor(self, ftype):

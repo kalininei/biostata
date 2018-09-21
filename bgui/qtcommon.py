@@ -1,7 +1,7 @@
 import traceback
 import resources   # noqa
 from prog import basic
-from PyQt5 import QtWidgets, QtCore
+from PyQt5 import QtWidgets, QtCore, QtGui
 
 
 def message_exc(parent=None, title="Error", text=None, e=None):
@@ -106,6 +106,9 @@ def set_window_positions(xmlnode):
 
 
 class BLineEdit(QtWidgets.QLineEdit):
+    """ QLineEdit with text_changed signal
+        which emits on leave focus
+    """
     text_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, txt, parent):
@@ -123,6 +126,9 @@ class BLineEdit(QtWidgets.QLineEdit):
 
 
 class BTextEdit(QtWidgets.QTextEdit):
+    """ QTextEdit with text_changed signal
+        which emits on leave focus
+    """
     text_changed = QtCore.pyqtSignal(str)
 
     def __init__(self, txt, parent):
@@ -137,3 +143,60 @@ class BTextEdit(QtWidgets.QTextEdit):
     def focusInEvent(self, event):   # noqa
         self.__curtext = self.toPlainText()
         super().focusInEvent(event)
+
+
+class ELabel(QtWidgets.QLabel):
+    """ QLabel with elided text
+    """
+    def __init__(self, parent, txt=None):
+        super().__init__(parent)
+        self.setWindowFlags(QtCore.Qt.Widget)
+        self._elide_mode = QtCore.Qt.ElideNone
+        self._cached_elided_text = ''
+        self.setSizePolicy(QtWidgets.QSizePolicy.Ignored,
+                           QtWidgets.QSizePolicy.Preferred)
+        if txt is not None:
+            self.setText(txt)
+
+    def set_elide_mode(self, mode):
+        self._elide_mode = mode
+        self.updateGeometry()
+
+    def elide_mode(self):
+        return self._elide_mode
+
+    def preferred_width(self):
+        return self.fontMetrics().width(self.text()) +\
+                2 * self.margin() + self.indent() + 1
+
+    def preferred_height(self):
+        return self.fontMetrics().height() + 2*self.margin()
+
+    def setText(self, txt):   # noqa
+        super().setText(txt)
+        self.cache_elided_text(self.geometry().width())
+
+    def cache_elided_text(self, w):
+        w -= 2*self.margin() + self.indent()
+        self._cached_elided_text = self.fontMetrics().elidedText(
+                self.text(), self._elide_mode, w, QtCore.Qt.TextShowMnemonic)
+
+    def resizeEvent(self, event):   # noqa
+        super().resizeEvent(event)
+        self.cache_elided_text(event.size().width())
+
+    def paintEvent(self, event):   # noqa
+        if self._elide_mode == QtCore.Qt.ElideNone:
+            super().paintEvent(event)
+        else:
+            p = QtGui.QPainter(self)
+            m = self.margin()
+            if self.alignment() == QtCore.Qt.AlignCenter:
+                m = 0
+            else:
+                m = self.margin()
+            p.drawText(m + self.indent(), m,
+                       self.geometry().width(),
+                       self.geometry().height(),
+                       self.alignment(),
+                       self._cached_elided_text)
