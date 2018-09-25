@@ -14,16 +14,13 @@ def main(app):
         basic.set_log_message('file: ' + bopts.BiostataOptions.logfile())
         basic.set_ignore_exception(True)
 
-    # program initialization
-    b = projroot.ProjectDB()
-
     # create window
-    mainwin.MainWindow(b).show()
+    mainwin.MainWindow(projroot.proj).show()
 
     # start gui loop
     QtWidgets.qApp.exec_()
 
-    b.finish()
+    projroot.proj.finish()
 
 
 if __name__ == '__main__':

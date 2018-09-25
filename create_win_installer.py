@@ -11,17 +11,17 @@ if os.name != 'nt':
     raise Exception("The script should be run on windows platform only")
 
 # get version number
-fn = os.path.join(os.curdir, 'prog', 'bopts.py')
+fn = os.path.join(os.curdir, 'prog', '__init__.py')
 fid = open(fn, 'r')
-_version = None
+version = None
 for line in fid.readlines():
-    if line.find('_version = ') >= 0:
+    if line.find('version = ') >= 0:
         exec(line)
         break
 fid.close()
-if _version is None:
+if version is None:
     raise Exception("Failed to detect version from prog/bopts.py file")
-print("Detected version is ", _version)
+print("Detected version is ", version)
 
 # write version number to nsi file
 fn = os.path.join(os.curdir, 'make_installer.nsi')
@@ -31,7 +31,7 @@ fid.close()
 
 for i, line in enumerate(lines):
     if line.find('!define VERSION ') >= 0:
-        lines[i] = '!define VERSION "{}"\r\n'.format(_version)
+        lines[i] = '!define VERSION "{}"\r\n'.format(version)
         break
 else:
     raise Exception("Version string was not found in make_installer.nsi")

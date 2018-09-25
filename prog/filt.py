@@ -56,19 +56,23 @@ fcloseparen = ["", ")", ") )", ") ) )", ")...)"]
 
 class Filter:
     def __init__(self):
+        self.id = -1
         self.name = None
         self.do_remove = True
         self.entries = []
         # we need project reference for dictionary list access
         self.proj = None
 
+    def set_id(self, iden):
+        self.id = iden
+
     def is_applicable(self, dt):
         for ln in self.entries:
             if isinstance(ln.column, ColumnDef):
-                if not ln.column.does_present(dt.columns):
+                if not ln.column.does_present(dt.all_columns):
                     return False
             if isinstance(ln.value, ColumnDef):
-                if not ln.value.does_present(dt.columns):
+                if not ln.value.does_present(dt.all_columns):
                     return False
         return True
 
@@ -155,9 +159,9 @@ class Filter:
         iparen = 0
         line = ""
         for e in self.entries:
-            col1 = table.columns[e.column.name]
+            col1 = table.get_column(name=e.column.name)
             col2 = None if not isinstance(e.value, ColumnDef) else\
-                table.columns[e.value.name]
+                table.get_column(name=e.value.name)
             ret = []
             # skip first
             if e is not self.entries[0]:
@@ -295,18 +299,15 @@ class ColumnDef:
         else:
             return False
 
-    def does_present(self, coldict):
-        """ does this column present in column dictionary """
-        try:
-            col = coldict[self.name]
-            if col.dt_type != self.dt_type:
-                raise
-            if not col.uses_dict(self.dict_name):
-                raise
-        except:
-            return False
-        else:
-            return True
+    def does_present(self, collist):
+        """ does this column present in column list """
+        for c in collist:
+            if c.name == self.name:
+                if c.dt_type == self.dt_type and c.uses_dict(self.dict_name):
+                    return True
+                else:
+                    break
+        return False
 
     def __str__(self):
         return str((self.name, self.dt_type, self.dict_name))

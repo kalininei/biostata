@@ -1,5 +1,7 @@
 import copy
+import xml.etree.ElementTree as ET
 from PyQt5 import QtCore, QtGui
+from prog import basic
 from bgui import coloring
 from bgui import cfg
 
@@ -32,6 +34,29 @@ class TabModel(QtCore.QAbstractTableModel):
         self.coloring = coloring.Coloring(self.dt)
         self.repr_updated.connect(
                 lambda t, i: self.coloring.update(t.dt) if i == -1 else None)
+
+    def current_state_xml(self, root):
+        # folds
+        cur = ET.SubElement(root, "UNFOLDED")
+        if isinstance(self._unfolded_groups, bool):
+            cur.text = str(int(self._unfolded_groups))
+        else:
+            cur.text = str(self._unfolded_groups)
+
+        # coloring
+        self.coloring.current_state_xml(ET.SubElement(root, 'COLORING'))
+
+    def restore_state_by_xml(self, root):
+        from ast import literal_eval
+        # folds
+        try:
+            self._unfolded_groups = literal_eval(root.find('UNFOLDED').text)
+            if isinstance(self._unfolded_groups, int):
+                self._unfolded_groups = bool(self._unfolded_groups)
+        except Exception as e:
+            basic.ignore_exception(e)
+        # coloring
+        self.coloring.restore_state_by_xml(root.find('COLORING'))
 
     # overwritten methods
     def rowCount(self, parent=None):    # noqa
@@ -232,8 +257,19 @@ class TabModel(QtCore.QAbstractTableModel):
     def get_color_scheme(self):
         return self.coloring.color_scheme
 
-    def get_column(self, icol):
-        return self.dt.visible_columns[icol]
+    def get_column(self, icol=None, iden=None, name=None):
+        if icol is not None:
+            return self.dt.visible_columns[icol]
+        if iden is not None:
+            for col in self.dt.columns.values():
+                if col.id == iden:
+                    return col
+        if name is not None:
+            try:
+                return self.dt.columns[name]
+            except KeyError:
+                pass
+        return None
 
     # ------------------------ modification procedures
     def add_filter(self, flt):

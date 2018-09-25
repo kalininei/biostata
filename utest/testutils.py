@@ -1,6 +1,9 @@
+import copy
 import time
 import unittest
+import xml.etree.ElementTree as ET
 from PyQt5 import QtCore, QtTest, QtWidgets
+from prog import basic
 
 
 def print_dtab(dt):
@@ -12,6 +15,19 @@ def print_dtab(dt):
                 v = '<None>'
             line.append("{0: >8}".format(v))
         print(''.join(line))
+
+
+def xmlstring(func):
+    root = ET.Element('DBG')
+    func(root)
+    basic.xmlindent(root)
+    return ET.tostring(root, encoding='utf-8', method='xml').decode()
+
+
+def print_xml(node):
+    n2 = copy.deepcopy(node)
+    basic.xmlindent(n2)
+    print(ET.tostring(n2, encoding='utf-8', method='xml').decode())
 
 
 def get_dtab_column(dt, icol):

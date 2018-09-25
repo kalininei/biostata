@@ -49,17 +49,21 @@ def _log_to_file(fname):
         level=logging.DEBUG)
 
     def msg(txt, lv="INFO"):
-        if lv == "INFO":
-            logging.info(txt)
-        elif lv == "ERROR":
-            logging.error(txt)
-        elif lv == "WARNING":
-            logging.warning(txt)
+        try:
+            if lv == "INFO":
+                logging.info(txt)
+            elif lv == "ERROR":
+                logging.error(txt)
+            elif lv == "WARNING":
+                logging.warning(txt)
+        except:
+            pass
 
     return msg
 
 ignore_exception = _ignore_exception
 log_message = _log_message
+
 
 def set_ignore_exception(ignore):
     'ignore non-critical exceptions'
@@ -83,6 +87,21 @@ def set_log_message(tplog):
         log_message = _log_to_file(tplog[5:].strip())
 
 
+class BSignal(object):
+    def __init__(self):
+        self.subscribers = []
+
+    def add_subscriber(self, func):
+        self.subscribers.append(func)
+
+    def remove_subscriber(self, func):
+        self.subscriber.remove(func)
+
+    def emit(self, *args):
+        for f in self.subscribers:
+            f(*args)
+
+
 # xml indent
 def xmlindent(elem, level=0):
     """ http://effbot.org/zone/element-lib.htm#prettyprint.
@@ -103,3 +122,37 @@ def xmlindent(elem, level=0):
     else:
         if level and (not elem.tail or not elem.tail.strip()):
             elem.tail = i
+
+
+class IdCounter:
+    def __init__(self):
+        self._val = 0
+
+    def new(self):
+        self._val += 1
+        return self._val
+
+    def include(self, val):
+        if self._val < val:
+            self._val = val
+
+    def reset(self):
+        self._val = 0
+
+
+__uniint_i = 0
+
+
+def uniint():
+    global __uniint_i
+    __uniint_i += 1
+    return __uniint_i
+
+
+def list_equal(lst1, lst2):
+    if len(lst1) != len(lst2):
+        return False
+    for a, b in zip(lst1, lst2):
+        if a != b:
+            return False
+    return True

@@ -4,10 +4,6 @@ import xml.etree.ElementTree as ET
 import base64
 from prog import basic
 
-_version = '0.1'
-if __debug__:
-    _version = _version + ' (debug)'
-
 # directory where configuration information (like .biostatarc, .biostata-log)
 # will be stored
 _progoutpath = '.'
@@ -56,10 +52,6 @@ class BiostataOptions:
         # main window state and geometry encoded in b64
         self.mw_state = ''
         self.mw_geom = ''
-
-    @staticmethod
-    def version():
-        return _version
 
     @staticmethod
     def rcfile():

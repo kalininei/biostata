@@ -1,6 +1,8 @@
 import copy
 import collections
+import xml.etree.ElementTree as ET
 from PyQt5 import QtGui, QtCore
+from prog import basic
 from bgui import cfg
 
 
@@ -45,6 +47,7 @@ class Coloring:
         self._row_values = []
         self.color_scheme = ColorScheme.default()
 
+        self.color_by = "id"
         self.set_column(datatab, "id")
 
     def get_color(self, irow):
@@ -280,6 +283,28 @@ class Coloring:
             ret.pop()
         return ret
 
+    def current_state_xml(self, nd):
+        from xml.sax.saxutils import escape
+        ET.SubElement(nd, "USE").text = str(int(self.use))
+        ET.SubElement(nd, "ABSLIMITS").text = str(int(self.absolute_limits))
+        ET.SubElement(nd, "COLUMN").text = escape(self.color_by)
+        cur = ET.SubElement(nd, "COLORSCHEME")
+        ET.SubElement(cur, "CLASS").text = str(self.color_scheme.__class__)
+        self.color_scheme.current_state_xml(cur)
+
+    def restore_state_by_xml(self, nd):
+        from xml.sax.saxutils import unescape
+        from ast import literal_eval
+        try:
+            self.use = bool(int(nd.find("USE").text))
+            self.absolute_limits = bool(int(nd.find("ABSLIMITS").text))
+            self.color_by = unescape(nd.find("COLUMN").text)
+            cc = literal_eval(nd.find("COLORSCHEME/CLASS").text)
+            self.color_scheme = cc()
+            cc.restore_state_by_xml(nd.find("COLORSCHEME"))
+        except Exception as e:
+            basic.ignore_exception(e)
+
 
 # ======================== Color schemes
 class ColorScheme:
@@ -421,6 +446,25 @@ class ColorScheme:
         self._set_discrete_reversed(not other._continuous,
                                     other._reversed, other._dcount)
         self._default_color = copy.deepcopy(other._default_color)
+
+    def current_state_xml(self, nd):
+        ET.SubElement(nd, 'CONT').text = str(int(self._continuous))
+        ET.SubElement(nd, 'NCONT').text = str(int(self._dcount))
+        ET.SubElement(nd, 'REV').text = str(int(self._reversed))
+        ET.SubElement(nd, 'DEFAULT').text = str(self._default_color)
+
+    def restore_state_by_xml(self, nd):
+        from ast import literal_eval
+        try:
+            c1 = bool(int(nd.find('CONT').text))
+            c2 = int(nd.find('NCONT').text)
+            c3 = bool(int(nd.find('REV').text))
+            c4 = literal_eval(nd.find('DEFAULT').text)
+            self.set_discrete(not c1, c2)
+            self.set_reversed(c3)
+            self._default_color = c4
+        except Exception as e:
+            basic.ignore_exception(e)
 
     @classmethod
     def default(cls):

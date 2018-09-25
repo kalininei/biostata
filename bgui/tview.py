@@ -1,6 +1,8 @@
 import functools
+import xml.etree.ElementTree as ET
 from PyQt5 import QtWidgets, QtGui, QtCore
 from prog import bsqlproc
+from prog import basic
 from bdata import filt
 from bgui import cfg
 from bgui import tmodel
@@ -253,6 +255,28 @@ class TableView(QtWidgets.QTableView):
 
     def table_name(self):
         return self.model().table_name()
+
+    def current_state_xml(self, root):
+        from xml.sax.saxutils import escape
+        cw = {}
+        for k, v in self.colwidth.items():
+            nm = self.model().get_column(iden=k).name
+            if nm is not None:
+                cw[nm] = v
+        ET.SubElement(root, "COLWIDTH").text = escape(str(cw))
+        self.model().current_state_xml(root)
+
+    def restore_state_by_xml(self, root):
+        from ast import literal_eval
+        from xml.sax.saxutils import unescape
+        try:
+            cw = literal_eval(unescape(root.find('COLWIDTH').text))
+            self.colwidth.clear()
+            for k, v in cw.items():
+                self.colwidth[self.model().get_column(name=k).id] = v
+        except Exception as e:
+            basic.ignore_exception(e)
+        self.model().restore_state_by_xml(root)
 
     def _repr_changed(self, model, ir):
         # ---------- spans

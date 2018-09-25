@@ -180,5 +180,14 @@ class SqlConnection:
         self._i_sql_functions += 1
         return nm
 
+    def swap_tables(self, tab1, tab2):
+        tmpname = '_alter{} {}'.format(basic.uniint(), tab1)
+        qr = 'ALTER TABLE "{}" RENAME TO "{}"'.format(tab1, tmpname)
+        self.query(qr)
+        qr = 'ALTER TABLE "{}" RENAME TO "{}"'.format(tab2, tab1)
+        self.query(qr)
+        qr = 'ALTER TABLE "{}" RENAME TO "{}"'.format(tmpname, tab2)
+        self.query(qr)
+
 
 connection = SqlConnection()

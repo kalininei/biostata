@@ -23,7 +23,7 @@ import os
 from PyQt5 import QtCore, QtWidgets, QtGui
 from bgui import optview
 
-_tmp = None
+MAXINT = 2147483647
 
 
 # option entries types
@@ -54,7 +54,7 @@ class SimpleOptionEntry(optview.OptionEntry):
 
 class BoundedIntOptionEntry(SimpleOptionEntry):
     " integer value within [minv, maxv] "
-    def __init__(self, data, member_name, minv=-2147483647, maxv=2147483647):
+    def __init__(self, data, member_name, minv=-MAXINT, maxv=MAXINT):
         self.minv = minv
         self.maxv = maxv
         super(BoundedIntOptionEntry, self).__init__(data, member_name)

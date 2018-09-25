@@ -1,4 +1,6 @@
 import collections
+import xml.etree.ElementTree as ET
+from xml.sax.saxutils import escape, unescape
 
 
 class Dictionary:
@@ -33,6 +35,7 @@ class Dictionary:
         self.kvalues = collections.OrderedDict()
         self.vkeys = collections.OrderedDict()
         self.kcomments = collections.OrderedDict()
+        self.id = -1
         for k, v in zip(keys, values):
             self.kvalues[k] = v
             self.vkeys[v] = k
@@ -41,6 +44,40 @@ class Dictionary:
         if comments is not None:
             for k, coms in zip(self.kvalues.keys(), comments):
                 self.kcomments[k] = coms
+
+    def set_id(self, iden):
+        self.id = iden
+
+    def to_xml(self, nd):
+        ET.SubElement(nd, "ID").text = str(self.id)
+        ET.SubElement(nd, "NAME").text = escape(self.name)
+        ET.SubElement(nd, "DTTYPE").text = self.dt_type
+        for (k, v), c in zip(self.kvalues.items(), self.kcomments.values()):
+            cur = ET.SubElement(nd, "E")
+            ET.SubElement(cur, "K").text = str(k)
+            ET.SubElement(cur, "V").text = escape(v)
+            if c:
+                ET.SubElement(cur, "C").text = escape(c)
+
+    @classmethod
+    def from_xml(cls, nd):
+        name = unescape(nd.find('NAME').text)
+        dttype = nd.find('DTTYPE').text
+        k, v, c = [], [], []
+        for x in nd.findall('E'):
+            k.append(int(x.find('K').text))
+            v.append(unescape(x.find('V').text))
+            cf = x.find('C')
+            if cf and cf.text:
+                c.append(unescape(cf.text))
+            else:
+                c.append('')
+        ret = cls(name, dttype, k, v, c)
+        try:
+            ret.set_id(int(nd.find('ID').text))
+        except:
+            pass
+        return ret
 
     def compare(self, newdict):
         """ What was changed in newdict compared to present dict.

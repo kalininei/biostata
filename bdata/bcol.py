@@ -1,3 +1,4 @@
+import sys
 import copy
 import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, unescape
@@ -6,9 +7,8 @@ from prog import basic, bsqlproc
 
 
 class ColumnInfo:
-    __tot_column_ids = 0
-
     def __init__(self, name):
+        self.id = -1
         self.name = name
         self.shortname = name
         self.dim = ''
@@ -18,9 +18,9 @@ class ColumnInfo:
         # delegates
         self.repr_delegate = None
         self.sql_delegate = None
-        # ids - identifiyer which remains unique forever
-        self.id = ColumnInfo.__tot_column_ids
-        ColumnInfo.__tot_column_ids += 1
+
+    def set_id(self, iden):
+        self.id = iden
 
     # ----------- basic functional
     def sql_data_type(self):
@@ -31,14 +31,36 @@ class ColumnInfo:
         elif self.dt_type == "TEXT":
             return "TEXT"
 
-    def state_xml(self):
-        "returns spec. info as xml string"
-        root = ET.Element('ColumnState')
-        ET.SubElement(root, 'SQL_REAL_GROUP').text =\
-            escape(self.real_data_groupfun)
-        self.repr_delegate.state_xml(root)
-        self.sql_delegate.state_xml(root)
-        return ET.tostring(root, encoding='utf-8', method='xml').decode()
+    def to_xml(self, root):
+        ET.SubElement(root, "ID").text = str(self.id)
+        ET.SubElement(root, "NAME").text = escape(self.name)
+        ET.SubElement(root, "SHORTNAME").text = escape(self.shortname)
+        ET.SubElement(root, "DIM").text = escape(self.dim)
+        ET.SubElement(root, "COMMENT").text = escape(self.comment)
+        ET.SubElement(root, "GROUPFUN").text = escape(self.real_data_groupfun)
+        self.repr_delegate.to_xml(root)
+        self.sql_delegate.to_xml(root)
+
+    @classmethod
+    def from_xml(cls, root, proj):
+        name = unescape(root.find('NAME').text)
+        ret = cls(name)
+        ret.set_id(int(root.find('ID').text))
+        ret.shortname = unescape(root.find('SHORTNAME').text)
+        fnd = root.find('DIM')
+        if fnd and fnd.text:
+            ret.dim = unescape(fnd.text)
+        fnd = root.find('COMMENT')
+        if fnd and fnd.text:
+            ret.comment = unescape(fnd.text)
+        ret.real_data_groupfun = unescape(root.find('GROUPFUN').text)
+        ret.set_repr_delegate(_BasicRepr.from_xml(root, proj))
+        ret.set_sql_delegate(_BasicSqlDelegate.from_xml(root))
+        if ret.is_original():
+            ret.status_column = OrigStatusColumn(ret)
+        else:
+            ret.status_column = FuncStatusColumn(ret)
+        return ret
 
     def is_category(self):
         return self.dt_type != "REAL"
@@ -128,8 +150,8 @@ class _BasicRepr:
     def uses_dict(self, dct):
         return dct is None
 
-    def state_xml(self, root):
-        pass
+    def to_xml(self, root):
+        ET.SubElement(root, "REPR").text = self.__class__.__name__
 
     def copy(self):
         return copy.deepcopy(self)
@@ -146,6 +168,16 @@ class _BasicRepr:
             return BoolRepr(dct)
         elif tp == 'ENUM':
             return EnumRepr(dct)
+
+    @staticmethod
+    def from_xml(root, proj):
+        cls = getattr(sys.modules[__name__], root.find('REPR').text)
+        if cls in [IntRepr, TextRepr, RealRepr]:
+            return cls()
+        if isinstance(cls, EnumRepr):
+            idct = int(root.find('DICT').text)
+            dct = proj.get_dictionary(iden=idct)
+            return cls(dct)
 
 
 class IntRepr(_BasicRepr):
@@ -188,6 +220,10 @@ class EnumRepr(_BasicRepr):
     def __init__(self, d):
         self.dict = d
 
+    def to_xml(self, root):
+        super().to_xml(root)
+        ET.SubElement(root, "DICT").text = str(self.dict.id)
+
     def repr(self, x):
         return self.dict.key_to_value(x)
 
@@ -225,8 +261,12 @@ class _BasicSqlDelegate:
         self.column = bu
         return ret
 
-    def state_xml(self, root):
-        pass
+    @staticmethod
+    def from_xml(root):
+        if root.find('SQL_ORIG') is not None:
+            return OriginalSqlDelegate()
+        else:
+            return FuncSqlDelegate.from_xml(root)
 
 
 class OriginalSqlDelegate(_BasicSqlDelegate):
@@ -239,6 +279,9 @@ class OriginalSqlDelegate(_BasicSqlDelegate):
 
     def is_original(self):
         return True
+
+    def to_xml(self, root):
+        ET.SubElement(root, "SQL_ORIG")
 
 
 class FuncSqlDelegate(_BasicSqlDelegate):
@@ -268,16 +311,19 @@ class FuncSqlDelegate(_BasicSqlDelegate):
             return "{}({})".format(self._sql_fun, ", ".join(
                 [x.sql_line(False) for x in self.deps]))
 
-    def state_xml(self, root):
-        super().state_xml(root)
-
-        ET.SubElement(root, 'BEFORE_GROUPING').text =\
+    def to_xml(self, root):
+        cur = ET.SubElement(root, "SQL_FUNC")
+        ET.SubElement(cur, 'BEFORE_GROUPING').text =\
             str(int(self.use_before_grouping))
-        ET.SubElement(root, 'FUNCTION').text =\
+        ET.SubElement(cur, 'FUNCTION').text =\
             escape(self.function_type)
-        ET.SubElement(root, "ARGUMENTS").text =\
-            escape(str([x.name for x in self.deps]))
-        ET.SubElement(root, "DESCRIPTION").text = escape(str(self.kwargs))
+        ET.SubElement(cur, "ARGUMENTS").text =\
+            ' '.join([str(x.id) for x in self.deps])
+        ET.SubElement(cur, "DESCRIPTION").text = escape(str(self.kwargs))
+
+    @staticmethod
+    def from_xml(root):
+        raise NotImplementedError
 
 
 class OrigStatusColumn(ColumnInfo):
@@ -323,7 +369,7 @@ def build_original_column(name, tp, dct=None, state_xml=None):
 
 
 def explicit_build(proj, name, tp_name, dict_name=None):
-    dct = proj.get_dictionary(dict_name) if dict_name else None
+    dct = proj.get_dictionary(name=dict_name) if dict_name else None
     return build_original_column(name, tp_name, dct)
 
 

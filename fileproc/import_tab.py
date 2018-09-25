@@ -1,4 +1,7 @@
 import openpyxl as pxl
+from prog import comproj
+from bdata import bcol
+from bdata import dtab
 
 
 def split_plain_text(fname, options):
@@ -125,3 +128,103 @@ def autodetect_types(tab, maxsize=10):
                     break
         ret.append(r)
     return ret
+
+
+def explicit_table(tab_name, colformats, tab, proj):
+    """ Assembles a table from given python data.
+        colformats = [(name, dt_type, dict_name), ...]
+        tab[][] - table in python types format. None for NULL.
+
+        !!! This procedure modifies tab (converts string values to format
+        values). Use deepcopy in order to keep tab unchanged.
+    """
+    for i, t in enumerate(tab):
+        t.insert(0, i+1)
+
+    def init_columns(self):
+        self.all_columns = []
+        self.all_columns.append(bcol.build_id())
+        for name, dt_type, dict_name in colformats:
+            col = bcol.explicit_build(self.proj, name, dt_type, dict_name)
+            self.all_columns.append(col)
+
+    def fill_ttab(self):
+        cols, sqlcols = [], []
+        for c in self.all_columns:
+            cols.append(c)
+            sqlcols.append(c.sql_line())
+
+        for i in range(len(tab)):
+            for j in range(len(tab[i])):
+                tab[i][j] = cols[j].from_repr(tab[i][j])
+
+        pholders = ','.join(['?'] * (len(self.all_columns)))
+        qr = 'INSERT INTO "{tabname}" ({collist}) VALUES ({ph})'.format(
+                tabname=self.ttab_name,
+                collist=", ".join(sqlcols),
+                ph=pholders)
+        self.query(qr, tab)
+
+    return dtab.DataTable(tab_name, proj, init_columns, fill_ttab, True)
+
+
+class _ImportTab(comproj.NewTabCommand):
+    def __init__(self, proj, fname, opt, delegate):
+        super().__init__(proj)
+        self.fname = fname
+        self.opt = opt
+
+        self.delegate = delegate
+        self.tab = None
+        self.tps = None
+        self.dnames = None
+        self.caps = None
+
+    def _prebuild(self):
+        self.tab = self.delegate(self.fname, self.opt)
+        if self.opt.read_cap:
+            self.caps = self.tab[0][:]
+            self.tab = self.tab[1:]
+        else:
+            self.caps = ["Column {}".format(i+1)
+                         for i in range(len(self.tab[0]))]
+        self.tps = autodetect_types(self.tab)
+        self.dnames = [None] * len(self.tps)
+
+    def _clear(self):
+        self.tab = None
+        self.caps = None
+        self.tps = None
+        self.dnames = None
+        super()._clear()
+
+    def _get_table(self):
+        if self.tab is None:
+            self._prebuild()
+        a = [(c, tp, d) for c, tp, d in zip(self.caps, self.tps, self.dnames)]
+        return explicit_table(self.opt.tabname, a, self.tab, self.proj)
+
+
+class ImportTabFromTxt(_ImportTab):
+    def __init__(self, proj, fname, opt):
+        """ opt.firstline = 0
+            opt.lastline = -1
+            opt.read_cap = True
+            opt.comment_sign = '#'
+            opt.ignore_blank = True
+            opt.col_sep = 'whitespaces'
+            opt.row_sep = 'newline'
+            opt.colcount = -1
+            opt.tabname = 't1'
+        """
+        super().__init__(proj, fname, opt, split_plain_text)
+
+
+class ImportTabFromXlsx(_ImportTab):
+    def __init__(self, proj, fname, opt):
+        """ opt.sheetname = 'tab1'
+            opt.range = ''
+            opt.read_cap = True
+            opt.tabname = 't1'
+        """
+        super().__init__(proj, fname, opt, parse_xlsx_file)

@@ -1,7 +1,8 @@
 import itertools
-import collections
 from bdata import bcol
+from prog import basic
 from prog import bsqlproc
+from prog import command
 
 
 class ColumnConverter:
@@ -9,7 +10,11 @@ class ColumnConverter:
         self.col = column
         self.table = tab
         self.proj = tab.proj
+        self.acts = []
         self.discard()
+
+    def set_acts(self, a):
+        self.acts = a
 
     def discard(self):
         self.new_name = self.col.name
@@ -71,7 +76,7 @@ class ColumnConverter:
             return
         dct = None
         if conv_type[1]:
-            dct = self.proj.dictionaries[conv_type[1]]
+            dct = self.proj.get_dictionary(conv_type[1])
         new_repr = bcol._BasicRepr.default(conv_type[0], dct)
         if not new_repr.same_representation(self.col.repr_delegate):
             self.new_repr = new_repr
@@ -163,14 +168,49 @@ class ColumnConverter:
             "within TableConverter.apply()"
 
         if self.do_remove:
-            self.table.remove_column(self.col)
+            self.act_remove_column()
             return
-        self.col.rename(self.new_name)
-        self.col.shortname = self.new_shortname
-        self.col.dim = self.new_dim
-        self.col.comment = self.new_comment
+        if self.new_name != self.col.name:
+            self.act_rename_column()
+        if self.new_shortname != self.col.shortname:
+            self.act_change_colattr('shortname', self.new_shortname)
+        if self.new_dim != self.col.dim:
+            self.act_change_colattr('dim', self.new_dim)
+        if self.new_comment != self.col.comment:
+            self.act_change_colattr('comment', self.new_comment)
         if self.has_repr_changes():
+            self.act_set_new_repr()
             self.col.set_repr_delegate(self.new_repr)
+
+    def act_rename_column(self):
+        a = basic.CustomObject()
+        a.oldname = self.col.name
+        a.newname = self.new_name
+        a.redo = lambda: self.col.rename(a.newname)
+        a.undo = lambda: self.col.rename(a.oldname)
+        a.redo()
+        self.acts.append(a)
+
+    def act_remove_column(self):
+        a1 = command.ActRemoveListEntry(self.table.all_columns, self.col)
+        a2 = command.ActRemoveListEntry(self.table.visible_columns, self.col)
+        a1.redo()
+        a2.redo()
+        self.acts.extend([a1, a2])
+
+    def act_change_colattr(self, attr, newattr):
+        a = command.ActChangeAttr(self.col, attr, newattr)
+        a.redo()
+        self.acts.append(a)
+
+    def act_set_new_repr(self):
+        a = basic.CustomObject()
+        a.old_repr = self.col.repr_delegate
+        a.new_repr = self.new_repr
+        a.redo = lambda: self.col.set_repr_delegate(a.new_repr)
+        a.undo = lambda: self.col.set_repr_delegate(a.old_repr)
+        a.redo()
+        self.acts.append(a)
 
     def internal_repr_change_line(self):
         assert self.col.is_original()
@@ -300,6 +340,7 @@ class ColumnConverter:
                 for k1, k2 in pairs:
                     qr += "WHEN {}={} THEN {} ".format(sline, k1, k2)
                 return 'CASE ' + qr + 'ELSE NULL END' if qr else 'NULL'
+        assert False, "{} {}".format(self.col.dt_type, self.new_repr)
 
 
 class TableConverter:
@@ -307,8 +348,14 @@ class TableConverter:
         self.table = tab
         self.proj = tab.proj
         self.citems = [ColumnConverter(tab, c)
-                       for c in tab.columns.values()][1:]
+                       for c in tab.all_columns][1:]
         self.discard()
+        self.acts = []
+
+    def set_acts(self, a):
+        self.acts = a
+        for c in self.citems:
+            c.set_acts(a)
 
     def colitem(self, cname):
         for c in self.citems:
@@ -338,20 +385,29 @@ class TableConverter:
                 return True
         return False
 
+    def act_remove_table(self):
+        a = command.ActRemoveListEntry(self.proj.data_tables, self.table)
+        a.redo()
+        self.acts.append(a)
+
     def apply(self):
         if not self.has_changes():
             return
         # -------------- Table edit
         # remove table
         if self.do_remove:
-            self.proj.remove_table(self.table.name)
+            self.act_remove_table()
             return
         # change table name
         if self.new_name != self.table.name:
-            self.table.name = self.new_name
+            a = command.ActChangeAttr(self.table, 'name', self.new_name)
+            a.redo()
+            self.acts.append(a)
         # change comments
         if self.new_comment != self.table.comment:
-            self.table.comment = self.new_comment
+            a = command.ActChangeAttr(self.table, 'comment', self.new_comment)
+            a.redo()
+            self.acts.append(a)
 
         # -------------- Columns edit
         # additional removes
@@ -359,8 +415,8 @@ class TableConverter:
             c.do_remove = True
 
         # anon filters adjust
-        self.table.all_anon_filters = list(filter(
-            self.adjust_filter, self.table.all_anon_filters))
+        for f in self.table.all_anon_filters[:]:
+            self.adjust_filter(f)
 
         # change name/remove/reformat for original columns
         cnitems = [c for c in self.citems if c.need_alter()]
@@ -379,20 +435,30 @@ class TableConverter:
 
         self._final_reassemble()
 
+    def act_change_filter_column_name(self, flt, oname, nname):
+        a = basic.CustomObject()
+        a.redo = lambda: flt.change_column_name(oname, nname)
+        a.undo = lambda: flt.change_column_name(nname, oname)
+        a.redo()
+        self.acts.append(a)
+
     def adjust_filter(self, flt):
         """ if the filter can not be used anymore returns False
             and removes it from used_filters
         """
+        tab = self.table
         # removes
         for c in filter(lambda x: x.no_promote(), self.citems):
             if flt.uses_column(c.col):
-                if flt in self.table.used_filters:
-                    self.table.used_filters.remove(flt)
-                return False
+                a1 = command.ActRemoveListEntry(tab.all_anon_filters, flt)
+                a2 = command.ActRemoveListEntry(tab.used_filters, flt)
+                a1.redo()
+                a2.redo()
+                self.acts.extend([a1, a2])
         # new names
         for c in filter(lambda x: x.new_name != x.col.name, self.citems):
-            flt.change_column_name(c.col.name, c.new_name)
-        return True
+            if flt.uses_column(c.col):
+                self.act_change_filter_column_name(flt, c.col.name, c.new_name)
 
     def implicit_removes(self):
         'remove columns which depend on removed or repr_changed columns'
@@ -416,9 +482,11 @@ class TableConverter:
 
     def _alter_origs(self):
         oitems = [x for x in self.citems if x.col.is_original()]
+
         # remove columns
         for it in filter(lambda x: x.do_remove, oitems):
-            self.table.remove_column(it.col)
+            it.act_remove_column()
+
         # rename columns by: alter to tmp, create new, copy, drop tmp
         colnames_before = self.table._original_collist(False)
         for i, cb in enumerate(colnames_before):
@@ -426,46 +494,95 @@ class TableConverter:
             if not cn.startswith('_status'):
                 try:
                     itm = self.colitem(cn)
+                    # here we add casting functions for
+                    # internal representation
                     colnames_before[i] = itm.internal_repr_change_line()
                 except KeyError:
                     pass
+
+        # rename/change representation for new table columns
         for c in oitems:
-            c.col.rename(c.new_name)
-            c.col.set_repr_delegate(c.new_repr)
-        colnames_after = self.table._original_collist(True)
-        tmpname = '_alter ' + self.table.ttab_name
-        qr = 'ALTER TABLE "{}" RENAME TO "{}"'.format(
-                self.table.ttab_name, tmpname)
-        self.table.query(qr)
-        self.table._create_ttab()
+            if c.new_name != c.col.name:
+                c.act_rename_column()
+            if c.has_repr_changes():
+                c.act_set_new_repr()
+
+        # if internal representation doesn't change => exit
         colnames_after = self.table._original_collist(False)
-        qr = 'INSERT INTO "{}" ({}) SELECT {} FROM "{}"'.format(
-            self.table.ttab_name,
-            ', '.join(colnames_after),
-            ', '.join(colnames_before),
-            tmpname)
-        self.table.query(qr)
-        self.table.query('DROP TABLE "{}"'.format(tmpname))
+        if basic.list_equal(colnames_after, colnames_before):
+            return
+
+        class Act:
+            def __init__(self, tab, cnbefore, cnafter):
+                self.tab = tab
+                self.proj = tab.proj
+                self.tmpname = '_alter{} {}'.format(basic.uniint(),
+                                                    self.tab.ttab_name)
+                qr = 'ALTER TABLE "{}" RENAME TO "{}"'.format(
+                        self.tab.ttab_name, self.tmpname)
+                self.tab.query(qr)
+                self.tab._create_ttab()
+                qr = 'INSERT INTO "{}" ({}) SELECT {} FROM "{}"'.format(
+                    self.tab.ttab_name,
+                    ', '.join(cnafter),
+                    ', '.join(cnbefore),
+                    self.tmpname)
+                self.tab.query(qr)
+
+            def undo(self):
+                self.proj.sql.swap_tables(self.tmpname, self.tab.ttab_name)
+
+            def redo(self):
+                self.proj.sql.swap_tables(self.tmpname, self.tab.ttab_name)
+
+            def __del__(self):
+                self.tab.query('DROP TABLE "{}"'.format(self.tmpname))
+
+        a = Act(self.table, colnames_before, colnames_after)
+        self.acts.append(a)
+
+    def act_fix_column_order(self, clist):
+        ind1, ind2 = [], []
+        for i, c in enumerate(clist):
+            if c.is_category():
+                ind1.append(i)
+            else:
+                ind2.append(i)
+        a = command.ActReorderList(clist, ind1 + ind2)
+        a.redo()
+        self.acts.append(a)
 
     def _final_reassemble(self):
         # table.columns dictionary
         # check columns ordering in case of data types transitions
         # between categorical and real.
-        nc = collections.OrderedDict()
-        for k, v in self.table.columns.items():
-            if v.is_category():
-                nc[v.name] = v
-        for k, v in self.table.columns.items():
-            if not v.is_category():
-                nc[v.name] = v
-        self.table._fix_column_order(self.table.visible_columns)
-        self.table._fix_column_order(self.table.all_columns)
-        assert len(nc) == len(self.table.columns)
-        self.table.columns = nc
+        self.act_fix_column_order(self.table.all_columns)
+        self.act_fix_column_order(self.table.visible_columns)
 
-        # check used filters for applicability
-        self.table.used_filters = list(filter(
-            lambda x: x.is_applicable(self.table), self.table.used_filters))
+        for f in self.table.used_filters[:]:
+            if not f.is_applicable(self.table):
+                a = command.ActRemoveListEntry(self.table.used_filters, f)
+                a.redo()
+                self.acts.append(a)
 
-        # need rewrite
-        self.table.set_need_rewrite(True)
+
+class ConvertTable(command.Command):
+    def __init__(self, conv):
+        super().__init__(conv=conv)
+        self.acts = []
+
+    def _exec(self):
+        self.conv.set_acts(self.acts)
+        self.conv.apply()
+        return True
+
+    def _undo(self):
+        for a in self.acts[::-1]:
+            a.undo()
+
+    def _redo(self):
+        for a in self.acts:
+            a.redo()
+
+    def _clear(self):
+        self.acts.clear()
