@@ -35,5 +35,7 @@
     <file alias="fold">fold.svg</file>
     <file alias="unfold">unfold.svg</file>
     <file alias="width">width.svg</file>
+    <file alias="undo">undo.svg</file>
+    <file alias="redo">redo.svg</file>
 </qresource>
 </RCC>

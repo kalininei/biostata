@@ -9,7 +9,7 @@ def _insert_query(self, origquery):
         Origquery should return chain(columns, status_columns) in order
         defined by self.columns """
     sqlcols, sqlcols2 = [], []
-    for c in itertools.islice(self.columns.values(), 1, None):
+    for c in itertools.islice(self.all_columns, 1, None):
         sqlcols.append(c.sql_line())
         sqlcols2.append(c.status_column.sql_line())
     qr = 'INSERT INTO "{tabname}" ({collist}) {select_from_orig}'.format(
@@ -54,14 +54,14 @@ def copy_view_table(tab_name, origtab, cols, proj):
     """ Table derived as a copy of a current view of another table
     """
     _given_cols_names = list(cols.values())
-    _given_cols_list = [origtab.columns[x] for x in cols.keys()]
+    _given_cols_list = [origtab.get_column(x) for x in cols.keys()]
 
     def init_columns(self):
-        self.columns = collections.OrderedDict()
-        self.columns['id'] = bcol.build_id()
+        self.all_columns = []
+        self.all_columns.append(bcol.build_id())
         for k, v in zip(_given_cols_names, _given_cols_list):
             col = bcol.build_deep_copy(v, k)
-            self.columns[k] = col
+            self.all_columns.append(col)
 
     def fill_ttab(self):
         # build a query to the original table
@@ -72,12 +72,7 @@ def copy_view_table(tab_name, origtab, cols, proj):
 
         _insert_query(self, origquery)
 
-    ret = dtab.DataTable(tab_name, proj, init_columns, fill_ttab, False)
-
-    # explicit copies
-    ret._default_group_method = origtab._default_group_method
-
-    return ret
+    return dtab.DataTable(tab_name, proj, init_columns, fill_ttab, False)
 
 
 # ============================== JoinTable
@@ -108,12 +103,12 @@ def join_table(tab_name, joinentries, proj):
     tabs = [proj.get_table(x) for x in tabnames]
 
     def init_columns(self):
-        self.columns = collections.OrderedDict()
-        self.columns['id'] = bcol.build_id()
+        self.all_columns = []
+        self.all_columns.append(bcol.build_id())
         for te, table in zip(joinentries, tabs):
             for onm, tnm in zip(te.view_columns, te.name_columns):
-                ocol = table.columns[onm]
-                self.columns[tnm] = bcol.build_deep_copy(ocol, tnm)
+                ocol = table.get_column(onm)
+                self.all_columns.append(bcol.build_deep_copy(ocol, tnm))
 
     def fill_ttab(self):
         # 1. temporary add comparison columns
@@ -121,16 +116,16 @@ def join_table(tab_name, joinentries, proj):
             for i, kcol, kfun in zip(itertools.count(1),
                                      te.key_columns,
                                      te.key_mappings):
-                depcol = table.columns[kcol]
+                depcol = table.get_column(kcol)
                 newcol = bcol.custom_tmp_function("__k{}".format(i), kfun,
                                                   [depcol], False, "INT")
-                table.add_column(newcol)
+                table.all_columns.append(newcol)
         # 2. build table queries
         tabqueries = []
         for j, te, table in zip(itertools.count(1), joinentries, tabs):
-            cols = [table.columns[x] for x in te.view_columns]
+            cols = [table.get_column(x) for x in te.view_columns]
             for i in range(len(te.key_columns)):
-                cols.append(table.columns["__k{}".format(i+1)])
+                cols.append(table.get_column("__k{}".format(i+1)))
             tabqueries.append("({1}) __t{0}".format(j, table._compile_query(
                 cols,
                 status_adds=True,
@@ -172,7 +167,7 @@ def join_table(tab_name, joinentries, proj):
         # 7. remove comparison columns
         for table in tabs:
             for i, kcol in zip(itertools.count(1), te.key_columns):
-                col = table.columns["__k{}".format(i)]
-                table.remove_column(col)
+                col = table.get_column("__k{}".format(i))
+                table.all_columns.remove(col)
 
     return dtab.DataTable(tab_name, proj, init_columns, fill_ttab, False)

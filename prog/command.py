@@ -67,6 +67,8 @@ class CommandFlow(object):
         self._curpos = -1
         # commands[i <= startposition] cannot be undone
         self._startpos = -1
+        # signal which is emitted after any do/redo/undo action
+        self.command_done = basic.BSignal()
 
     def com(self, i):
         "-> Command. Get a command by index"
@@ -108,6 +110,7 @@ class CommandFlow(object):
             if self._commands[self._curpos+1].do():
                 self._curpos += 1
                 self.adjust_commands_count()
+                self.command_done.emit()
 
     def adjust_commands_count(self):
         while self._curpos > self.maxundo:
@@ -132,10 +135,22 @@ class CommandFlow(object):
         if (self.can_undo()):
             self._curpos -= 1
             self._commands[self._curpos + 1].undo()
+            self.command_done.emit()
 
     def undo_all(self):
         while (self.can_undo()):
             self.undo_prev()
+
+
+class ActNone:
+    def __init__(self):
+        pass
+
+    def redo(self):
+        pass
+
+    def undo(self):
+        pass
 
 
 class ActRemoveListEntry:

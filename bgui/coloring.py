@@ -61,7 +61,7 @@ class Coloring:
 
     def set_column(self, datatab, cname):
         self.color_by = cname
-        self.dt_type = datatab.columns[cname].dt_type
+        self.dt_type = datatab.get_column(cname).dt_type
 
         if self.dt_type in ["REAL", "INT"]:
             self._global_limits = list(datatab.get_raw_minmax(cname, True))
@@ -70,7 +70,7 @@ class Coloring:
             posible_values = datatab.get_distinct_column_raw_vals(cname, True)
             if None in posible_values:
                 posible_values.remove(None)
-            col = datatab.columns[cname]
+            col = datatab.get_column(cname)
             self._global_values_dictionary = collections.OrderedDict()
             for i, pv in enumerate(posible_values):
                 self._global_values_dictionary[pv] = (i, col.repr(pv))
@@ -82,7 +82,7 @@ class Coloring:
         if not self.use:
             return
         # check if datatab contains column, otherwise switch to id
-        if self.color_by not in datatab.columns:
+        if self.color_by not in [c.name for c in datatab.all_columns]:
             self.set_column(datatab, 'id')
 
         self._row_colors = [None] * datatab.n_rows()
@@ -134,7 +134,7 @@ class Coloring:
                         self._global_values_dictionary)
             # Add values which do not present in global dictionary.
             # This could happen f.e. for collapsed TEXT data types
-            col = datatab.columns[self.color_by]
+            col = datatab.get_column(self.color_by)
             for v in sorted(dd):
                 if v not in self._values_dictionary:
                     self._values_dictionary[v] = (

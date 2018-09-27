@@ -6,6 +6,7 @@ from bgui import docks
 from bgui import qtcommon
 from bgui import mainacts
 from prog import basic
+import prog
 
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -16,7 +17,7 @@ class MainWindow(QtWidgets.QMainWindow):
     database_opened = QtCore.pyqtSignal(str)
     database_closed = QtCore.pyqtSignal()
 
-    def __init__(self, proj):
+    def __init__(self, flow, proj, opts):
         'proj - prog.projroot.ProjectDB'
         super().__init__()
         # init position (will be changed by opts data)
@@ -28,9 +29,13 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # data
         self.proj = proj
+        self.flow = flow
+        self.opts = opts
+
         self.models = []
+        self.tabframes = []
         self.active_model = None
-        self.reload_options(proj.opts)
+        self.reload_options()
 
         # assemble actions
         self._build_acts()
@@ -47,12 +52,10 @@ class MainWindow(QtWidgets.QMainWindow):
             basic.ignore_exception(e)
 
         # signals to slots
-        self.active_model_repr_changed.connect(self._update_menu_status)
+        self.flow.command_done.add_subscriber(self._update_menu_status)
         self.active_model_changed.connect(self._update_menu_status)
-        self.wtab.currentChanged.connect(self._tab_changed)
         self.database_saved.connect(lambda x: self._update_menu_status())
-        self.database_opened.connect(lambda x: self._update_menu_status())
-        self.database_closed.connect(self._update_menu_status)
+        self.wtab.currentChanged.connect(self._tab_changed)
         QtWidgets.qApp.aboutToQuit.connect(self._on_quit)
 
         # Load data
@@ -103,6 +106,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.filemenu.addAction(self.acts['Open table in external viewer'])
         self.filemenu.addSeparator()
         self.filemenu.addAction(self.acts['Quit'])
+
+        # --- Edit
+        self.editmenu = menubar.addMenu('Edit')
+        self.editmenu.addAction(self.acts['Undo'])
+        self.editmenu.addAction(self.acts['Redo'])
 
         # --- View
         self.viewmenu = menubar.addMenu('View')
@@ -164,8 +172,7 @@ class MainWindow(QtWidgets.QMainWindow):
             '<b>BioStat Analyser</b> <br><br>'
             'Version {0} <br><br>'
             '<a href="http://{1}/releases/latest">{1}</a>'
-            ''.format(self.opts.version(),
-                      "www.github.com/kalininei/biostata/")))
+            ''.format(prog.version, "www.github.com/kalininei/biostata/")))
         self.aboutmenu.addAction(aboutbiostata)
         aboutqt = QtWidgets.QAction('About Qt', self)
         aboutqt.triggered.connect(QtWidgets.QApplication.aboutQt)
@@ -178,6 +185,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.toolbar.addAction(self.acts['New database'])
         self.toolbar.addAction(self.acts['Open database'])
         self.toolbar.addAction(self.acts['Save'])
+        self.toolbar.addSeparator()
+
+        self.toolbar.addAction(self.acts['Undo'])
+        self.toolbar.addAction(self.acts['Redo'])
         self.toolbar.addSeparator()
 
         self.toolbar.addAction(self.acts['Import tables...'])
@@ -258,7 +269,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def zoom_font(self, delta):
         self.opts.basic_font_size += delta
-        self.reload_options(self.opts)
+        self.reload_options()
 
     def saveto(self, fname):
         try:
@@ -267,7 +278,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.database_saved.emit(fname)
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
-        self.update_tabnames()
 
     def save(self):
         try:
@@ -275,7 +285,6 @@ class MainWindow(QtWidgets.QMainWindow):
             self.database_saved.emit(self.proj._curname)
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
-        self.update_tabnames()
 
     def _load_database(self, fname):
         import pathlib
@@ -301,7 +310,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setWindowTitle(self.proj._curname + " - BioStat Analyser")
 
     def _close_database(self):
-        self.proj.close_main_database()
         self.active_model = None
         self.models = []
         self.wtab.clear()
@@ -334,14 +342,6 @@ class MainWindow(QtWidgets.QMainWindow):
     def active_tview(self):
         return self.tabframes[self.active_index()]
 
-    def add_model(self, newmodel, make_active=True):
-        self.models.append(newmodel)
-        self.tabframes.append(tview.TableView(newmodel, self.wtab))
-        self.wtab.addTab(self.tabframes[-1], self.tabframes[-1].table_name())
-        if make_active:
-            self.wtab.setCurrentIndex(len(self.models) - 1)
-        return len(self.models) - 1
-
     def _forward_repr_changed(self, a, b):
         self.active_model_repr_changed.emit()
 
@@ -358,15 +358,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.active_model = None
         self.active_model_changed.emit()
 
-    def update_tabnames(self):
-        for i, t in enumerate(self.models):
-            cap = t.table_name()
-            if t.dt.need_rewrite:
-                cap += '*'
-            self.wtab.setTabText(i, cap)
-
     def update(self):
-        self.update_tabnames()
         if self.active_model:
             self.active_model.update()
 
@@ -374,16 +366,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if self.active_model:
             self.active_model.view_update()
 
-    def reload_options(self, opts):
+    def reload_options(self):
         from bgui import cfg
 
-        self.opts = opts
-        cfg.ViewConfig.set_real_precision(opts.real_numbers_prec)
-        cfg.ViewConfig.get()._basic_font_size = opts.basic_font_size
+        cfg.ViewConfig.set_real_precision(self.opts.real_numbers_prec)
+        cfg.ViewConfig.get()._basic_font_size = self.opts.basic_font_size
         cfg.ViewConfig.get()._show_bool =\
             {'icons': cfg.ViewConfig.BOOL_AS_ICONS,
              'codes': cfg.ViewConfig.BOOL_AS_CODES,
-             'Yes/No': cfg.ViewConfig.BOOL_AS_YESNO}[opts.show_bool_as]
+             'Yes/No': cfg.ViewConfig.BOOL_AS_YESNO}[self.opts.show_bool_as]
         cfg.ViewConfig.get().refresh()
         self.opts.basic_font_size = cfg.ViewConfig.get()._basic_font_size
         self.view_update()

@@ -277,24 +277,6 @@ class DataTable(object):
     #     self.visible_columns.insert(i, col)
     #     return col
 
-    def set_data_group_function(self, method):
-        if method == 'amean':
-            m = "AVG"
-        elif method == 'max':
-            m = "MAX"
-        elif method == 'min':
-            m = "MIN"
-        elif method == 'median':
-            m = "median"
-        elif method == 'median+':
-            m = "medianp"
-        elif method == 'median-':
-            m = "medianm"
-        else:
-            raise NotImplementedError
-        for c in self.all_columns:
-            c.real_data_groupfun = m
-
     # def remove_column(self, col):
     #     try:
     #         self.columns.pop(col.name)
@@ -815,7 +797,8 @@ class ViewedData:
                 return {"id": self.values[0]}
             else:
                 ret = {}
-                for n in self.model.group_by:
+                for i in self.model.group_by:
+                    n = self.model.get_column(iden=i).name
                     try:
                         ret[n] = self.value_by_name(n)
                     except KeyError:

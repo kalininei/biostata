@@ -20,6 +20,7 @@ class _ImportDialog(dlgs.OkCancelDialog):
         self.proj = proj
         self.fn = fn
         self.require_editor = require_editor
+        self.com = None
 
         self.buttonbox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         # mainframe = upperframe + lowerframe
@@ -63,12 +64,9 @@ class _ImportDialog(dlgs.OkCancelDialog):
         try:
             if self.spec.confirm_input():
                 od = self.spec.ret_value()
-                tab = self.load_table(od)
-                if od.read_cap:
-                    cap = tab[0]
-                    tab = tab[1:]
-                else:
-                    cap = None
+                self.load_table(od)
+                tab = self.com.tab
+                cap = self.com.caps
                 self.draw_table(cap, tab)
                 self.buttonbox.button(
                         QtWidgets.QDialogButtonBox.Ok).setEnabled(True)
@@ -106,8 +104,11 @@ class _ImportDialog(dlgs.OkCancelDialog):
             if len(set(cnames)) != len(cnames):
                 raise Exception("Column names should be unique.")
 
-            tab = self.table.model().get_tab()
-            self._ret_value = name, tab, columns
+            self.com.tab = self.table.model().get_tab()
+            self.com.caps = [c[0] for c in columns]
+            self.com.tps = [c[1] for c in columns]
+            self.com.dnames = [c[2] for c in columns]
+            self._ret_value = self.com
             return super().accept()
         except Exception as e:
             qtcommon.message_exc(self, "Invalid input", e=e)
@@ -424,7 +425,8 @@ class ImportPlainText(_ImportDialog):
         return PlainTextOptions(self.get_init_tabname(), self)
 
     def load_table(self, opt):
-        return import_tab.split_plain_text(self.fn, opt)
+        self.com = import_tab.ImportTabFromTxt(self.proj, self.fn, opt)
+        self.com._prebuild()
 
 
 class XlsxOptions(optview.OptionsHolderInterface, QtWidgets.QFrame):
@@ -478,4 +480,5 @@ class ImportXlsx(_ImportDialog):
         return XlsxOptions(self.get_init_tabname(), self.fn, self)
 
     def load_table(self, opt):
-        return import_tab.parse_xlsx_file(self.fn, opt)
+        self.com = import_tab.ImportTabFromXlsx(self.proj, self.fn, opt)
+        self.com._prebuild()

@@ -238,7 +238,7 @@ class DictInfoItem:
             # used by calculation
             for t in proj.data_tables:
                 dt = []
-                for c in t.columns.values():
+                for c in t.all_columns:
                     if c.dt_type in ['BOOL', 'ENUM']:
                         if c.repr_delegate.dict is self.olditem:
                             dt.append(c.name)
@@ -258,7 +258,8 @@ class DictInfoItem:
         """
         pdict = proj.dictionaries
         ret, ret2 = [], []
-        for oldname, olditem in pdict.items():
+        for olditem in pdict:
+            oldname = olditem.name
             itm = next((x for x in ditems
                         if x.olditem is not None and
                         x.olditem.name == oldname), None)
@@ -460,7 +461,7 @@ class DictInformation(dlgs.OkCancelDialog):
         self.proj = proj
         self.ditems = []
         self._ret_value = None
-        for v in proj.dictionaries.values():
+        for v in proj.dictionaries:
             self.ditems.append(DictInfoItem(v, proj))
 
         # mainframe = qtree widget + right_frame

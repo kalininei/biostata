@@ -232,12 +232,12 @@ class TabColumnsChoice(QtWidgets.QGroupBox):
         self.setTitle(tab.table_name())
         self.setLayout(QtWidgets.QVBoxLayout())
         self.wtab = QtWidgets.QTableWidget(self)
-        self.wtab.setRowCount(len(tab.columns))
+        self.wtab.setRowCount(len(tab.all_columns))
         self.wtab.setColumnCount(3)
         # zero margins
         self.layout().setContentsMargins(0, 0, 0, 0)
         self.setFlat(True)
-        for i, c in enumerate(tab.columns.values()):
+        for i, c in enumerate(tab.all_columns):
             itm1 = QtWidgets.QTableWidgetItem(c.name)
             itm1.setCheckState(QtCore.Qt.Unchecked)
             itm2 = QtWidgets.QTableWidgetItem(c.col_type())
@@ -265,7 +265,7 @@ class TabColumnsChoice(QtWidgets.QGroupBox):
         self.adjust_size()
         self.wtab.itemChanged.connect(self.adjust_size)
         # color groups
-        self.color_group = [-1] * len(tab.columns)
+        self.color_group = [-1] * len(tab.all_columns)
 
     def adjust_size(self, itm=None):
         self.wtab.setMinimumWidth(self.wtab.horizontalHeader().length()+5)
@@ -308,7 +308,7 @@ class TabKeysRow:
         self.irow = irow
         for i, t in enumerate(proj.data_tables):
             self.wid.append(QtWidgets.QComboBox(parent))
-            for col in t.columns.values():
+            for col in t.all_columns:
                 self.wid[-1].addItem(col.name)
             self.wid[-1].setVisible(parent.visibility[i])
             self.wid[-1].addItem('')
@@ -395,7 +395,7 @@ class TabKeysRow:
             itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
             colnames = [self.wid[itab].currentText() for itab in itabs]
             tabs = [self.proj.data_tables[itab] for itab in itabs]
-            cols = [t.columns[c] for t, c in zip(tabs, colnames)]
+            cols = [t.get_column(c) for t, c in zip(tabs, colnames)]
             self.can_use_simple_mapping = bcol.ColumnInfo.are_same(cols)
             self.init_mapping()
         self.set_warning()
@@ -410,7 +410,8 @@ class TabKeysRow:
         else:
             itabs = [i for i, x in enumerate(self.cb_col) if x.isVisible()]
             tabs = [self.proj.data_tables[x] for x in itabs]
-            cols = [tabs[x].columns[self.wid[x].currentText()] for x in itabs]
+            cols = [tabs[x].get_column(self.wid[x].currentText())
+                    for x in itabs]
             im = prebuild_mapping(tabs, cols)
             for i, m in zip(itabs, im):
                 self.mapping[i] = m
@@ -443,7 +444,7 @@ class TabKeysRow:
         for itab in itabs:
             tables.append(self.proj.data_tables[itab])
             cn = self.wid[itab].currentText()
-            columns.append(self.proj.data_tables[itab].columns[cn])
+            columns.append(self.proj.data_tables[itab].get_column(cn))
             cap = columns[-1].name
             tname = self.proj.data_tables[itab].table_name()
             if cap.find(tname) < 0:

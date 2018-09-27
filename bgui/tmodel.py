@@ -234,10 +234,10 @@ class TabModel(QtCore.QAbstractTableModel):
         return [c.name for c in self.dt.visible_columns]
 
     def all_column_names(self):
-        return list(self.dt.columns.keys())
+        return [x.name for x in self.dt.all_columns]
 
     def has_collapses(self):
-        for c in self.dt.columns.values():
+        for c in self.dt.all_columns:
             if hasattr(c, "_collapsed_categories"):
                 return True
         return False
@@ -261,12 +261,12 @@ class TabModel(QtCore.QAbstractTableModel):
         if icol is not None:
             return self.dt.visible_columns[icol]
         if iden is not None:
-            for col in self.dt.columns.values():
+            for col in self.dt.all_columns:
                 if col.id == iden:
                     return col
         if name is not None:
             try:
-                return self.dt.columns[name]
+                return self.dt.get_column(name)
             except KeyError:
                 pass
         return None
@@ -278,11 +278,6 @@ class TabModel(QtCore.QAbstractTableModel):
     def rem_all_filters(self):
         self.dt.all_anon_filters.clear()
         self.dt.used_filters.clear()
-
-    def group_rows(self, catnames, method=None):
-        self.dt.group_by = copy.deepcopy(catnames)
-        if method:
-            self.dt.set_data_group_function(method)
 
     def unfold_row(self, index, do_unfold=None):
         ir = index.row()
@@ -330,36 +325,11 @@ class TabModel(QtCore.QAbstractTableModel):
 
     def collapsed_categories_columns(self):
         cats = []
-        for c in self.dt.columns.values():
+        for c in self.dt.all_columns:
             if not c.is_original() and\
                     c.sql_delegate.function_type == "collapsed_categories":
-                cats.append(c.name)
+                cats.append(c)
         return cats
-
-    def remove_collapsed(self, what, do_show=True):
-        """ removes collapsed column, show all categories which were collapsed
-
-            what - list of column names of CollapsedCategories entries
-                   or "all" special word
-            do_show - whether to show all parent categories
-            returns True if smth was removed
-                    False otherwise
-        """
-        if what == 'all':
-            cats = self.collapsed_categories_columns()
-            return self.remove_collapsed(cats, do_show)
-        if len(what) == 0:
-            return False
-        cols = [self.dt.columns[w] for w in what]
-        showthis = set()
-        for c in cols:
-            for c2 in c.sql_delegate.deps:
-                if c2 in self.dt.all_columns:
-                    showthis.add(c2)
-            self.dt.remove_column(c)
-        for c in showthis:
-            self.dt.set_visibility(c, True)
-        return True
 
     def switch_coloring_mode(self):
         self.coloring.use = not self.coloring.use

@@ -3,7 +3,7 @@ from prog import basic
 from bgui import dlgs
 from bgui import qtcommon
 from bgui import tview
-from bgui import tmodel
+from bgui import maincoms
 from bdata import derived_tabs
 from fileproc import export
 
@@ -26,6 +26,7 @@ class MainAct(QtWidgets.QAction):
         self.name = title
         self.mainwin = mainwin
         self.proj = mainwin.proj
+        self.flow = mainwin.flow
         self.amodel = lambda: mainwin.active_model
         self.aview = lambda: mainwin.active_tview()
 
@@ -46,7 +47,8 @@ class ActNewDatabase(MainAct):
                          hotkey=QtGui.QKeySequence.New)
 
     def do(self):
-        self.mainwin._close_database()
+        com = maincoms.ComNewDatabase(self.mainwin)
+        self.flow.exec_command(com)
 
 
 class ActQuit(MainAct):
@@ -69,7 +71,8 @@ class ActOpenDatabase(MainAct):
         filename = QtWidgets.QFileDialog.getOpenFileName(
                 self.mainwin, "Open database", filter=flt)
         if filename[0]:
-            self.mainwin._load_database(fname=filename[0])
+            com = maincoms.ComOpenDatabase(fname=filename[0])
+            self.flow.exec_command(com)
 
 
 class ActCloseDatabase(MainAct):
@@ -81,7 +84,8 @@ class ActCloseDatabase(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        self.mainwin._close_database()
+        com = maincoms.ComNewDatabase(self.mainwin)
+        self.flow.exec_command(com)
 
 
 class ActSave(MainAct):
@@ -91,7 +95,7 @@ class ActSave(MainAct):
                          hotkey=QtGui.QKeySequence.Save)
 
     def isactive(self):
-        return self.proj.need_save()
+        return self.proj.sql.has_A
 
     def do(self):
         self.mainwin.save()
@@ -107,7 +111,11 @@ class ActSaveAs(MainAct):
         fname, _ = QtWidgets.QFileDialog.getSaveFileName(
             self.mainwin, "Save database as", self.proj.curdir(), flt)
         if fname:
-            self.mainwin.saveto(fname)
+            self.saveto(fname)
+
+    def saveto(self, fname):
+        com = maincoms.ComSaveDB(self.mainwin, fname)
+        self.flow.exec_command(com)
 
 
 class ActImport(MainAct):
@@ -137,11 +145,9 @@ class ActImport(MainAct):
                 qtcommon.message_exc(self.mainwin, "Import error", e=e)
                 return
             if dialog2.exec_():
-                name, tab, cols = dialog2.ret_value()
-                newdt = derived_tabs.explicit_table(name, cols, tab, self.proj)
-                self.proj.add_table(newdt)
-                newmodel = tmodel.TabModel(newdt)
-                self.mainwin.add_model(newmodel, True)
+                comimp = dialog2.ret_value()
+                com = maincoms.ComImport(self.mainwin, comimp)
+                self.flow.exec_command(com)
 
 
 class ActExport(MainAct):
@@ -207,7 +213,10 @@ class ActIncreaseFont(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        self.mainwin.zoom_font(2)
+        sz = self.mainwin.opts.basic_font_size + 2
+        com = maincoms.ComChangeOpt(self.mainwin,
+                                    {"basic_font_size": sz})
+        self.flow.exec_command(com)
 
 
 class ActDecreaseFont(MainAct):
@@ -220,7 +229,10 @@ class ActDecreaseFont(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        self.mainwin.zoom_font(-2)
+        sz = self.mainwin.opts.basic_font_size - 2
+        com = maincoms.ComChangeOpt(self.mainwin,
+                                    {"basic_font_size": sz})
+        self.flow.exec_command(com)
 
 
 class ActToDataWidth(MainAct):
@@ -232,7 +244,9 @@ class ActToDataWidth(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        self.aview().width_adjust('data')
+        rw = self.aview().adjusted_width('data')
+        com = maincoms.ComColumnWidth(self.mainwin, rw)
+        self.flow.exec_command(com)
 
 
 class ActToCaptionDataWidth(MainAct):
@@ -243,7 +257,9 @@ class ActToCaptionDataWidth(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        self.aview().width_adjust('data/caption')
+        rw = self.aview().adjusted_width('data/caption')
+        com = maincoms.ComColumnWidth(self.mainwin, rw)
+        self.flow.exec_command(com)
 
 
 class ActToConstantWidth(MainAct):
@@ -259,7 +275,10 @@ class ActToConstantWidth(MainAct):
         dialog = dlgs.InputInteger("Enter width", self.mainwin,
                                    dv, minvalue=mv)
         if dialog.exec_():
-            self.aview().width_adjust(dialog.ret_value())
+            v = dialog.ret_value()
+            rw = {c.id: v for c in self.amodel().dt.all_columns}
+            com = maincoms.ComColumnWidth(self.mainwin, rw)
+            self.flow.exec_command(com)
 
 
 class ActConfig(MainAct):
@@ -270,9 +289,9 @@ class ActConfig(MainAct):
     def do(self):
         dialog = dlgs.OptionsDlg(self.mainwin.opts, self.mainwin)
         if dialog.exec_():
-            dialog.ret_value()
-            self.mainwin.opts.save()
-            self.mainwin.reload_options(self.mainwin.opts)
+            ret = dialog.ret_value()
+            com = maincoms.ComChangeOpt(self.mainwin, ret)
+            self.flow.exec_command(com)
 
 
 class ActFoldAll(MainAct):
@@ -288,7 +307,8 @@ class ActFoldAll(MainAct):
         return self.amodel()._unfolded_groups is not False
 
     def do(self):
-        self.amodel().unfold_all_rows(False)
+        com = maincoms.ComFoldRows(self.mainwin, 'all', True)
+        self.flow.exec_command(com)
 
 
 class ActUnfoldAll(MainAct):
@@ -304,7 +324,8 @@ class ActUnfoldAll(MainAct):
         return self.amodel()._unfolded_groups is not True
 
     def do(self):
-        self.amodel().unfold_all_rows(True)
+        com = maincoms.ComFoldRows(self.mainwin, 'all', False)
+        self.flow.exec_command(com)
 
 
 class ActToggleColoring(MainAct):
@@ -319,7 +340,8 @@ class ActToggleColoring(MainAct):
         return self.amodel().use_coloring()
 
     def do(self):
-        self.amodel().switch_coloring_mode()
+        com = maincoms.ComToggleColoring(self.amodel())
+        self.flow.exec_command(com)
 
 
 class ActSetColoring(MainAct):
@@ -334,7 +356,8 @@ class ActSetColoring(MainAct):
         dialog = dlgs.RowColoringDlg(clist, self.mainwin)
         if dialog.exec_():
             ret = dialog.ret_value()
-            self.amodel().set_coloring(ret[0], ret[1], ret[2])
+            com = maincoms.ComSetColoring(self.amodel(), *ret)
+            self.flow.exec_command(com)
 
 
 class ActCollapseAll(MainAct):
@@ -346,8 +369,9 @@ class ActCollapseAll(MainAct):
 
     def do(self):
         delim = ActCollapse.last_used_delimiter
-        if self.amodel().collapse_categories('all', True, delim):
-            self.mainwin.update()
+        com = maincoms.ComCollapseCategories(
+            self.amodel(), 'all', delim, True)
+        self.flow.exec_command(com)
 
 
 class ActRemoveCollapses(MainAct):
@@ -359,8 +383,8 @@ class ActRemoveCollapses(MainAct):
                 len(self.amodel().collapsed_categories_columns()) > 0
 
     def do(self):
-        if self.amodel().remove_collapsed('all', True):
-            self.mainwin.update()
+        com = maincoms.ComRemoveCollapses(self.amodel())
+        self.flow.exec_command(com)
 
 
 class ActCollapse(MainAct):
@@ -377,10 +401,10 @@ class ActCollapse(MainAct):
             self.amodel().dt.get_category_names(), self.mainwin)
         if dialog.exec_():
             r = dialog.ret_value()
-            a = self.amodel().collapse_categories(r[2], r[0], r[1])
-            if a:
-                self.last_used_delimiter = r[1]
-                self.mainwin.update()
+            com = maincoms.ComCollapseCategories(
+                    self.amodel(), r[2], r[1], r[0])
+            self.flow.exec_command(com)
+            self.last_used_delimiter = r[1]
 
 
 class ActGroupRedundancies(MainAct):
@@ -391,9 +415,10 @@ class ActGroupRedundancies(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        self.amodel().group_rows(
-                self.amodel().dt.get_category_names(), 'amean')
-        self.mainwin.update()
+        cn = self.amodel().dt.get_category_names()
+        m = 'amean'
+        com = maincoms.ComGroupCats(self.amodel(), cn, m)
+        self.flow.exec_command(com)
 
 
 class ActGroup(MainAct):
@@ -412,8 +437,8 @@ class ActGroup(MainAct):
             self.group_cats(r[1], r[0])
 
     def group_cats(self, cats, method):
-        self.amodel().group_rows(cats, method)
-        self.mainwin.update()
+        com = maincoms.ComGroupCats(self.amodel(), cats, method)
+        self.flow.exec_command(com)
 
 
 class ActUngroupAll(MainAct):
@@ -427,8 +452,8 @@ class ActUngroupAll(MainAct):
         return self.amodel().has_groups()
 
     def do(self):
-        self.amodel().group_rows([])
-        self.mainwin.update()
+        com = maincoms.ComGroupCats(self.amodel(), [], 'amean')
+        self.flow.exec_command(com)
 
 
 class ActAddFilter(MainAct):
@@ -445,8 +470,8 @@ class ActAddFilter(MainAct):
                                           None, self.mainwin)
         if dialog.exec_():
             flt = dialog.ret_value()
-            self.amodel().add_filter(flt)
-            self.mainwin.update()
+            com = maincoms.ComAddFilter(self.amodel(), flt)
+            self.flow.exec_command(com)
 
 
 class ActRemoveAllFilters(MainAct):
@@ -460,8 +485,8 @@ class ActRemoveAllFilters(MainAct):
         return len(self.amodel().dt.used_filters) > 0
 
     def do(self):
-        self.amodel().rem_all_filters()
-        self.mainwin.update()
+        com = maincoms.ComRemAllFilters(self.amodel())
+        self.flow.exec_command(com)
 
 
 class ActTabColInfo(MainAct):
@@ -480,9 +505,8 @@ class ActTabColInfo(MainAct):
                 if not ret:
                     return
                 else:
-                    for r in ret:
-                        r.apply()
-                    self.mainwin.update()
+                    com = maincoms.ComConvertColumns(self.mainwin, ret)
+                    self.flow.exec_command(com)
         except Exception as e:
             qtcommon.message_exc(self.mainwin, "Error", e=e)
             self.mainwin.update()
@@ -499,8 +523,8 @@ class ActDictInfo(MainAct):
             if dialog.exec_():
                 ret = dialog.ret_value()
                 if ret:
-                    self.proj.change_dictionaries(ret)
-                    self.mainwin.update()
+                    com = maincoms.ComChangeDictionaries(self.mainwin, ret)
+                    self.flow.exec_command(com)
         except Exception as e:
             qtcommon.message_exc(self.mainwin, "Error", e=e)
             self.mainwin.update()
@@ -518,9 +542,8 @@ class ActCopyTableVis(MainAct):
         dialog = dlgs.NewTableFromVisible(self.amodel().dt, self.mainwin)
         if dialog.exec_():
             dt = dialog.ret_value()
-            self.proj.add_table(dt)
-            newmodel = tmodel.TabModel(dt)
-            self.mainwin.add_model(newmodel)
+            com = maincoms.ComAddTable(self.mainwin, dt)
+            self.flow.exec_command(com)
 
 
 class ActJoinTables(MainAct):
@@ -538,9 +561,8 @@ class ActJoinTables(MainAct):
             try:
                 name, tabentries = dialog.ret_value()
                 dt = derived_tabs.join_table(name, tabentries, self.proj)
-                self.proj.add_table(dt)
-                newmodel = tmodel.TabModel(dt)
-                self.mainwin.add_model(newmodel, True)
+                com = maincoms.ComAddTable(self.mainwin, dt)
+                self.flow.exec_command(com)
             except Exception as e:
                 qtcommon.message_exc(self.mainwin, 'Join error', e=e)
 
@@ -555,13 +577,40 @@ class ActRemoveActiveTable(MainAct):
 
     def do(self):
         try:
-            self.proj.remove_table(self.amodel().dt.table_name())
-            if len(self.mainwin.models) == 1:
-                self.mainwin._set_active_model(None)
-                ind = 0
-            else:
-                ind = self.mainwin.models.index(self.amodel())
-            self.mainwin.models.pop(ind)
-            self.mainwin.wtab.removeTab(ind)
+            # self.proj.remove_table(self.amodel().dt.table_name())
+            # if len(self.mainwin.models) == 1:
+            #     self.mainwin._set_active_model(None)
+            #     ind = 0
+            # else:
+            #     ind = self.mainwin.models.index(self.amodel())
+            # self.mainwin.models.pop(ind)
+            # self.mainwin.wtab.removeTab(ind)
+            com = maincoms.ComRemoveTable(self.mainwin,
+                                          self.mainwin.active_index())
+            self.flow.exec_command(com)
         except Exception as e:
             qtcommon.message_exc(self.mainwin, e=e)
+
+
+class ActUndo(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Undo", icon=":/undo",
+                         hotkey=QtGui.QKeySequence.Undo)
+
+    def isactive(self):
+        return self.flow.can_undo()
+
+    def do(self):
+        self.flow.undo_prev()
+
+
+class ActRedo(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Redo", icon=":/redo",
+                         hotkey=QtGui.QKeySequence.Redo)
+
+    def isactive(self):
+        return self.flow.can_redo()
+
+    def do(self):
+        self.flow.exec_next()

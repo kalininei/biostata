@@ -73,9 +73,10 @@ class BiostataOptions:
     def save(self):
         from bgui import qtcommon
         from prog import basic
+        import prog
         try:
             root = ET.Element('BiostataOptions')
-            root.attrib['version'] = self.version()
+            root.attrib['version'] = prog.version
 
             # representation
             orepr = ET.SubElement(root, "TABLE")

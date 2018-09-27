@@ -7,7 +7,7 @@ def possible_values_list(column, operation, datatab):
     ret = []
 
     def append_col_names(tp):
-        for c in datatab.columns.values():
+        for c in datatab.all_columns:
             if c is not column and c.dt_type == tp:
                 ret.append('"{}"'.format(c.name))
 
@@ -220,7 +220,7 @@ class Filter:
         for k, v in zip(cnames, cvals):
             e = FilterEntry()
             e.concat = "AND" if use_and else "OR"
-            e.column = ColumnDef.from_column(datatab.columns[k])
+            e.column = ColumnDef.from_column(datatab.get_column(k))
             if v is not None:
                 e.action = "=="
                 e.value = v
@@ -231,7 +231,7 @@ class Filter:
 
     @classmethod
     def filter_by_datalist(cls, datatab, cname, vals, do_remove):
-        col = ColumnDef.from_column(datatab.columns[cname])
+        col = ColumnDef.from_column(datatab.get_column(cname))
         if cname == 'id':
             ret = IdFilter()
         else:

@@ -3,7 +3,7 @@ import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
 from bgui import optview, optwdg, coloring, qtcommon
-from bdata import filt
+from prog import filt
 from bdata import derived_tabs
 from bdata import bcol
 
@@ -233,7 +233,7 @@ class CollapseColumnsDlg(SimpleAbstractDialog):
             ])
 
     def ret_value(self):
-        "-> categories list"
+        "-> do_hide, delimiter, colnames"
         od = self.odata()
         ret = [k for k, v in od.cat['All categories'].items() if v]
         return [od.do_hide, od.delim, ret]
@@ -616,16 +616,9 @@ class OptionsDlg(SimpleAbstractDialog):
             ])
 
     def ret_value(self):
-        od = copy.deepcopy(self.odata())
-        need_view_update = not all([self.opts.__dict__[a] == od.__dict__[a]
-                                    for a in ['basic_font_size',
-                                              'show_bool_as',
-                                              'real_numbers_prec']])
-        for a in ['basic_font_size', 'show_bool_as', 'real_numbers_prec',
-                  'external_xlsx_editor', 'external_txt_editor']:
-            self.opts.__dict__[a] = od.__dict__[a]
-        self.opts.open_recent_db_on_start = int(od.open_recent_db_on_start)
-        return need_view_update
+        ret = copy.deepcopy(self.odata().__dict__)
+        ret['open_recent_db_on_start'] = int(ret['open_recent_db_on_start'])
+        return ret
 
 
 @qtcommon.hold_position

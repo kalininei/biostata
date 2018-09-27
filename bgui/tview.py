@@ -3,7 +3,7 @@ import xml.etree.ElementTree as ET
 from PyQt5 import QtWidgets, QtGui, QtCore
 from prog import bsqlproc
 from prog import basic
-from bdata import filt
+from prog import filt
 from bgui import cfg
 from bgui import tmodel
 from bgui import qtcommon
@@ -431,31 +431,31 @@ class TableView(QtWidgets.QTableView):
         txt = '\n'.join(txt)
         QtWidgets.QApplication.clipboard().setText(txt)
 
-    def width_adjust(self, how):
-        """ how = 'data', 'data/caption', int value
+    def adjusted_width(self, how):
+        """ how = 'data', 'data/caption'
         """
+        ret = {}
         for i in range(self.model().columnCount()):
-            self.width_adjust_for_column(i, how)
+            cid = self.model().dt.all_columns[i].id
+            ret[cid] = self.adjusted_width_for_column(i, how)
+        return ret
 
-    def width_adjust_for_column(self, icol, how):
-        if isinstance(how, int):
-            self.horizontalHeader().resizeSection(icol, how)
+    def adjusted_width_for_column(self, icol, how):
+        if how == 'data':
+            r0 = 2
+        elif how == 'data/caption':
+            r0 = 1
         else:
-            if how == 'data':
-                r0 = 2
-            elif how == 'data/caption':
-                r0 = 1
-            else:
-                assert False
-            deleg = self.itemDelegate()
-            ind1 = deleg._linear_index(r0, icol)
-            ind2 = deleg._linear_index(self.model().rowCount(), icol)
-            step = self.model().columnCount()
-            wmax = 0
-            for j in range(ind1, ind2, step):
-                w = self.itemDelegate().display_widgets[j]
-                if w is None:
-                    continue
-                wmax = max(wmax, w.preferred_width())
-            wmax += self.lineWidth()
-            self.horizontalHeader().resizeSection(icol, wmax)
+            assert False
+        deleg = self.itemDelegate()
+        ind1 = deleg._linear_index(r0, icol)
+        ind2 = deleg._linear_index(self.model().rowCount(), icol)
+        step = self.model().columnCount()
+        wmax = 0
+        for j in range(ind1, ind2, step):
+            w = self.itemDelegate().display_widgets[j]
+            if w is None:
+                continue
+            wmax = max(wmax, w.preferred_width())
+        wmax += self.lineWidth()
+        return wmax

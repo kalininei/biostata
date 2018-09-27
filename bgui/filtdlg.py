@@ -3,7 +3,7 @@ import copy
 from PyQt5 import QtWidgets, QtCore
 from bgui import qtcommon
 from bgui import dlgs
-from bdata import filt
+from prog import filt
 
 
 class FilterRow:
@@ -14,7 +14,7 @@ class FilterRow:
         # 3 - action, 4 - value 5 - right paren
         self.cb = [QtWidgets.QComboBox(dlg.ff) for _ in range(6)]
         self.cb[4].setEditable(True)
-        self.columns = list(dlg.datatab.columns.values())
+        self.columns = dlg.datatab.all_columns[:]
         self.current_column = 0
         self.current_action = 0
 

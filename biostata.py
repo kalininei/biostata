@@ -2,7 +2,7 @@
 import sys
 from PyQt5 import QtWidgets
 from bgui import mainwin
-from prog import projroot, basic, bopts
+from prog import projroot, basic, bopts, command
 
 
 def main(app):
@@ -14,8 +14,14 @@ def main(app):
         basic.set_log_message('file: ' + bopts.BiostataOptions.logfile())
         basic.set_ignore_exception(True)
 
+    proj = projroot.ProjectDB()
+    opts = bopts.BiostataOptions()
+    opts.load()
+    flow = command.CommandFlow()
+
     # create window
-    mainwin.MainWindow(projroot.proj).show()
+    mwin = mainwin.MainWindow(flow, proj, opts)
+    mwin.show()
 
     # start gui loop
     QtWidgets.qApp.exec_()
