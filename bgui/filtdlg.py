@@ -93,7 +93,7 @@ class FilterRow:
         elif e.action == "one of":
             self.cb[4].setCurrentText(",".join(map(str, e.value)))
         else:
-            col = self.dlg.datatab.columns[e.column.name]
+            col = self.dlg.datatab.get_column(e.column.name)
             self.cb[4].setCurrentText(str(col.repr(e.value)))
         self.cb[5].setCurrentText(e.paren2)
 

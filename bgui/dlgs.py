@@ -3,9 +3,7 @@ import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
 from bgui import optview, optwdg, coloring, qtcommon
-from prog import filt
 from bdata import derived_tabs
-from bdata import bcol
 
 
 class _BackGroundWorkerCB(QtCore.QThread):
@@ -388,99 +386,6 @@ class RowColoringDlg(SimpleAbstractDialog):
             sh = optwdg.SingleChoiceWImgOptionEntry.max_pic_height
             self.pics[i] = v.pic(sh, sw, True)
             v.set_default_color(self.defcolors[self.odata().none_color])
-
-
-@qtcommon.hold_position
-class NewBoolColumn(SimpleAbstractDialog):
-    def __init__(self, dt, parent=None):
-        # data
-        self.dt = dt
-        super().__init__("New boolean column", parent)
-        self.resize(400, 300)
-
-    def _default_odata(self, obj):
-        "-> options struct with default values"
-        obj.colname = ""
-        obj.colshortname = ""
-        obj.type = "currently visible"
-        obj.used_filters = collections.OrderedDict()
-        obj.reverted = False
-        obj.false_name = "No"
-        obj.true_name = "Yes"
-
-    def _odata_init(self):
-        e = collections.OrderedDict()
-        for f in self.dt.applicable_named_filters():
-            e[f.name] = False
-        self.set_odata_entry("used_filters", e)
-        i = 1
-        while True:
-            try:
-                self.dt.is_valid_column_name("bool" + str(i))
-            except:
-                i += 1
-                continue
-            self.set_odata_entry("colname", "bool" + str(i))
-            self.set_odata_entry("colshortname", "b" + str(i))
-            break
-
-    def olist(self):
-        return optview.OptionsList([
-            ("Name", "Column name", optwdg.SimpleOptionEntry(
-                self, 'colname', dostrip=True)),
-            ("Name", "Short name", optwdg.SimpleOptionEntry(
-                self, "colshortname", dostrip=True)),
-            ("Type", "From", optwdg.SingleChoiceOptionEntry(
-                self, "type", ['currently visible', 'from named filters'])),
-            ("Type", "Filter", optwdg.CheckTreeOptionEntry(
-                self, "used_filters")),
-            ("Type", "Revert", optwdg.BoolOptionEntry(
-                self, "reverted")),
-            ("Representation", "True caption", optwdg.SimpleOptionEntry(
-                self, "true_name", dostrip=True)),
-            ("Representation", "False caption", optwdg.SimpleOptionEntry(
-                self, "false_name", dostrip=True)),
-            ])
-
-    def on_value_change(self, code):
-        if code in ['colname']:
-            if not self.odata().colshortname:
-                self.set_odata_entry('colshortname',
-                                     self.odata().colname[:3].strip())
-
-    def _active_entries(self, entry):
-        if entry.member_name in ['used_filters']:
-            if self.odata().type == "currently visible":
-                return False
-        return True
-
-    def check_input(self):
-        self.dt.is_valid_column_name(self.odata().colname,
-                                     self.odata().colshortname)
-        if self.odata().true_name == self.odata().false_name:
-            raise Exception("True/False captions should not be equal")
-
-    def ret_value(self):
-        "-> new ColumnInfo"
-        if self.odata().type == "from named filters":
-            f_names = [k for k, v in self.odata().used_filters.items() if v]
-            flts = [self.dt.proj.get_named_filter(name) for name in f_names]
-        else:
-            flts = copy.deepcopy(self.dt.used_filters)
-        if self.odata().reverted:
-            for f in flts:
-                f.do_remove = not f.do_remove
-        sql_fun = filt.Filter.compile_sql_line(flts)
-        if len(sql_fun) > 0:
-            # remove WHERE statement
-            sql_fun = sql_fun[6:]
-        else:
-            sql_fun = '1'
-        return bcol.ColumnInfo.build_bool_category(
-                self.odata().colname,
-                self.odata().colshortname,
-                [self.odata().true_name, self.odata().false_name],
-                sql_fun)
 
 
 @qtcommon.hold_position

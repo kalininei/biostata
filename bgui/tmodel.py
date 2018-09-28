@@ -1,4 +1,3 @@
-import copy
 import xml.etree.ElementTree as ET
 from PyQt5 import QtCore, QtGui
 from prog import basic
@@ -173,11 +172,11 @@ class TabModel(QtCore.QAbstractTableModel):
 
         return None
 
-    def update(self):
+    def update(self, reset_opts=True):
         """ make a new query and recalculate the table """
         self.beginResetModel()
         self.dt.update()
-        if not isinstance(self._unfolded_groups, bool):
+        if reset_opts is True and not isinstance(self._unfolded_groups, bool):
             self._unfolded_groups = False
         self.endResetModel()
         self.repr_updated.emit(self, -1)
@@ -272,8 +271,8 @@ class TabModel(QtCore.QAbstractTableModel):
         return None
 
     # ------------------------ modification procedures
-    def add_filter(self, flt):
-        self.dt.add_filter(flt)
+    # def add_filter(self, flt):
+    #     self.dt.add_filter(flt)
 
     def rem_all_filters(self):
         self.dt.all_anon_filters.clear()
@@ -302,9 +301,6 @@ class TabModel(QtCore.QAbstractTableModel):
     def unfold_all_rows(self, do_unfold):
         self._unfolded_groups = do_unfold
         self.view_update()
-
-    def set_sorting(self, colname, is_asc):
-        self.dt.ordering = (colname, 'ASC' if is_asc else 'DESC')
 
     def collapse_categories(self, what, do_hide, delim):
         """ what - list of column names or "all" special word

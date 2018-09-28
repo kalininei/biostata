@@ -451,7 +451,7 @@ class TableConverter:
         for c in filter(lambda x: x.no_promote(), self.citems):
             if flt.uses_column(c.col):
                 a1 = command.ActRemoveListEntry(tab.all_anon_filters, flt)
-                a2 = command.ActRemoveListEntry(tab.used_filters, flt)
+                a2 = command.ActRemoveListEntry(tab.used_filters, flt.id)
                 a1.redo()
                 a2.redo()
                 self.acts.extend([a1, a2])
@@ -560,7 +560,8 @@ class TableConverter:
         self.act_fix_column_order(self.table.visible_columns)
 
         for f in self.table.used_filters[:]:
-            if not f.is_applicable(self.table):
+            flt = self.table.get_filter(iden=f)
+            if not flt.is_applicable(self.table):
                 a = command.ActRemoveListEntry(self.table.used_filters, f)
                 a.redo()
                 self.acts.append(a)

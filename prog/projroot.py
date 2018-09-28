@@ -295,6 +295,14 @@ class ProjectDB:
         if iden is not None:
             return next(filter(lambda x: x.id == iden, self.dictionaries))
 
+    def get_filter(self, name=None, iden=None):
+        if name is not None:
+            return next(filter(lambda x: x.name == name,
+                               self.named_filters), None)
+        if iden is not None:
+            return next(filter(lambda x: x.id == iden, self.named_filters),
+                        None)
+
     def enum_dictionaries(self):
         return list(filter(lambda x: x.dt_type == "ENUM",
                            self.dictionaries))

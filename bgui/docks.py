@@ -1,7 +1,9 @@
+import copy
 import collections
 from PyQt5 import QtWidgets, QtCore, QtGui
 from bgui import coloring
 from bgui import filtdlg
+from bgui import maincoms
 
 
 class DockWidget(QtWidgets.QDockWidget):
@@ -9,6 +11,7 @@ class DockWidget(QtWidgets.QDockWidget):
         super().__init__(name, parent)
         self.setObjectName(name)
         self.mainwindow = parent
+        self.flow = self.mainwindow.flow
         self.tmodel = None
         self.dt = None
         parent.addDockWidget(QtCore.Qt.RightDockWidgetArea, self)
@@ -79,7 +82,7 @@ class ColorDockWidget(DockWidget):
         ico0.addFile(':/activate-off', state=QtGui.QIcon.Off)
         buttons[0].setCheckable(True)
         buttons[0].setIcon(ico0)
-        buttons[0].setToolTip("Toggle coloring activation")
+        buttons[0].setToolTip("Toggle coloring")
         buttons[0].pressed.connect(self._act_actbutton)
         # settings button
         buttons[1].setIcon(QtGui.QIcon(':/settings'))
@@ -129,7 +132,7 @@ class ColorDockWidget(DockWidget):
 
     def _act_actbutton(self):
         if self.tmodel:
-            self.tmodel.switch_coloring_mode()
+            self.mainwindow.acts['Apply coloring'].do()
             self.btn[0].setChecked(not self.btn[0].isChecked())
 
     def _act_change_scheme(self, step):
@@ -138,13 +141,16 @@ class ColorDockWidget(DockWidget):
             order = sc.__class__.order
             newsc = coloring.ColorScheme.scheme_by_order(order+step)()
             newsc.copy_settings_from(sc)
-            self.tmodel.set_coloring(None, newsc, None)
+            com = maincoms.ComSetColoring(self.tmodel, None, newsc, None)
+            self.flow.exec_command(com)
 
     def _act_revert_scheme(self, step):
         if self.tmodel:
             sc = self.tmodel.get_color_scheme()
+            sc = copy.deepcopy(sc)
             sc.set_reversed()
-            self.tmodel.set_coloring(None, sc, None)
+            com = maincoms.ComSetColoring(self.tmodel, None, sc, None)
+            self.flow.exec_command(com)
 
 
 # ========================= Status Window
@@ -476,8 +482,11 @@ class TwoLevelTreeDockWidget(DockWidget):
 
 # ============================= ColumnInfoDock
 class ColumnInfoModel(TwoLevelTreeModel):
-    def __init__(self, dt=None):
-        self.dt = dt
+    def __init__(self, tmodel=None, flow=None):
+        self.tmodel = tmodel
+        if tmodel is not None:
+            self.dt = tmodel.dt
+        self.flow = flow
         self.newcolumns = collections.OrderedDict()
         super().__init__(["Categorical", "Real"])
         self.setColumnCount(3)
@@ -510,17 +519,12 @@ class ColumnInfoModel(TwoLevelTreeModel):
                 cnames.append(item.data(TwoLevelTreeModel.SubDataRole))
                 vis.append(item.checkState() == QtCore.Qt.Checked)
         for c in cnames:
-            try:
-                cols.append(self.dt.columns[c])
-            except:
-                cols.append(self.newcolumns[c])
-        # remove columns
-        for c in self.dt.all_columns[1:]:
-            if c not in cols:
-                self.dt.remove_column(c)
-        # add columns
-        for i, (k, v) in enumerate(zip(cols, vis)):
-            self.dt.add_column(k, i+1, v)
+            nc = self.dt.get_column(c)
+            if nc is None:
+                nc = self.newcolumns[c]
+            cols.append(nc)
+        com = maincoms.ComSetColumns(self.tmodel, cols, vis)
+        self.flow.exec_command(com)
 
 
 class ColumnInfoDockWidget(TwoLevelTreeDockWidget):
@@ -535,7 +539,7 @@ class ColumnInfoDockWidget(TwoLevelTreeDockWidget):
     def active_model_changed(self):
         super().active_model_changed()
         if self.dt is not None:
-            model = ColumnInfoModel(self.dt)
+            model = ColumnInfoModel(self.tmodel, self.flow)
             model.changed_by_user.connect(self.internal_change)
             self.tab.setModel(model)
             self.tab.header().setStretchLastSection(False)
@@ -555,19 +559,22 @@ class ColumnInfoDockWidget(TwoLevelTreeDockWidget):
 
 # ============================= Filters Dock
 class FiltersInfoModel(TwoLevelTreeModel):
-    def __init__(self, dt=None):
-        self.dt = dt
+    def __init__(self, tmodel=None, flow=None):
+        self.tmodel = tmodel
+        if tmodel is not None:
+            self.dt = tmodel.dt
+        self.flow = flow
         super().__init__(["Named", "Anonymous"])
         self.setColumnCount(3)
 
     def _imp_this_from_external(self):
         for f in self.dt.proj.named_filters:
             if f.is_applicable(self.dt):
-                cs = QtCore.Qt.Checked if f in self.dt.used_filters else\
+                cs = QtCore.Qt.Checked if f.id in self.dt.used_filters else\
                     QtCore.Qt.Unchecked
                 self._add_new_filter(f, cs)
         for f in self.dt.all_anon_filters:
-            cs = QtCore.Qt.Checked if f in self.dt.used_filters else\
+            cs = QtCore.Qt.Checked if f.id in self.dt.used_filters else\
                 QtCore.Qt.Unchecked
             self._add_new_filter(f, cs)
 
@@ -587,9 +594,9 @@ class FiltersInfoModel(TwoLevelTreeModel):
             named_filters.append(f)
             if itm.checkState() == QtCore.Qt.Checked:
                 vis_filters.append(named_filters[-1])
-        self.dt.set_named_filters(named_filters)
-        self.dt.set_anon_filters(anon_filters)
-        self.dt.set_active_filters(vis_filters)
+        allfilt = named_filters + anon_filters
+        com = maincoms.ComSetFilters(self.tmodel, allfilt, vis_filters)
+        self.flow.exec_command(com)
 
     def _add_new_filter(self, f, useit=True):
         itm = [QtGui.QStandardItem() for _ in range(3)]
@@ -621,7 +628,7 @@ class FiltersDockWidget(TwoLevelTreeDockWidget):
     def active_model_changed(self):
         super().active_model_changed()
         if self.dt is not None:
-            model = FiltersInfoModel(self.dt)
+            model = FiltersInfoModel(self.tmodel, self.flow)
             self.tab.setModel(model)
             model.changed_by_user.connect(self.internal_change)
             self.tab.header().setStretchLastSection(False)
@@ -682,16 +689,6 @@ class FiltersDockWidget(TwoLevelTreeDockWidget):
                 f, self.tab.model().dt, used_names, self)
         if dialog.exec_():
             ret = dialog.ret_value()
-            if ret.name == f.name:
-                # if filter naming is not changed -> copy properties
-                f.copy_from(ret)
-                tp = ret.to_multiline()
-                nm = ret.to_singleline() if ret.name is None else ret.name
-                self.tab.model().setData(index, tp, QtCore.Qt.ToolTipRole)
-                self.tab.model().setData(index, nm, QtCore.Qt.DisplayRole)
-            else:
-                # if filter naming is changed -> remove old, add new
-                used = (index.data(QtCore.Qt.CheckStateRole) ==
-                        QtCore.Qt.Checked)
-                self.tab.model().remove_row(index)
-                self.tab.model()._add_new_filter(ret, used)
+            used = index.data(QtCore.Qt.CheckStateRole) == QtCore.Qt.Checked
+            self.tab.model().remove_row(index)
+            self.tab.model()._add_new_filter(ret, used)

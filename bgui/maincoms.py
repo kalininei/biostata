@@ -6,7 +6,6 @@ from prog import comproj
 from bdata import funccol
 from bdata import convert
 from bgui import tmodel
-from bgui import tview
 
 
 class MainWinBU:
@@ -44,10 +43,12 @@ class ActAddModel:
         self.lastactive = None
 
     def redo(self):
+        from bgui import tview
         if self.newmodel is None:
             self.newmodel = tmodel.TabModel(self.dt)
         if self.newframe is None:
-            self.newframe = tview.TableView(self.newmodel, self.mw.wtab)
+            self.newframe = tview.TableView(self.mw.flow, self.newmodel,
+                                            self.mw.wtab)
 
         if self.mw.has_model():
             self.lastactive = self.mw.active_index()
@@ -72,13 +73,24 @@ class ActModelUpdate:
     def __init__(self, mod):
         self.mod = mod
         self._bu_unfolded_groups = copy.deepcopy(mod._unfolded_groups)
+        self._unfolded_ids = None
+        if not isinstance(mod._unfolded_groups, bool):
+            self._unfolded_ids = set()
+            for r in mod._unfolded_groups:
+                self._unfolded_ids.add(mod.row_min_id(r))
 
     def redo(self):
         self.mod.update()
+        # restore fold/unfold. After the update() _unfolded_groups is boolean
+        if self._unfolded_ids is not None:
+            for i in range(2, self.mod.rowCount()):
+                if self.mod.row_min_id(i) in self._unfolded_ids:
+                    index = self.mod.createIndex(i, 0)
+                    self.mod.unfold_row(index, True)
 
     def undo(self):
         self.mod._unfolded_groups = self._bu_unfolded_groups
-        self.mod.update()
+        self.mod.update(reset_opts=False)
 
 
 class ComNewDatabase(comproj.NewDB):
@@ -179,46 +191,46 @@ class ComChangeOpt(command.Command):
 
 
 class ComColumnWidth(command.Command):
-    def __init__(self, mainwin, rw):
-        super().__init__(mw=mainwin, rw=rw)
-        self.oldw = copy.deepcopy(self.mw.active_tview().colwidth)
-        self.amodel = lambda: mainwin.active_model
-        self.aview = lambda: mainwin.active_tview()
+    def __init__(self, view, rw):
+        super().__init__(aview=view, rw=rw)
+        self.oldw = copy.deepcopy(self.aview.colwidth)
 
     def upd(self):
-        for i in range(self.amodel().columnCount()):
-            self.aview().horizontalHeader().resizeSection(
-                    i, self.aview()._get_column_width(i))
+        self.aview._repr_changed()
 
     def _exec(self):
         for k, v in self.rw.items():
-            self.aview().colwidth[k] = v
+            self.aview.colwidth[k] = v
         self.upd()
         return True
 
     def _undo(self):
-        self.aview().colwidth = copy.deepcopy(self.oldw)
+        self.aview.colwidth = copy.deepcopy(self.oldw)
         self.upd()
 
 
 class ComFoldRows(command.Command):
-    def __init__(self, mainwin, rows, fold):
-        super().__init__(mw=mainwin, rows=rows, fold=fold)
+    def __init__(self, tmod, rows, fold):
+        super().__init__(tmod=tmod, rows=rows, fold=fold)
         self.acts = []
+        self.fin_act = lambda: None
 
     def _exec(self):
-        am = self.mw.active_model
+        if self.fold is None:
+            f1, f2 = None, None
+        else:
+            f1, f2 = self.fold, not self.fold
         if self.rows == 'all':
-            a = basic.CustomObject()
-            a.redo = lambda: am.unfold_all_rows(not self.fold)
-            a.undo = lambda: am.unfold_all_rows(self.fold)
+            assert self.fold is not None
+            a = command.ActChangeAttr(self.tmod, '_unfolded_groups', f2)
             self.acts.append(a)
+            self.fin_act = self.tmod.view_update
         else:
             for r in self.rows:
+                ind = self.tmod.createIndex(r, 0)
                 a = basic.CustomObject()
-                ind = am.createIndex(r, 0)
-                a.redo = functools.partial(am.unfold_row, ind, not self.fold)
-                a.undo = functools.partial(am.unfold_row, ind, self.fold)
+                a.redo = functools.partial(self.tmod.unfold_row, ind, f2)
+                a.undo = functools.partial(self.tmod.unfold_row, ind, f1)
                 self.acts.append(a)
         self._redo()
         return True
@@ -226,10 +238,12 @@ class ComFoldRows(command.Command):
     def _redo(self):
         for a in self.acts:
             a.redo()
+        self.fin_act()
 
     def _undo(self):
         for a in reversed(self.acts):
             a.undo()
+        self.fin_act()
 
 
 class ComToggleColoring(command.Command):
@@ -452,3 +466,106 @@ class ComRemoveTable(command.Command):
             a.redo()
         if len(self.mw.models) == 1:
             self.mw._set_active_model(None)
+
+
+class ComSort(command.Command):
+    def __init__(self, mod, icol, asc):
+        super().__init__()
+        colid = mod.dt.get_column(ivis=icol).id
+        asc = 'ASC' if asc else 'DESC'
+        self.act_update = ActModelUpdate(mod)
+        self.act = command.ActChangeAttr(mod.dt, 'ordering', (colid, asc))
+
+    def _exec(self):
+        self.act.redo()
+        self.act_update.redo()
+        return True
+
+    def _undo(self):
+        self.act.undo()
+        self.act_update.undo()
+
+
+class ComSetColumns(command.Command):
+    def check_consistency(self, tmod, cols):
+        for c in tmod.dt.all_columns[1:]:
+            if c.is_original() and c not in cols:
+                raise Exception("Can not remove original column {}"
+                                "".format(c.name))
+
+    def __init__(self, tmod, cols, isvis):
+        super().__init__()
+        self.check_consistency(tmod, cols)
+        ac = [tmod.dt.all_columns[0]] + cols
+        vc = [tmod.dt.all_columns[0]]
+        for v, c in zip(isvis, cols):
+            if v:
+                vc.append(c)
+        tmod.dt._fix_column_order(ac)
+        tmod.dt._fix_column_order(vc)
+
+        self.acts = []
+        self.act_update = ActModelUpdate(tmod)
+
+        self.acts.append(command.ActChangeAttr(tmod.dt, 'all_columns', ac))
+        self.acts.append(command.ActChangeAttr(tmod.dt, 'visible_columns', vc))
+
+    def _exec(self):
+        for a in self.acts:
+            a.redo()
+        self.act_update.redo()
+        return True
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
+        self.act_update.redo()
+
+
+class ComSetFilters(command.Command):
+    def __init__(self, tmod, flts, used_flts):
+        new_filters = []
+        for f in filter(lambda x: x.name is None, flts):
+            if f not in tmod.dt.all_anon_filters:
+                new_filters.append(f)
+        for f in filter(lambda x: x.name is not None, flts):
+            if f not in tmod.dt.proj.named_filters:
+                new_filters.append(f)
+
+        rem_filters = []
+        for f in tmod.dt.proj.named_filters:
+            if f not in flts:
+                rem_filters.append(f)
+        for f in tmod.dt.all_anon_filters:
+            if f not in flts:
+                rem_filters.append(f)
+        super().__init__(tmod=tmod, newf=new_filters, remf=rem_filters,
+                         usedf=used_flts)
+        self.acts = []
+        self.act_update = ActModelUpdate(tmod)
+
+    def _exec(self):
+        for f in self.remf:
+            self.acts.append(command.ActFromCommand(
+                comproj.RemoveFilter(self.tmod.dt, f)))
+            self.acts[-1].redo()
+        for f in self.newf:
+            self.acts.append(command.ActFromCommand(
+                comproj.AddFilter(self.tmod.dt.proj, f, [self.tmod.dt])))
+            self.acts[-1].redo()
+        uf = [f.id for f in self.usedf]
+        self.acts.append(command.ActChangeAttr(
+                self.tmod.dt, 'used_filters', uf))
+        self.acts[-1].redo()
+        self.act_update.redo()
+        return True
+
+    def _redo(self):
+        for a in self.acts:
+            a.redo()
+        self.act_update.redo()
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
+        self.act_update.undo()

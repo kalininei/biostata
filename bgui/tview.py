@@ -6,6 +6,7 @@ from prog import basic
 from prog import filt
 from bgui import cfg
 from bgui import tmodel
+from bgui import maincoms
 from bgui import qtcommon
 
 
@@ -230,8 +231,10 @@ class TableView(QtWidgets.QTableView):
     _default_column_width = 70
     _minimum_column_width = 25
 
-    def __init__(self, model, parent):
+    def __init__(self, flow, model, parent):
         super().__init__(parent)
+        self.__user_action = False
+        self.flow = flow
         self.setModel(model)
         self.setItemDelegate(TabDelegate(model, self))
         self.model().repr_updated.connect(self._repr_changed)
@@ -252,6 +255,7 @@ class TableView(QtWidgets.QTableView):
 
         # column width: {column id: width}
         self.colwidth = {}
+        self.__user_action = True
 
     def table_name(self):
         return self.model().table_name()
@@ -278,7 +282,14 @@ class TableView(QtWidgets.QTableView):
             basic.ignore_exception(e)
         self.model().restore_state_by_xml(root)
 
-    def _repr_changed(self, model, ir):
+    def _repr_changed(self, model=None, ir=None):
+        """ model, ir arguments are used to fit model.repr_updated
+            signal signature. They can be set to None safely.
+        """
+        self.__user_action = False
+        if model is None:
+            model = self.model()
+        assert model is self.model()
         # ---------- spans
         self.clearSpans()
         # id span
@@ -290,14 +301,19 @@ class TableView(QtWidgets.QTableView):
         # data span
         if model.columnCount()-a-1 > 0:
             self.setSpan(0, a+1, 1, model.columnCount())
-        # ---------- if cancelled ordering return v-sign to id column
-        if model.dt.ordering is None:
-            self.horizontalHeader().sortIndicatorChanged.disconnect(
-                self._act_sort_column)
-            self.horizontalHeader().setSortIndicator(
-                    0, QtCore.Qt.AscendingOrder)
-            self.horizontalHeader().sortIndicatorChanged.connect(
-                self._act_sort_column)
+        # ---------- ordering v-sign
+        self.horizontalHeader().sortIndicatorChanged.disconnect(
+            self._act_sort_column)
+        a, b = 0, QtCore.Qt.AscendingOrder
+        if model.dt.ordering is not None:
+            a = model.dt.column_visindex(iden=model.dt.ordering[0])
+            if model.dt.ordering[1] == 'ASC':
+                b = QtCore.Qt.AscendingOrder
+            else:
+                b = QtCore.Qt.DescendingOrder
+        self.horizontalHeader().setSortIndicator(a, b)
+        self.horizontalHeader().sortIndicatorChanged.connect(
+            self._act_sort_column)
 
         # ---------- set vertical sizes
         for i in range(model.rowCount()):
@@ -306,6 +322,7 @@ class TableView(QtWidgets.QTableView):
         # ---------- set horizontal sizes
         for i in range(model.columnCount()):
             self.horizontalHeader().resizeSection(i, self._get_column_width(i))
+        self.__user_action = True
 
     def _get_row_height(self, irow):
         return self.itemDelegate().get_row_height(irow)
@@ -320,6 +337,15 @@ class TableView(QtWidgets.QTableView):
     def _section_resized(self, icol, oldsize, newsize):
         colid = self.model().get_column(icol).id
         self.colwidth[colid] = newsize
+        # add or modify a command to be able to undo it
+        if self.__user_action:
+            c = self.flow.last_command()
+            if not isinstance(c, maincoms.ComColumnWidth) or\
+                    c.aview is not self:
+                c = maincoms.ComColumnWidth(self, {})
+                self.flow.exec_command(c)
+                c.oldw[colid] = oldsize
+            c.rw[colid] = newsize
 
     def _context_menu(self, pnt):
         index = self.indexAt(pnt)
@@ -337,8 +363,8 @@ class TableView(QtWidgets.QTableView):
         # fold/unfold action
         if rr == 'D' and self.model().group_size(index) > 1:
             act = QtWidgets.QAction("Fold/Unfold", self)
-            act.triggered.connect(functools.partial(
-                self.model().unfold_row, index, None))
+            act.triggered.connect(functools.partial(self._act_fold_unfold,
+                                  index.row()))
             menu.addAction(act)
 
         # filter out the row
@@ -365,40 +391,16 @@ class TableView(QtWidgets.QTableView):
             used_ids.extend(a)
         f = filt.Filter.filter_by_datalist(
                 self.model().dt, 'id', used_ids, do_remove)
-        self.model().add_filter(f)
-        # preserve fold/unfold set which will be altered after update()
-        bu = None
-        if not isinstance(self.model()._unfolded_groups, bool):
-            bu = set()
-            for r in self.model()._unfolded_groups:
-                if r < ir:
-                    bu.add(r)
-                elif r > ir:
-                    bu.add(r-1)
-
-        self.model().update()
-        if bu is not None:
-            self.model()._unfolded_groups = bu
-            self.model().modelReset.emit()
+        com = maincoms.ComAddFilter(self.model(), f)
+        self.flow.exec_command(com)
 
     def _act_sort_column(self, icol, is_desc):
-        # preserve fold/unfold set which will be altered after update()
-        bu = None
-        if not isinstance(self.model()._unfolded_groups, bool):
-            bu = set()
-            for r in self.model()._unfolded_groups:
-                bu.add(self.model().row_min_id(r))
+        com = maincoms.ComSort(self.model(), icol, not is_desc)
+        self.flow.exec_command(com)
 
-        # sorting
-        self.model().set_sorting(self.model().column_name(icol), not is_desc)
-        self.model().update()
-
-        # restore fold/unfold. After the update() _unfolded_groups is boolean
-        if bu is not None:
-            for i in range(self.model().rowCount()):
-                if self.model().row_min_id(i) in bu:
-                    index = self.model().createIndex(i, 0)
-                    self.model().unfold_row(index, True)
+    def _act_fold_unfold(self, irow):
+        com = maincoms.ComFoldRows(self.model(), [irow], None)
+        self.flow.exec_command(com)
 
     def _act_copy_to_clipboard(self, index=None):
         sel = self.selectionModel()

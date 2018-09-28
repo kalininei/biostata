@@ -36,6 +36,10 @@ class MainAct(QtWidgets.QAction):
     def ischecked(self):
         return False
 
+    def set_checked(self):
+        if self.isEnabled() and self.isCheckable():
+            self.setChecked(self.ischecked())
+
     def do(self):
         pass
 
@@ -245,7 +249,7 @@ class ActToDataWidth(MainAct):
 
     def do(self):
         rw = self.aview().adjusted_width('data')
-        com = maincoms.ComColumnWidth(self.mainwin, rw)
+        com = maincoms.ComColumnWidth(self.aview(), rw)
         self.flow.exec_command(com)
 
 
@@ -258,7 +262,7 @@ class ActToCaptionDataWidth(MainAct):
 
     def do(self):
         rw = self.aview().adjusted_width('data/caption')
-        com = maincoms.ComColumnWidth(self.mainwin, rw)
+        com = maincoms.ComColumnWidth(self.aview(), rw)
         self.flow.exec_command(com)
 
 
@@ -277,7 +281,7 @@ class ActToConstantWidth(MainAct):
         if dialog.exec_():
             v = dialog.ret_value()
             rw = {c.id: v for c in self.amodel().dt.all_columns}
-            com = maincoms.ComColumnWidth(self.mainwin, rw)
+            com = maincoms.ComColumnWidth(self.aview(), rw)
             self.flow.exec_command(com)
 
 
@@ -307,7 +311,7 @@ class ActFoldAll(MainAct):
         return self.amodel()._unfolded_groups is not False
 
     def do(self):
-        com = maincoms.ComFoldRows(self.mainwin, 'all', True)
+        com = maincoms.ComFoldRows(self.mainwin.active_model, 'all', True)
         self.flow.exec_command(com)
 
 
@@ -324,7 +328,7 @@ class ActUnfoldAll(MainAct):
         return self.amodel()._unfolded_groups is not True
 
     def do(self):
-        com = maincoms.ComFoldRows(self.mainwin, 'all', False)
+        com = maincoms.ComFoldRows(self.mainwin.active_model, 'all', False)
         self.flow.exec_command(com)
 
 
@@ -577,14 +581,6 @@ class ActRemoveActiveTable(MainAct):
 
     def do(self):
         try:
-            # self.proj.remove_table(self.amodel().dt.table_name())
-            # if len(self.mainwin.models) == 1:
-            #     self.mainwin._set_active_model(None)
-            #     ind = 0
-            # else:
-            #     ind = self.mainwin.models.index(self.amodel())
-            # self.mainwin.models.pop(ind)
-            # self.mainwin.wtab.removeTab(ind)
             com = maincoms.ComRemoveTable(self.mainwin,
                                           self.mainwin.active_index())
             self.flow.exec_command(com)

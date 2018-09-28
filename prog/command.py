@@ -84,6 +84,12 @@ class CommandFlow(object):
     def can_redo(self):
         return len(self._commands) > self._curpos + 1
 
+    def last_command(self):
+        if self._curpos < 0:
+            return None
+        else:
+            return self._commands[self._curpos]
+
     # removes all commands after curpos, adds the command to list
     # and executes it
     def exec_command(self, com):

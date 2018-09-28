@@ -40,7 +40,7 @@ class DataTable(object):
 
         # filters: anon filters belong to current tables,
         #          named filters are taked from self.proj.
-        #          used_filters contain both anon and named filters
+        #          used_filters contain ids of both anon and named filters
         self.all_anon_filters = []
         self.used_filters = []
 
@@ -109,13 +109,13 @@ class DataTable(object):
     def set_id(self, iden):
         self.id = iden
 
-    # @staticmethod
-    # def _fix_column_order(lst):
-    #     c1 = list(filter(lambda x: x.is_category(), lst))
-    #     c2 = list(filter(lambda x: not x.is_category(), lst))
-    #     lst.clear()
-    #     lst.extend(c1)
-    #     lst.extend(c2)
+    @staticmethod
+    def _fix_column_order(lst):
+        c1 = list(filter(lambda x: x.is_category(), lst))
+        c2 = list(filter(lambda x: not x.is_category(), lst))
+        lst.clear()
+        lst.extend(c1)
+        lst.extend(c2)
 
     # ================ database manipulations
     def destruct(self):
@@ -218,7 +218,8 @@ class DataTable(object):
         if cols is None:
             cols = self.visible_columns
         if filters is None:
-            filters = self.used_filters
+            # get filters from self.used_filters
+            filters = [self.get_filter(iden=x) for x in self.used_filters]
         if group is None:
             group = self.group_by
         # filtration
@@ -497,7 +498,7 @@ class DataTable(object):
             f.to_xml(n)
         # used filter
         ET.SubElement(cur, "USED").text =\
-            ' '.join([str(x.id) for x in self.used_filters])
+            ' '.join([str(x) for x in self.used_filters])
 
         # ----- ordering
         if self.ordering is not None:
@@ -547,7 +548,7 @@ class DataTable(object):
         fnd = root.find('FILTERS/USED')
         if fnd and fnd.text:
             uf = map(int, fnd.text.split())
-            ret.used_filters = [ret.get_filter(iden=i) for i in uf]
+            ret.used_filters = list(uf)
         # order
         fnd = root.find('ORDER_BY')
         if fnd and fnd.text:
@@ -565,7 +566,10 @@ class DataTable(object):
             return next(filter(lambda x: x.name == name, self.all_columns),
                         None)
         if ivis is not None:
-            return self.visible_columns[ivis]
+            try:
+                return self.visible_columns[ivis]
+            except IndexError:
+                return None
         if iden is not None:
             return next(filter(lambda x: x.id == iden, self.all_columns),
                         None)
@@ -593,6 +597,13 @@ class DataTable(object):
 
     def column_caption(self, icol):
         return self.visible_columns[icol].name
+
+    def column_visindex(self, col=None, iden=None, name=None):
+        if col is not None:
+            return self.visible_columns.index(col)
+        else:
+            col = self.get_column(name=name, iden=iden)
+            return self.column_visindex(col)
 
     def get_categories(self):
         """ -> [ColumnInfo] (excluding id)"""
@@ -675,12 +686,12 @@ class DataTable(object):
     #     """
     #     return self.tab.rows[r].definition
 
-    # def ids_by_row(self, r):
-    #     id0 = self.get_raw_value(r, 0)
-    #     if id0 is not None:
-    #         return [id0]
-    #     else:
-    #         return self.get_raw_subvalues(r, 0)
+    def ids_by_row(self, r):
+        id0 = self.get_raw_value(r, 0)
+        if id0 is not None:
+            return [id0]
+        else:
+            return self.get_raw_subvalues(r, 0)
 
     def get_raw_minmax(self, cname, is_global=False):
         if cname == 'id' and is_global:
@@ -824,7 +835,8 @@ class ViewedData:
             else:
                 vc = len(self.model.visible_columns)
                 # add additional filters defining this group
-                flt = self.model.used_filters[:]
+                flt = [self.get_filter(iden=x)
+                       for x in self.model.used_filters]
                 flt.append(filt.Filter.filter_by_values(
                         self.model, self.definition.keys(),
                         self.definition.values(), False, True))

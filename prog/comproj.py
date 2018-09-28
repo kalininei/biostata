@@ -223,7 +223,7 @@ class AddFilter(command.Command):
         for t in self.usedtab:
             if self.flt.name is None:
                 t.add_anon_filter(self.flt)
-            t.used_filters.append(self.flt)
+            t.used_filters.append(self.flt.id)
         return True
 
     def _undo(self):
@@ -244,7 +244,7 @@ class ApplyFilter(command.Command):
         self.acts = []
 
     def _exec(self):
-        if self.flt in self.tab.used_filters:
+        if self.flt.id in self.tab.used_filters:
             return
         # add filter
         add = False
@@ -259,7 +259,7 @@ class ApplyFilter(command.Command):
                 AddFilter(self.tab.proj, self.flt, [self.tab])))
         else:
             a = basic.CustomObject()
-            a.redo = lambda: self.tab.used_filters.append(self.flt)
+            a.redo = lambda: self.tab.used_filters.append(self.flt.id)
             a.undo = lambda: self.tab.used_filters.pop()
             self.acts.append(a)
         self.acts[-1].redo()
@@ -277,7 +277,7 @@ class ApplyFilter(command.Command):
 class UnapplyFilter(command.Command):
     def __init__(self, tab, flts, rem_unused_anon):
         if flts == 'all':
-            flts = tab.used_filters[:]
+            flts = [tab.get_filter(iden=x) for x in tab.used_filters]
         if isinstance(flts, filt.Filter):
             flts = [flts]
         super().__init__(tab=tab, flts=flts, rua=rem_unused_anon)
@@ -286,8 +286,8 @@ class UnapplyFilter(command.Command):
         self.oldused = self.tab.used_filters[:]
         self.oldanon = self.tab.all_anon_filters[:]
         for f in self.flts:
-            if f in self.tab.used_filters:
-                self.tab.used_filters.remove(f)
+            if f.id in self.tab.used_filters:
+                self.tab.used_filters.remove(f.id)
             if self.rua and f in self.tab.all_anon_filters:
                 self.tab.all_anon_filters.remove(f)
         return True
@@ -295,6 +295,31 @@ class UnapplyFilter(command.Command):
     def _undo(self):
         self.tab.used_filters = self.oldused
         self.tab.all_anon_filters = self.oldanon
+
+
+class RemoveFilter(command.Command):
+    def __init__(self, tab, flt):
+        super().__init__()
+        self.acts = []
+        if flt.name is not None:
+            self.acts.append(command.ActRemoveListEntry(
+                    tab.proj.named_filters, flt))
+        else:
+            self.acts.append(command.ActRemoveListEntry(
+                    tab.all_anon_filters, flt))
+        for t in tab.proj.data_tables:
+            if flt.id in t.used_filters:
+                self.acts.append(command.ActRemoveListEntry(
+                        t.used_filters, flt.id))
+
+    def _exec(self):
+        for a in self.acts:
+            a.redo()
+        return True
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
 
 
 class ChangeDictionaries(command.Command):
@@ -337,8 +362,8 @@ class ChangeDictionaries(command.Command):
                 a = command.ActRemoveListEntry(t.all_anon_filters, filt)
                 a.redo()
                 self.acts.append(a)
-            if filt in t.used_filters:
-                a = command.ActRemoveListEntry(t.used_filters, filt)
+            if filt.id in t.used_filters:
+                a = command.ActRemoveListEntry(t.used_filters, filt.id)
                 a.redo()
                 self.acts.append(a)
 

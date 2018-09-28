@@ -226,6 +226,9 @@ class MainWindow(QtWidgets.QMainWindow):
         for v in self.acts.values():
             v.setEnabled(v.isactive())
 
+        # checked
+        self.acts['Apply coloring'].set_checked()
+
         # open recent submenu
         self.recentmenu.clear()
         if len(self.opts.recent_db) > 0:
@@ -329,7 +332,7 @@ class MainWindow(QtWidgets.QMainWindow):
     def _init_widgets(self):
         self.tabframes = []
         for m in self.models:
-            self.tabframes.append(tview.TableView(m, self.wtab))
+            self.tabframes.append(tview.TableView(self.flow, m, self.wtab))
         for f in self.tabframes:
             self.wtab.addTab(f, f.table_name())
 
