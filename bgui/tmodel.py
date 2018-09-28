@@ -34,18 +34,17 @@ class TabModel(QtCore.QAbstractTableModel):
         self.repr_updated.connect(
                 lambda t, i: self.coloring.update(t.dt) if i == -1 else None)
 
-    def current_state_xml(self, root):
+    def to_xml(self, root):
         # folds
         cur = ET.SubElement(root, "UNFOLDED")
         if isinstance(self._unfolded_groups, bool):
             cur.text = str(int(self._unfolded_groups))
         else:
             cur.text = str(self._unfolded_groups)
-
         # coloring
-        self.coloring.current_state_xml(ET.SubElement(root, 'COLORING'))
+        self.coloring.to_xml(ET.SubElement(root, 'COLORING'))
 
-    def restore_state_by_xml(self, root):
+    def restore_from_xml(self, root):
         from ast import literal_eval
         # folds
         try:
@@ -55,7 +54,9 @@ class TabModel(QtCore.QAbstractTableModel):
         except Exception as e:
             basic.ignore_exception(e)
         # coloring
-        self.coloring.restore_state_by_xml(root.find('COLORING'))
+        self.coloring.restore_from_xml(root.find('COLORING'))
+        # init coloring 
+        self.view_update()
 
     # overwritten methods
     def rowCount(self, parent=None):    # noqa
@@ -271,9 +272,6 @@ class TabModel(QtCore.QAbstractTableModel):
         return None
 
     # ------------------------ modification procedures
-    # def add_filter(self, flt):
-    #     self.dt.add_filter(flt)
-
     def rem_all_filters(self):
         self.dt.all_anon_filters.clear()
         self.dt.used_filters.clear()
@@ -336,7 +334,7 @@ class TabModel(QtCore.QAbstractTableModel):
         if scheme is not None:
             self.coloring.color_scheme = scheme
         if column is not None:
-            self.coloring.set_column(self.dt, column)
+            self.coloring.set_column(self.dt, self.dt.get_column(column))
         if is_local is not None:
             self.coloring.absolute_limits = not is_local
         # here we call coloring.update()

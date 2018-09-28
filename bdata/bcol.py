@@ -59,7 +59,7 @@ class ColumnInfo:
         if ret.is_original():
             ret.status_column = OrigStatusColumn(ret)
         else:
-            ret.status_column = FuncStatusColumn(ret)
+            ret.status_column = None  # FuncStatusColumn(ret)
         return ret
 
     def is_category(self):
@@ -323,7 +323,26 @@ class FuncSqlDelegate(_BasicSqlDelegate):
 
     @staticmethod
     def from_xml(root):
-        raise NotImplementedError
+        # temporary fill deps with id.
+        # fill_deps procedure should be called after all columns are built
+        # to fill deps and build self.sql_fun
+        ret = FuncSqlDelegate([])
+        nd = root.find('SQL_FUNC')
+        ret.use_before_grouping = bool(int(nd.find('BEFORE_GROUPING').text))
+        ret.function_type = unescape(nd.find('FUNCTION').text)
+        ret.deps = list(map(int, nd.find('ARGUMENTS').text.split()))
+        ret.kwargs = literal_eval(unescape(nd.find('DESCRIPTION').text))
+        return ret
+
+    def fill_deps(self, tab):
+        deps = []
+        for i in self.deps:
+            deps.append(tab.get_column(iden=i))
+        sql = build_function_sql_delegate(
+                deps, self.use_before_grouping, None,
+                self.function_type, self.kwargs)
+        self.deps = sql.deps
+        self._sql_fun = sql._sql_fun
 
 
 class OrigStatusColumn(ColumnInfo):
@@ -411,58 +430,79 @@ def build_deep_copy_wo_sql(orig, newname=None):
     return ret
 
 
-def restore_function_column(name, func_name, columns, **kwargs):
-    if func_name == "collapsed_categories":
-        return collapsed_categories(columns, kwargs['delimiter'])
-    elif func_name == "custom_tmp_function":
-        raise Exception("custom functions can not be restored")
+# def restore_function_column(name, func_name, columns, **kwargs):
+#     if func_name == "collapsed_categories":
+#         return collapsed_categories(columns, kwargs['delimiter'])
+#     elif func_name == "custom_tmp_function":
+#         raise Exception("custom functions can not be restored")
+#     else:
+# raise Exception("unknown function name {}".format(kwargs['func_name']))
+
+
+# def build_from_db(proj, table, name):
+#     """ builds a column and places it into table.columns[name].
+
+#         In order to keep dependencies recursive procedure is used.
+#         Hence single run of this procedure in case of functional columns
+#         may result in reading and placing all parent columns.
+#     """
+#     # recursion tail
+#     if name in table.columns:
+#         return table.columns[name]
+
+#     qr = """
+#         SELECT type, dict, dim, shortname, comment, state, isorig
+#         FROM A."_COLINFO {}" WHERE colname='{}'
+#     """.format(table.table_name(), name)
+#     proj.sql.query(qr)
+#     f = proj.sql.qresult()
+#     dct = proj.get_dictionary(f[1]) if f[1] else None
+#     state = ET.fromstring(f[5]) if f[5] else None
+#     if f[6]:
+#         # ------ original column
+#         ret = build_original_column(name, f[0], dct, state)
+#     else:
+#         # ------ functional column
+#         colnames = literal_eval(unescape(state.find("ARGUMENTS").text))
+#         # create all arguments recursively
+#         colargs = [build_from_db(proj, table, x) for x in colnames]
+#         kwargs = literal_eval(unescape(
+#             state.find("DESCRIPTION").text))
+#         func_name = unescape(state.find("FUNCTION").text)
+#         ret = restore_function_column(name, func_name, colargs, **kwargs)
+#         ret.set_repr_delegate(_BasicRepr.default(f[0], dct))
+
+#     # ----------- fill basic data
+#     ret.shortname = f[3] if f[3] is not None else name
+#     ret.dim = f[2] if f[2] else ''
+#     ret.comment = f[4] if f[4] else ''
+#     table.columns[name] = ret
+#     return ret
+
+def get_sql_func(name, columns, **kwargs):
+    if name == 'collapsed_categories':
+        delimiter = kwargs['delimiter']
+
+        def func(*args):
+            try:
+                ret = []
+                for c, x in zip(columns, args):
+                    if x is not None:
+                        ret.append(str(c.repr(x)))
+                    else:
+                        ret.append('##')
+                return delimiter.join(ret)
+            except Exception as e:
+                basic.ignore_exception(e, "collapse error. " + str(args))
     else:
-        raise Exception("unknown function name {}".format(kwargs['func_name']))
-
-
-def build_from_db(proj, table, name):
-    """ builds a column and places it into table.columns[name].
-
-        In order to keep dependencies recursive procedure is used.
-        Hence single run of this procedure in case of functional columns
-        may result in reading and placing all parent columns.
-    """
-    # recursion tail
-    if name in table.columns:
-        return table.columns[name]
-
-    qr = """
-        SELECT type, dict, dim, shortname, comment, state, isorig
-        FROM A."_COLINFO {}" WHERE colname='{}'
-    """.format(table.table_name(), name)
-    proj.sql.query(qr)
-    f = proj.sql.qresult()
-    dct = proj.get_dictionary(f[1]) if f[1] else None
-    state = ET.fromstring(f[5]) if f[5] else None
-    if f[6]:
-        # ------ original column
-        ret = build_original_column(name, f[0], dct, state)
-    else:
-        # ------ functional column
-        colnames = literal_eval(unescape(state.find("ARGUMENTS").text))
-        # create all arguments recursively
-        colargs = [build_from_db(proj, table, x) for x in colnames]
-        kwargs = literal_eval(unescape(
-            state.find("DESCRIPTION").text))
-        func_name = unescape(state.find("FUNCTION").text)
-        ret = restore_function_column(name, func_name, colargs, **kwargs)
-        ret.set_repr_delegate(_BasicRepr.default(f[0], dct))
-
-    # ----------- fill basic data
-    ret.shortname = f[3] if f[3] is not None else name
-    ret.dim = f[2] if f[2] else ''
-    ret.comment = f[4] if f[4] else ''
-    table.columns[name] = ret
-    return ret
+        assert False, "unknown function {}".format(name)
+    return func
 
 
 def build_function_sql_delegate(deps, before_grouping, func, func_type, kw):
     ret = FuncSqlDelegate(deps)
+    if func is None:
+        func = get_sql_func(func_type, deps, **kw)
     ret._sql_fun = bsqlproc.connection.build_lambda_func(func)
     ret.function_type = func_type
     ret.use_before_grouping = before_grouping
@@ -475,22 +515,10 @@ def build_function_sql_delegate(deps, before_grouping, func, func_type, kw):
 def collapsed_categories(columns, delimiter='-'):
     """ collapse categories function
     """
-    def func(*args):
-        try:
-            ret = []
-            for c, x in zip(columns, args):
-                if x is not None:
-                    ret.append(str(c.repr(x)))
-                else:
-                    ret.append('##')
-            return delimiter.join(ret)
-        except Exception as e:
-            basic.ignore_exception(e, "collapse error. " + str(args))
-
     name = delimiter.join([x.shortname for x in columns])
-    kwargs = {'delimiter': delimiter}
     rep = _BasicRepr.default("TEXT")
-    sql = build_function_sql_delegate(columns, True, func,
+    kwargs = {'delimiter': delimiter}
+    sql = build_function_sql_delegate(columns, True, None,
                                       "collapsed_categories", kwargs)
     ret = ColumnInfo(name)
     ret.set_repr_delegate(rep)

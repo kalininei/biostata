@@ -85,6 +85,8 @@ class LoadDB(command.Command):
         super().__init__(proj=proj, fname=fname)
 
     def _exec(self):
+        if not pathlib.Path(self.fname).exists():
+            raise Exception('File not found {}'.format(self.fname))
         self._bu = ProjBackUp(self.proj)
         self.proj.sql.attach_database('A', self.fname)
 
@@ -122,6 +124,7 @@ class LoadDB(command.Command):
             self.proj.add_table(t)
 
         self.proj.set_current_filename(self.fname)
+        self.proj.xml_loaded.emit(info)
         return True
 
     def _clear(self):
@@ -181,20 +184,28 @@ class SaveDBAs(command.Command):
 class NewTabCommand(command.Command):
     def __init__(self, proj):
         super().__init__(proj=proj)
+        self.ttab_name = ''
 
     def _exec(self):
         self.atab = self._get_table()
-        self._redo()
+        self.proj.add_table(self.atab)
         self.atab.update()
         return True
 
     def _clear(self):
-        del self.atab
+        if self.ttab_name.startswith('_projbu'):
+            self.atab.destruct()
+            del self.atab
 
     def _undo(self):
+        # backup sql table
+        self.ttab_name = self.atab.ttab_name
+        self.atab.rename_ttab('_projbu{} {}'.format(basic.uniint(),
+                                                    self.atab.ttab_name))
         self.proj.data_tables.pop()
 
     def _redo(self):
+        self.atab.rename_ttab(self.ttab_name)
         self.proj.add_table(self.atab)
 
     def _get_table(self):

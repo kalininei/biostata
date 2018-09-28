@@ -1,4 +1,5 @@
 import functools
+import xml.etree.ElementTree as ET
 from PyQt5 import QtWidgets, QtCore, QtGui
 from bgui import tmodel
 from bgui import tview
@@ -13,8 +14,8 @@ class MainWindow(QtWidgets.QMainWindow):
     "application main window"
     active_model_changed = QtCore.pyqtSignal()
     active_model_repr_changed = QtCore.pyqtSignal()
-    database_saved = QtCore.pyqtSignal(str)
-    database_opened = QtCore.pyqtSignal(str)
+    database_saved = QtCore.pyqtSignal()
+    database_opened = QtCore.pyqtSignal()
     database_closed = QtCore.pyqtSignal()
 
     def __init__(self, flow, proj, opts):
@@ -54,15 +55,22 @@ class MainWindow(QtWidgets.QMainWindow):
         # signals to slots
         self.flow.command_done.add_subscriber(self._update_menu_status)
         self.active_model_changed.connect(self._update_menu_status)
-        self.database_saved.connect(lambda x: self._update_menu_status())
+        self.database_saved.connect(self._update_menu_status)
         self.wtab.currentChanged.connect(self._tab_changed)
+        self.proj.xml_saved.add_subscriber(self.to_xml)
+        self.proj.xml_loaded.add_subscriber(self.restore_from_xml)
+        self.proj.monitor_recent_db(self.opts)
         QtWidgets.qApp.aboutToQuit.connect(self._on_quit)
 
         # Load data
         self.reset_title()
         filename = self.opts.default_project_filename()
         if filename is not None:
-            self._load_database(filename)
+            try:
+                self.acts['Open database'].load(filename)
+            except Exception as e:
+                qtcommon.message_exc(self, "Load error", e=e)
+                self._close_database()
 
     def _build_acts(self):
         self.acts = {}
@@ -236,7 +244,7 @@ class MainWindow(QtWidgets.QMainWindow):
             for f in self.opts.recent_db:
                 act = QtWidgets.QAction(f, self)
                 act.triggered.connect(functools.partial(
-                    self._load_database, f))
+                    self.acts['Open database'].load, f))
                 self.recentmenu.addAction(act)
             act = QtWidgets.QAction('Clear', self)
             act.triggered.connect(lambda: (self.opts.recent_db.clear(),
@@ -277,37 +285,47 @@ class MainWindow(QtWidgets.QMainWindow):
     def saveto(self, fname):
         try:
             self.proj.relocate_and_commit_all_changes(fname)
-            self._set_actual_file(fname)
-            self.database_saved.emit(fname)
+            self.reset_title()
+            self.database_saved.emit()
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
 
     def save(self):
         try:
             self.proj.commit_all_changes()
-            self.database_saved.emit(self.proj._curname)
+            self.database_saved.emit()
         except Exception as e:
             qtcommon.message_exc(self, "Save error", e=e)
 
-    def _load_database(self, fname):
-        import pathlib
-        if not fname:
+    def to_xml(self, nd):
+        root = ET.SubElement(nd, "PROGVIEW")
+        if len(self.models) == 0:
             return
-        try:
-            if not pathlib.Path(fname).is_file():
-                raise Exception("File doesn't exist.")
-            self._close_database()
-            self.proj.set_main_database(fname)
-            self._init_project()
-            self._set_actual_file(fname)
-            self.database_opened.emit(fname)
-        except Exception as e:
-            m = 'Failed to load database from "{}". '.format(fname)
-            qtcommon.message_exc(self, "Load error", text=m, e=e)
+        ET.SubElement(root, "CURRENT_TAB").text = str(self.active_index())
+        for t in self.tabframes:
+            a = ET.SubElement(root, "TAB")
+            ET.SubElement(a, "NAME").text = t.table_name()
+            t.to_xml(a)
 
-    def _set_actual_file(self, fname):
-        self.opts.add_db_path(fname)
-        self.reset_title()
+    def restore_from_xml(self, nd):
+        self._close_database()
+        self._init_project()
+        root = nd.find('PROGVIEW')
+        if root is None:
+            return
+        for f in root.findall('TAB'):
+            nm = f.find('NAME').text
+            for t in self.tabframes:
+                if t.table_name() == nm:
+                    t.restore_from_xml(f)
+                    break
+            else:
+                assert False, '{}'.format(nm)
+        try:
+            ct = int(root.find('CURRENT_TAB').text)
+            self.wtab.setCurrentIndex(ct)
+        except Exception as e:
+            basic.ignore_exception(e)
 
     def reset_title(self):
         self.setWindowTitle(self.proj._curname + " - BioStat Analyser")

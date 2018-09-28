@@ -75,8 +75,11 @@ class ActOpenDatabase(MainAct):
         filename = QtWidgets.QFileDialog.getOpenFileName(
                 self.mainwin, "Open database", filter=flt)
         if filename[0]:
-            com = maincoms.ComOpenDatabase(fname=filename[0])
-            self.flow.exec_command(com)
+            self.load(filename[0])
+
+    def load(self, fname):
+        com = maincoms.ComLoadDatabase(self.mainwin, fname=fname)
+        self.flow.exec_command(com)
 
 
 class ActCloseDatabase(MainAct):
@@ -580,12 +583,9 @@ class ActRemoveActiveTable(MainAct):
         return self.amodel() is not None
 
     def do(self):
-        try:
-            com = maincoms.ComRemoveTable(self.mainwin,
-                                          self.mainwin.active_index())
-            self.flow.exec_command(com)
-        except Exception as e:
-            qtcommon.message_exc(self.mainwin, e=e)
+        com = maincoms.ComRemoveTable(self.mainwin,
+                                      self.mainwin.active_index())
+        self.flow.exec_command(com)
 
 
 class ActUndo(MainAct):

@@ -18,18 +18,23 @@ class MainWinBU:
     def clear(self):
         self.models = []
         self.tabframes = []
-        self.active_model = []
+        self.active_model = None
 
     def restore(self):
         self.mainwin.models = self.models[:]
         self.mainwin.tabframes = self.tabframes[:]
-        self.active_model = self.active_model
+        self.mainwin.active_model = self.active_model
 
         self.mainwin.wtab.clear()
         for f in self.mainwin.tabframes:
             self.mainwin.wtab.addTab(f, f.table_name())
 
-        self.mainwin.wtab.setCurrentIndex(self.mainwin.active_index())
+        if len(self.models) > 0:
+            ind = self.models.index(self.active_model)
+            self.mainwin._set_active_model(ind)
+            self.mainwin.wtab.setCurrentIndex(ind)
+        else:
+            self.mainwin._set_active_model(None)
         self.mainwin.reset_title()
 
 
@@ -93,30 +98,36 @@ class ActModelUpdate:
         self.mod.update(reset_opts=False)
 
 
-class ComNewDatabase(comproj.NewDB):
+class ComNewDatabase(command.Command):
     def __init__(self, mainwin):
-        super().__init__(mainwin.proj)
+        super().__init__(mw=mainwin)
         self._wbu = MainWinBU(mainwin)
+        self.com = comproj.NewDB(self.mw.proj)
         self.mw = mainwin
 
     def _exec(self):
+        self.com.do()
         self.mw._close_database()
-        return super()._exec(self)
-
-    def _clear(self):
-        self._wbu.clear()
-        super()._clear()
+        return True
 
     def _undo(self):
-        super()._undo()
+        self.com.undo()
         self._wbu.restore()
 
 
-# class ComLoadDatabase(comproj.LoadDB):
-#     def __init__(self, mainwin, fname):
-#         super().__init__(mainwin.proj, fname)
-#         self._wbu = MainWinBU(mainwin)
-#         self.mw._close_database()
+class ComLoadDatabase(command.Command):
+    def __init__(self, mainwin, fname):
+        super().__init__(mw=mainwin)
+        self._wbu = MainWinBU(self.mw)
+        self.com = comproj.LoadDB(self.mw.proj, fname)
+
+    def _exec(self):
+        self.com.do()
+        return True
+
+    def _undo(self):
+        self.com.undo()
+        self._wbu.restore()
 
 
 class ComImport(command.Command):
@@ -154,7 +165,7 @@ class ComSaveDB(command.Command):
         self.act = command.ActFromCommand(
                 comproj.SaveDBAs(self.mw.proj, self.fname))
         self.act.redo()
-        self.mw._set_actual_file(self.fname)
+        self.mw.reset_title()
         self.mw.database_saved.emit()
         return True
 
@@ -464,7 +475,7 @@ class ComRemoveTable(command.Command):
     def _redo(self):
         for a in self.acts:
             a.redo()
-        if len(self.mw.models) == 1:
+        if len(self.mw.models) == 0:
             self.mw._set_active_model(None)
 
 

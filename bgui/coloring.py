@@ -47,8 +47,8 @@ class Coloring:
         self._row_values = []
         self.color_scheme = ColorScheme.default()
 
-        self.color_by = "id"
-        self.set_column(datatab, "id")
+        self.color_by = 0
+        self.set_column(datatab, datatab.all_columns[0])
 
     def get_color(self, irow):
         "returns QtGui.QColor from numerical value"
@@ -59,18 +59,18 @@ class Coloring:
                 self._row_colors[irow] = self._calculate_color(irow)
             return self._row_colors[irow]
 
-    def set_column(self, datatab, cname):
-        self.color_by = cname
-        self.dt_type = datatab.get_column(cname).dt_type
+    def set_column(self, datatab, col):
+        self.color_by = col.id
+        self.dt_type = col.dt_type
 
         if self.dt_type in ["REAL", "INT"]:
-            self._global_limits = list(datatab.get_raw_minmax(cname, True))
+            self._global_limits = list(datatab.get_raw_minmax(col.name, True))
         elif self.dt_type in ["BOOL", "TEXT", "ENUM"]:
             # raw_value -> (index, representation value)
-            posible_values = datatab.get_distinct_column_raw_vals(cname, True)
+            posible_values = datatab.get_distinct_column_raw_vals(
+                    col.name, True)
             if None in posible_values:
                 posible_values.remove(None)
-            col = datatab.get_column(cname)
             self._global_values_dictionary = collections.OrderedDict()
             for i, pv in enumerate(posible_values):
                 self._global_values_dictionary[pv] = (i, col.repr(pv))
@@ -82,11 +82,12 @@ class Coloring:
         if not self.use:
             return
         # check if datatab contains column, otherwise switch to id
-        if self.color_by not in [c.name for c in datatab.all_columns]:
-            self.set_column(datatab, 'id')
+        if self.color_by not in [c.id for c in datatab.all_columns]:
+            self.set_column(datatab, datatab.all_columns[0])
 
         self._row_colors = [None] * datatab.n_rows()
-        self._row_values = datatab.get_raw_column_values(self.color_by)
+        self._row_values = datatab.get_raw_column_values(
+                datatab.get_column(iden=self.color_by).name)
 
         if self.dt_type in ["REAL", "INT"]:
             # limits
@@ -134,7 +135,7 @@ class Coloring:
                         self._global_values_dictionary)
             # Add values which do not present in global dictionary.
             # This could happen f.e. for collapsed TEXT data types
-            col = datatab.get_column(self.color_by)
+            col = datatab.get_column(iden=self.color_by)
             for v in sorted(dd):
                 if v not in self._values_dictionary:
                     self._values_dictionary[v] = (
@@ -157,7 +158,7 @@ class Coloring:
     def _calculate_color(self, irow):
         return self.color_scheme.get_color(self._row_values[irow])
 
-    def draw_legend(self, size):
+    def draw_legend(self, size, datatab):
         height = size.height()
         width = size.width()
         fh = self.conf.data_font_height()
@@ -178,7 +179,8 @@ class Coloring:
         rect = QtCore.QRect(
                 margin, cur_y,
                 width, cur_y + self.conf.caption_font_height())
-        bb = painter.drawText(rect, 0, self.color_by)
+        cap = datatab.get_column(iden=self.color_by).name
+        bb = painter.drawText(rect, 0, cap)
         maxw = max(maxw, bb.right())
         cur_y += self.conf.caption_font_height() + margin
 
@@ -283,31 +285,31 @@ class Coloring:
             ret.pop()
         return ret
 
-    def current_state_xml(self, nd):
-        from xml.sax.saxutils import escape
+    def to_xml(self, nd):
         ET.SubElement(nd, "USE").text = str(int(self.use))
         ET.SubElement(nd, "ABSLIMITS").text = str(int(self.absolute_limits))
-        ET.SubElement(nd, "COLUMN").text = escape(self.color_by)
+        ET.SubElement(nd, "COLUMN").text = str(self.color_by)
         cur = ET.SubElement(nd, "COLORSCHEME")
-        ET.SubElement(cur, "CLASS").text = str(self.color_scheme.__class__)
-        self.color_scheme.current_state_xml(cur)
+        ET.SubElement(cur, "CLASS").text = str(self.color_scheme.order)
+        self.color_scheme.to_xml(cur)
 
-    def restore_state_by_xml(self, nd):
-        from xml.sax.saxutils import unescape
-        from ast import literal_eval
+    def restore_from_xml(self, nd):
         try:
             self.use = bool(int(nd.find("USE").text))
             self.absolute_limits = bool(int(nd.find("ABSLIMITS").text))
-            self.color_by = unescape(nd.find("COLUMN").text)
-            cc = literal_eval(nd.find("COLORSCHEME/CLASS").text)
-            self.color_scheme = cc()
-            cc.restore_state_by_xml(nd.find("COLORSCHEME"))
+            self.color_by = int(nd.find("COLUMN").text)
+            cc = int(nd.find("COLORSCHEME/CLASS").text)
+            self.color_scheme = ColorScheme.scheme_by_order(cc)()
+            self.color_scheme.restore_from_xml(nd.find("COLORSCHEME"))
         except Exception as e:
             basic.ignore_exception(e)
 
 
 # ======================== Color schemes
 class ColorScheme:
+    name = ""
+    order = -1
+
     def __init__(self, w, c):
         self.__orig_weights = w
         self.__orig_colors = c
@@ -447,17 +449,17 @@ class ColorScheme:
                                     other._reversed, other._dcount)
         self._default_color = copy.deepcopy(other._default_color)
 
-    def current_state_xml(self, nd):
+    def to_xml(self, nd):
         ET.SubElement(nd, 'CONT').text = str(int(self._continuous))
-        ET.SubElement(nd, 'NCONT').text = str(int(self._dcount))
+        ET.SubElement(nd, 'DCOUNT').text = str(int(self._dcount))
         ET.SubElement(nd, 'REV').text = str(int(self._reversed))
         ET.SubElement(nd, 'DEFAULT').text = str(self._default_color)
 
-    def restore_state_by_xml(self, nd):
+    def restore_from_xml(self, nd):
         from ast import literal_eval
         try:
             c1 = bool(int(nd.find('CONT').text))
-            c2 = int(nd.find('NCONT').text)
+            c2 = int(nd.find('DCOUNT').text)
             c3 = bool(int(nd.find('REV').text))
             c4 = literal_eval(nd.find('DEFAULT').text)
             self.set_discrete(not c1, c2)

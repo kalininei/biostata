@@ -115,7 +115,8 @@ class ColorDockWidget(DockWidget):
             for b in self.btn:
                 b.setEnabled(True)
             self.btn[0].setChecked(self.tmodel.use_coloring())
-            pm = self.tmodel.coloring.draw_legend(self.frame.size())
+            pm = self.tmodel.coloring.draw_legend(self.frame.size(),
+                                                  self.tmodel.dt)
             item = QtWidgets.QGraphicsPixmapItem(pm)
             self.scene.addItem(item)
             item.setPos(0, 0)

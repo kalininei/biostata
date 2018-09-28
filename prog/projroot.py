@@ -20,6 +20,8 @@ class ProjectDB:
         self.dictionaries = []
         self.named_filters = []
         self.data_tables = []
+        self.xml_saved = basic.BSignal()
+        self.xml_loaded = basic.BSignal()
 
         self.initialize()
 
@@ -38,6 +40,9 @@ class ProjectDB:
 
     def new_id(self):
         return self.idc.new()
+
+    def curdir(self):
+        return str(self._curdir)
 
     def to_xml(self, nd, wtabs=True):
         # current proj and cwd
@@ -59,6 +64,15 @@ class ProjectDB:
             for d in self.data_tables:
                 dc = ET.SubElement(cur, "E")
                 d.to_xml(dc)
+        # others
+        self.xml_saved.emit(nd)
+
+    def monitor_recent_db(self, opts):
+        def fun(nd):
+            if self._curname != 'New database':
+                opts.add_db_path(self._curname)
+        self.xml_loaded.add_subscriber(fun)
+        self.xml_saved.add_subscriber(fun)
 
     # ================= Database procedures
     def set_current_filename(self, filedb):
@@ -127,8 +141,8 @@ class ProjectDB:
 
     def add_table(self, tab):
         self.is_valid_table_name(tab.name)
-
-        maxid = max([tab.id] + [c.id for c in tab.all_columns])
+        maxid = max([tab.id] + [c.id for c in tab.all_columns] +
+                    [f.id for f in tab.all_anon_filters])
         self.idc.include(maxid)
         for c in [tab] + tab.all_columns:
             if c.id == -1:

@@ -104,7 +104,8 @@ class DataTable(object):
             self.all_columns.append(v)
             self.visible_columns.append(v)
         for c in self.all_columns:
-            c.set_id(self.proj.new_id())
+            if c.id == -1:
+                c.set_id(self.proj.new_id())
 
     def set_id(self, iden):
         self.id = iden
@@ -514,8 +515,14 @@ class DataTable(object):
     def from_xml(cls, root, proj):
         def init_columns(self):
             self.all_columns = []
+            # build columns
             for nd in root.findall('COLUMNS/E'):
                 self.all_columns.append(bcol.ColumnInfo.from_xml(nd, proj))
+            # fill dependencies of functional columns
+            for c in filter(lambda x: not x.is_original(), self.all_columns):
+                c.sql_delegate.fill_deps(self)
+                c.status_column = bcol.FuncStatusColumn(c)
+            # check
             if not self.all_columns or self.all_columns[0].name != 'id':
                 raise Exception("unique id column was not found")
 
@@ -533,7 +540,7 @@ class DataTable(object):
         ret.set_id(int(root.find('ID').text))
         # comment
         fnd = root.find('COMMENT')
-        if fnd and fnd.text:
+        if fnd is not None and fnd.text:
             ret.comment = unescape(fnd.text)
         # visible columns
         visc = map(int, root.find('COLUMNS/VIS').text.split())
@@ -546,18 +553,17 @@ class DataTable(object):
             f = filt.Filter.from_xml(flt)
             ret.all_anon_filters.append(f)
         fnd = root.find('FILTERS/USED')
-        if fnd and fnd.text:
-            uf = map(int, fnd.text.split())
-            ret.used_filters = list(uf)
+        if fnd is not None and fnd.text:
+            ret.used_filters = list(map(int, fnd.text.split()))
         # order
         fnd = root.find('ORDER_BY')
-        if fnd and fnd.text:
+        if fnd is not None and fnd.text:
             a = fnd.text.split()
             ret.ordering = (int(a[0]), a[1])
         # group
         fnd = root.find('GROUP_BY')
-        if fnd and fnd.text:
-            ret.group_by = map(int, fnd.text.split())
+        if fnd is not None and fnd.text:
+            ret.group_by = list(map(int, fnd.text.split()))
         return ret
 
     # ------------------------ info and checks

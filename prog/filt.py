@@ -254,7 +254,8 @@ class Filter:
 
     def to_xml(self, node, name=None):
         if name is None:
-            name = self.name
+            name = self.name if self.name is not None else ''
+        ET.SubElement(node, "ID").text = str(self.id)
         ET.SubElement(node, "NAME").text = escape(name)
         ET.SubElement(node, "DO_REMOVE").text = str(int(self.do_remove))
         for e in self.entries:
@@ -271,6 +272,7 @@ class Filter:
         ret.name = None
         if node.find('NAME').text is not None:
             ret.name = unescape(node.find('NAME').text)
+        ret.id = int(node.find('ID').text)
         ret.do_remove = bool(int(node.find('DO_REMOVE').text))
         for nd in node.findall('E'):
             ret.entries.append(FilterEntry.from_xml(nd))

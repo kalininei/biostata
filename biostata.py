@@ -26,7 +26,7 @@ def main(app):
     # start gui loop
     QtWidgets.qApp.exec_()
 
-    projroot.proj.finish()
+    proj.finish()
 
 
 if __name__ == '__main__':
