@@ -174,10 +174,11 @@ class _BasicRepr:
         cls = getattr(sys.modules[__name__], root.find('REPR').text)
         if cls in [IntRepr, TextRepr, RealRepr]:
             return cls()
-        if isinstance(cls, EnumRepr):
+        if cls in [EnumRepr, BoolRepr]:
             idct = int(root.find('DICT').text)
             dct = proj.get_dictionary(iden=idct)
             return cls(dct)
+        assert False, str(cls)
 
 
 class IntRepr(_BasicRepr):
@@ -429,55 +430,6 @@ def build_deep_copy_wo_sql(orig, newname=None):
     ret.status_column = orig.status_column
     return ret
 
-
-# def restore_function_column(name, func_name, columns, **kwargs):
-#     if func_name == "collapsed_categories":
-#         return collapsed_categories(columns, kwargs['delimiter'])
-#     elif func_name == "custom_tmp_function":
-#         raise Exception("custom functions can not be restored")
-#     else:
-# raise Exception("unknown function name {}".format(kwargs['func_name']))
-
-
-# def build_from_db(proj, table, name):
-#     """ builds a column and places it into table.columns[name].
-
-#         In order to keep dependencies recursive procedure is used.
-#         Hence single run of this procedure in case of functional columns
-#         may result in reading and placing all parent columns.
-#     """
-#     # recursion tail
-#     if name in table.columns:
-#         return table.columns[name]
-
-#     qr = """
-#         SELECT type, dict, dim, shortname, comment, state, isorig
-#         FROM A."_COLINFO {}" WHERE colname='{}'
-#     """.format(table.table_name(), name)
-#     proj.sql.query(qr)
-#     f = proj.sql.qresult()
-#     dct = proj.get_dictionary(f[1]) if f[1] else None
-#     state = ET.fromstring(f[5]) if f[5] else None
-#     if f[6]:
-#         # ------ original column
-#         ret = build_original_column(name, f[0], dct, state)
-#     else:
-#         # ------ functional column
-#         colnames = literal_eval(unescape(state.find("ARGUMENTS").text))
-#         # create all arguments recursively
-#         colargs = [build_from_db(proj, table, x) for x in colnames]
-#         kwargs = literal_eval(unescape(
-#             state.find("DESCRIPTION").text))
-#         func_name = unescape(state.find("FUNCTION").text)
-#         ret = restore_function_column(name, func_name, colargs, **kwargs)
-#         ret.set_repr_delegate(_BasicRepr.default(f[0], dct))
-
-#     # ----------- fill basic data
-#     ret.shortname = f[3] if f[3] is not None else name
-#     ret.dim = f[2] if f[2] else ''
-#     ret.comment = f[4] if f[4] else ''
-#     table.columns[name] = ret
-#     return ret
 
 def get_sql_func(name, columns, **kwargs):
     if name == 'collapsed_categories':

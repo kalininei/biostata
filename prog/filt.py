@@ -272,7 +272,10 @@ class Filter:
         ret.name = None
         if node.find('NAME').text is not None:
             ret.name = unescape(node.find('NAME').text)
-        ret.id = int(node.find('ID').text)
+        try:
+            ret.id = int(node.find('ID').text)
+        except:
+            ret.id = -1
         ret.do_remove = bool(int(node.find('DO_REMOVE').text))
         for nd in node.findall('E'):
             ret.entries.append(FilterEntry.from_xml(nd))

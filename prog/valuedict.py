@@ -66,9 +66,13 @@ class Dictionary:
         k, v, c = [], [], []
         for x in nd.findall('E'):
             k.append(int(x.find('K').text))
-            v.append(unescape(x.find('V').text))
+            vt = x.find('V').text
+            if vt is not None:
+                v.append(unescape(vt))
+            else:
+                v.append('')
             cf = x.find('C')
-            if cf and cf.text:
+            if cf is not None and cf.text:
                 c.append(unescape(cf.text))
             else:
                 c.append('')

@@ -123,6 +123,7 @@ class ComLoadDatabase(command.Command):
 
     def _exec(self):
         self.com.do()
+        self.mw.database_opened.emit()
         return True
 
     def _undo(self):

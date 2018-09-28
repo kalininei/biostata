@@ -104,6 +104,7 @@ class _ImportDialog(dlgs.OkCancelDialog):
             if len(set(cnames)) != len(cnames):
                 raise Exception("Column names should be unique.")
 
+            self.com.opt.tabname = name
             self.com.tab = self.table.model().get_tab()
             self.com.caps = [c[0] for c in columns]
             self.com.tps = [c[1] for c in columns]

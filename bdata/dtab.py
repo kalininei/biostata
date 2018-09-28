@@ -179,6 +179,7 @@ class DataTable(object):
         if self.ordering:
             try:
                 oc = self.get_column(iden=self.ordering[0])
+                assert oc is not None, str(format(self.ordering))
             except KeyError:
                 self.ordering = None
         if group:
@@ -254,141 +255,6 @@ class DataTable(object):
         self.query(self._compile_query())
         self.tab.fill(self.qresults())
 
-    # ------------------------ Data modification procedures
-    # def merge_categories(self, categories, delim):
-    #     """ Creates new column build of merged list of categories,
-    #            places it after the last visible category column
-    #         categories -- list of ColumnInfo entries
-    #         returns newly created column or
-    #                 None if this column already exists
-    #     """
-    #     if len(categories) < 2:
-    #         return None
-    #     # create column
-    #     col = bcol.collapsed_categories(categories, delim)
-    #     # check if this merge was already done
-    #     if col.name in self.columns.keys():
-    #         return None
-    #     self.add_column(col)
-    #     # place to the visible columns list
-    #     for i, c in enumerate(self.visible_columns):
-    #         if not c.is_category():
-    #             break
-    #     else:
-    #         i += 1
-    #     self.visible_columns.insert(i, col)
-    #     return col
-
-    # def remove_column(self, col):
-    #     try:
-    #         self.columns.pop(col.name)
-    #     except:
-    #         pass
-    #     try:
-    #         self.all_columns.remove(col)
-    #     except:
-    #         pass
-    #     try:
-    #         self.visible_columns.remove(col)
-    #     except:
-    #         pass
-
-    # def add_column(self, col, pos=None, is_visible=False):
-    #     if col.name not in self.columns:
-    #         self.columns[col.name] = col
-    #         if not col.is_category():
-    #             self.set_data_group_function()
-    #         if pos is None:
-    #             pos = len(self.columns)
-    #     else:
-    #         # if column already presents in current data
-    #         if pos is None:
-    #             pos = self.all_columns.index(col)
-    #         # temporary remove column from lists
-    #         try:
-    #             self.all_columns.remove(col)
-    #         except:
-    #             pass
-    #         try:
-    #             self.visible_columns.remove(col)
-    #         except:
-    #             pass
-    #     # maximum position for category column
-    #     # or minimum for data column
-    #     limpos = 0
-    #     while limpos < len(self.all_columns) and\
-    #             self.all_columns[limpos].is_category():
-    #         limpos += 1
-    #     # add to all_columns
-    #     if col.is_category():
-    #         pos = min(pos, limpos)
-    #     else:
-    #         pos = max(pos, limpos)
-    #     self.all_columns.insert(pos, col)
-    #     # visibles
-    #     vis_set = set(self.visible_columns)
-    #     if is_visible:
-    #         vis_set.add(col)
-    #     self._assemble_visibles(vis_set)
-
-    #     if col.is_original():
-    #         self.set_need_rewrite(True)
-
-    # def _inscribe_column_into_dict(self, cname, dct):
-    #     col = self.columns[cname]
-    #     # return if column is not original
-    #     if not col.is_original():
-    #         return
-    #     # return if new and old dictionary have same keys
-    #     if not col.uses_dict(None):
-    #         diff = set(col.repr_delegate.dict.keys()).difference(dct.keys())
-    #         if len(diff) == 0:
-    #             return
-    #     if col.dt_type in ['INT', 'REAL', 'ENUM', 'BOOL']:
-    #         # remove all entries outside availible keys
-    #         ivals = ', '.join(map(str, dct.keys()))
-    #         qr = 'UPDATE "{0}" SET {1} = NULL WHERE {1} NOT IN ({2})'.format(
-    #             self.ttab_name, col.sql_line(), ivals)
-    #         self.query(qr)
-    #     elif col.dt_type in ['TEXT']:
-    #         # convert text into int keys
-    #         raise NotImplementedError
-    #     self.query("SELECT CHANGES()")
-    #     # if smth was changed require rewrite
-    #     if self.qresult()[0] > 0:
-    #         self.set_need_rewrite(True)
-
-    # def convert_column(self, cname, newtype, dct=None):
-    #     """ converts given column to a given newtype
-    #     """
-    #     # TODO use common procedure from bdata/convert.py
-    #     col = self.columns[cname]
-    #     if col.dt_type in ['BOOL', 'ENUM'] and newtype == 'INT':
-    #         col.set_repr_delegate(bcol.IntRepr())
-    #     elif col.dt_type in ['INT', 'BOOL', 'ENUM']\
-    #             and newtype == 'BOOL':
-    #         self._inscribe_column_into_dict(cname, dct)
-    #         col.set_repr_delegate(bcol.BoolRepr(dct))
-    #     elif col.dt_type in ['INT', 'BOOL', 'ENUM']\
-    #             and newtype == 'ENUM':
-    #         self._inscribe_column_into_dict(cname, dct)
-    #         col.set_repr_delegate(bcol.EnumRepr(dct))
-    #     else:
-    #         raise NotImplementedError
-
-    # def remove_entries(self, flt):
-    #     """ Removes entries according to a given filter,
-    #         returns number of removed lines.
-    #     """
-    #     qr = 'DELETE FROM "{}" WHERE ({})'.format(
-    #         self.ttab_name, flt.to_sqlline(self))
-    #     self.query(qr)
-    #     self.query("SELECT CHANGES()")
-    #     ret = self.qresult()[0]
-    #     if ret > 0:
-    #         self.reset_id()
-    #     return ret
-
     def reset_id(self):
         """ Fills id column with 1, 2, 3, ... values.
             Does not check if id values are already in correct order.
@@ -419,61 +285,6 @@ class DataTable(object):
         if f.id == -1:
             f.set_id(self.proj.new_id())
         self.all_anon_filters.append(f)
-
-    # def set_visibility(self, col, do_show):
-    #     is_visible = col in self.visible_columns
-    #     if is_visible == do_show:
-    #         return
-    #     if not do_show:
-    #         self.visible_columns.remove(col)
-    #     else:
-    #         assert col in self.all_columns
-    #         vis_set = set(self.visible_columns + [col])
-    #         self._assemble_visibles(vis_set)
-
-    # def _assemble_visibles(self, vis_set):
-    #     self.visible_columns.clear()
-    #     for c in self.all_columns:
-    #         if c in vis_set:
-    #             self.visible_columns.append(c)
-
-    # def add_filter(self, f, use=True):
-    #     if not f.is_applicable(self):
-    #         raise Exception('filter "{}" can not be used with "{}"'.format(
-    #             f.name, self.name))
-    #     f.proj = self.proj
-    #     if f.name is None:
-    #         if f not in self.all_anon_filters:
-    #             self.all_anon_filters.append(f)
-    #     else:
-    #         if f not in self.proj.named_filters:
-    #             self.proj.named_filters.append(f)
-    #     if use and f not in self.used_filters:
-    #         self.used_filters.append(f)
-
-    # def set_filter_usage(self, f, use):
-    #     if not use:
-    #         if f in self.used_filters:
-    #             self.used_filters.remove(f)
-    #     elif use and f not in self.used_filters:
-    #         if f.name and f in self.proj.named_filters:
-    #             self.used_filters.append(f)
-    #         if not f.name and f in self.all_anon_filters:
-    #             self.used_filters.append(f)
-
-    # def set_named_filters(self, filtlist):
-    #     self.proj.set_named_filters(filtlist)
-
-    # def set_anon_filters(self, filtlist):
-    #     self.all_anon_filters.clear()
-    #     for f in filtlist:
-    #         if f.is_applicable(self):
-    #             self.all_anon_filters.append(f)
-
-    # def set_active_filters(self, filtlist):
-    #     self.used_filters.clear()
-    #     for f in filtlist:
-    #         self.set_filter_usage(f, True)
 
     # --------------------- xml
     def to_xml(self, root):
@@ -655,21 +466,6 @@ class DataTable(object):
             ret += 1
         return ret
 
-    # def is_valid_column_name(self, nm, shortnm=None):
-    #     """ checks if nm could be used as a new column name for this tab
-    #         raises Exception if negative
-    #     """
-    #     # name
-    #     self.proj.is_possible_column_name(nm)
-    #     cnames = list(map(lambda x: x.upper(), self.columns.keys()))
-    #     if nm.upper() in cnames:
-    #         raise Exception(
-    #             'Column name "{}" already exists in the table'.format(nm))
-    #     # short name
-    #     if shortnm is not None:
-    #         self.proj.is_possible_column_name(shortnm)
-    #     return True
-
     # ------------------------ Data access procedures
     def get_value(self, r, c):
         col = self.visible_columns[c]
@@ -686,11 +482,6 @@ class DataTable(object):
 
     def get_raw_subvalues(self, r, c):
         return self.tab.get_subvalues(r, c)
-
-    # def row_definition(self, r):
-    #     """ dictionary which uniquely defines the row (including grouping)
-    #     """
-    #     return self.tab.rows[r].definition
 
     def ids_by_row(self, r):
         id0 = self.get_raw_value(r, 0)
@@ -728,6 +519,7 @@ class DataTable(object):
                or local scope (including all settings)
         """
         col = self.get_column(cname)
+        assert col is not None, "{} was not found".format(cname)
         if is_global:
             s = "ORDER BY {}".format(col.sql_line()) if sort else ''
             qr = 'SELECT DISTINCT({0}) FROM "{1}" {2}'.format(
@@ -735,7 +527,7 @@ class DataTable(object):
         else:
             if sort:
                 bu = self.ordering
-                self.ordering = (col.name, 'ASC')
+                self.ordering = (col.id, 'ASC')
             qr = self._compile_query([col], status_adds=False,
                                      group_adds=False)
             if sort:

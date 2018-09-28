@@ -282,14 +282,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.opts.basic_font_size += delta
         self.reload_options()
 
-    def saveto(self, fname):
-        try:
-            self.proj.relocate_and_commit_all_changes(fname)
-            self.reset_title()
-            self.database_saved.emit()
-        except Exception as e:
-            qtcommon.message_exc(self, "Save error", e=e)
-
     def save(self):
         try:
             self.proj.commit_all_changes()

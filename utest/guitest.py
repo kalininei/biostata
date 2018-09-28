@@ -19,7 +19,7 @@
 import sys
 import unittest
 from PyQt5 import QtWidgets, QtCore
-from prog import basic, projroot, bopts
+from prog import basic, projroot, bopts, command
 from bgui import mainwin, dlgs, importdlgs, dictdlg, filtdlg, colinfodlg, joindlg  # noqa
 from utest import testutils     # noqa
 
@@ -40,12 +40,13 @@ alltests_run = {x: True for x in alltests}
 class TestRunner(unittest.TestCase):
     def tearDown(self):
         ''
-        # tt.eval_now(win.saveto, ('.a.db',))
+        tt.eval_now(win.acts['Save as...'].saveto, ('dbg.db'))
 
     def test_import_txt(self):
         if not alltests_run['test_import_txt']:
             return
-        tt.eval_now(win._close_database, ())
+        tt.eval_and_wait_signal(win.run_act, 'New database',
+                                win.database_closed)
         w = tt.wait_window(mainwin.MainWindow)
 
         # open import dialog import table
@@ -137,8 +138,8 @@ class TestRunner(unittest.TestCase):
     def test_import_xls(self):
         if not alltests_run['test_import_xls']:
             return
-        tt.eval_now(win._close_database, ())
-        # import table
+        tt.eval_and_wait_signal(win.run_act, 'New database',
+                                win.database_closed)
         w = tt.wait_window(mainwin.MainWindow)
 
         # import dialog
@@ -231,15 +232,13 @@ class TestRunner(unittest.TestCase):
         self.assertListEqual(col, [0, 1, 0, 1, 1, 1, 0, 0, 0, 0, None])
 
         # check shown table name
-        self.assertEqual(w.wtab.tabText(0).replace('&', ''), 'Table1*')
-        tt.eval_and_wait_true(w.saveto, ('dbg.db',),
-                              'w.wtab.tabText(0).replace("&","")=="Table1"',
-                              {'w': w})
+        self.assertEqual(w.wtab.tabText(0).replace('&', ''), 'Table1')
 
     def test_changedict(self):
         if not alltests_run['test_changedict']:
             return
-        tt.eval_now(win._close_database, ())
+        tt.eval_and_wait_signal(win.run_act, 'New database',
+                                win.database_closed)
         w = tt.wait_window(mainwin.MainWindow)
 
         # import dialog
@@ -395,7 +394,10 @@ class TestRunner(unittest.TestCase):
                                     QtWidgets.QMessageBox)
         w = tt.eval_and_wait_window(mto.dialog_okclick, w,
                                     mainwin.MainWindow)
-        self.assertListEqual(testutils.get_tmodel_column(w.active_model, 1), ["CONT-1-2-noF", "b4p-2-5-F", "##-1-5-noF", "b4p-3-5-F", "b4p-4-5-F", "b4g-2-5-F", "##-5-3-noF", "b4p-2-5-noF", "##-1-3-noF", "##-1-5-noF", "##-10-20-"])   # noqa
+        # self.assertListEqual(testutils.get_tmodel_column(w.active_model, 1), ["CONT-1-2-noF", "b4p-2-5-F", "##-1-5-noF", "b4p-3-5-F", "b4p-4-5-F", "b4g-2-5-F", "##-5-3-noF", "b4p-2-5-noF", "##-1-3-noF", "##-1-5-noF", "##-10-20-"])   # noqa
+        self.assertEqual(w.active_model.columnCount(), 2)
+        tt.eval_and_wait_signal(w.run_act, 'Undo',
+                                w.active_model_repr_changed)
         tt.eval_and_wait_signal(w.run_act, 'Remove all collapses',
                                 w.active_model_repr_changed)
 
@@ -409,13 +411,13 @@ class TestRunner(unittest.TestCase):
                                     QtWidgets.QMessageBox)
         w = tt.eval_and_wait_window(mto.dialog_okclick, w,
                                     mainwin.MainWindow)
-        self.assertListEqual(testutils.get_tmodel_column(w.active_model, 1), [0, 2, None, 2, 2, 1, None, 2, None, None, None])  # noqa
+        self.assertListEqual(testutils.get_tmodel_column(w.active_model, 1), [0, 2, None, 2, 2, 1, None, 2, 3, None, None])  # noqa
 
     def test_changecols(self):
         if not alltests_run['test_changecols']:
             return
-        tt.eval_now(win._close_database, ())
-        # load data from t3.xlsx
+        tt.eval_and_wait_signal(win.run_act, 'New database',
+                                win.database_closed)
         w = tt.wait_window(mainwin.MainWindow)
 
         # import dialog
@@ -643,7 +645,8 @@ class TestRunner(unittest.TestCase):
     def test_jointabs(self):
         if not alltests_run['test_jointabs']:
             return
-        tt.eval_now(win._close_database, ())
+        tt.eval_and_wait_signal(win.run_act, 'New database',
+                                win.database_closed)
         w = tt.wait_window(mainwin.MainWindow)
 
         # import dialog
@@ -711,7 +714,7 @@ class TestRunner(unittest.TestCase):
                                     mainwin.MainWindow)
         self.assertListEqual(testutils.get_tmodel(w.active_model), [[1, 2], [1, 2], [2, 8], [2.3, 3.1]])  # noqa
         self.assertEqual(
-            w.wtab.tabText(w.wtab.currentIndex()).replace('&', ''), "JoinTab*")
+            w.wtab.tabText(w.wtab.currentIndex()).replace('&', ''), "JoinTab")
 
         tt.eval_and_wait_signal(
                 w.run_act, 'Remove active table',
@@ -839,25 +842,26 @@ class TestRunner(unittest.TestCase):
         self.assertEqual(w.active_model.dt.n_rows(), 3)
 
         # save and load
-        tt.set_tmp_wait_times(1, 100)
-        tt.eval_and_wait_signal(w.saveto, ('dbg.db'),
+        tt.set_tmp_wait_times(1, 10)
+        tt.eval_and_wait_signal(w.acts['Save as...'].saveto, ('dbg.db'),
                                 w.database_saved)
         self.assertEqual(w.windowTitle(), 'dbg.db - BioStat Analyser')
-        tt.eval_and_wait_signal(w._close_database, (),
-                                w.database_closed)
-        tt.eval_and_wait_signal(w._load_database, ('dbg.db'),
-                                w.database_opened)
+        tt.eval_and_wait_signal(win.run_act, 'New database',
+                                win.database_closed)
+        tt.eval_and_wait_signal(win.acts['Open database'].load, 'dbg.db',
+                                win.database_opened)
         tt.recover_wait_times()
 
-        tt.eval_and_wait_signal(
-                w.wtab.setCurrentIndex, 4, w.active_model_changed)
         self.assertEqual(w.active_model.dt.n_rows(), 3)
-        d = [next((x for x in y.dt.columns.keys())) for y in w.models]
+        d = [next((x.name for x in y.dt.all_columns)) for y in w.models]
         self.assertListEqual(['id']*5, d)
 
 proj = projroot.ProjectDB()
+opts = bopts.BiostataOptions()
+opts.load()
+flow = command.CommandFlow()
 qApp = QtWidgets.QApplication(sys.argv)
-win = mainwin.MainWindow(proj)
+win = mainwin.MainWindow(flow, proj, opts)
 win.show()
 
 mto = testutils.MainThreadObject()
