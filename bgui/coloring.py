@@ -628,3 +628,15 @@ class Random220(ColorScheme):
     def set_discrete(self, is_discrete, count=-1):
         if is_discrete is True:
             super().set_discrete(True, count)
+
+
+class WhiteRed(ColorScheme):
+    name = "White to Red"
+    order = 12
+
+    def __init__(self):
+        w = [0, 1]
+        c = [(255, 255, 255), (255, 0, 0)]
+        super().__init__(w, c)
+
+

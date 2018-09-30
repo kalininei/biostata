@@ -3,6 +3,57 @@ import xml.etree.ElementTree as ET
 from xml.sax.saxutils import escape, unescape
 
 
+def compile_sql_line(filters, table):
+    if len(filters) < 1:
+        return ""
+    else:
+        r = ['(' + f.to_sqlline(table) + ')' for f in filters]
+        return "WHERE " + " AND ".join(r)
+
+
+def filter_by_values(datatab, cnames, cvals, do_remove, use_and):
+    ret = Filter()
+    ret.do_remove = do_remove
+    for k, v in zip(cnames, cvals):
+        e = FilterEntry()
+        e.concat = "AND" if use_and else "OR"
+        e.column = ColumnDef.from_column(datatab.get_column(k))
+        if v is not None:
+            e.action = "=="
+            e.value = v
+        else:
+            e.action = "NULL"
+        ret.entries.append(e)
+    return ret
+
+
+def filter_by_datalist(datatab, cname, vals, do_remove):
+    col = ColumnDef.from_column(datatab.get_column(cname))
+    if cname == 'id':
+        ret = IdFilter()
+    else:
+        ret = Filter()
+    ret.do_remove = do_remove
+    if len(vals) == 0:
+        return Filter()
+    if col.dt_type == "INT":
+        IdFilter.set_from_ilist(ret, vals, col)
+        return ret
+    else:
+        return filter_by_values(datatab, [cname]*len(vals), vals,
+                                do_remove, do_remove)
+
+
+def filter_nonnull(datatab, cname):
+    ret = Filter()
+    ret.do_remove = True
+    e = FilterEntry()
+    e.column = ColumnDef.from_column(datatab.get_column(cname))
+    e.action = 'NULL'
+    ret.entries.append(e)
+    return ret
+
+
 def possible_values_list(column, operation, datatab):
     ret = []
 
@@ -204,47 +255,6 @@ class Filter:
         if self.do_remove:
             line = "NOT (" + line + ")"
         return line
-
-    @classmethod
-    def compile_sql_line(cls, filters, table):
-        if len(filters) < 1:
-            return ""
-        else:
-            r = ['(' + f.to_sqlline(table) + ')' for f in filters]
-            return "WHERE " + " AND ".join(r)
-
-    @classmethod
-    def filter_by_values(cls, datatab, cnames, cvals, do_remove, use_and):
-        ret = cls()
-        ret.do_remove = do_remove
-        for k, v in zip(cnames, cvals):
-            e = FilterEntry()
-            e.concat = "AND" if use_and else "OR"
-            e.column = ColumnDef.from_column(datatab.get_column(k))
-            if v is not None:
-                e.action = "=="
-                e.value = v
-            else:
-                e.action = "NULL"
-            ret.entries.append(e)
-        return ret
-
-    @classmethod
-    def filter_by_datalist(cls, datatab, cname, vals, do_remove):
-        col = ColumnDef.from_column(datatab.get_column(cname))
-        if cname == 'id':
-            ret = IdFilter()
-        else:
-            ret = Filter()
-        ret.do_remove = do_remove
-        if len(vals) == 0:
-            return cls()
-        if col.dt_type == "INT":
-            IdFilter.set_from_ilist(ret, vals, col)
-            return ret
-        else:
-            return cls.filter_by_values(datatab, [cname]*len(vals), vals,
-                                        do_remove, do_remove)
 
     def add_conditions(self, f):
         if self.do_remove != f.do_remove:

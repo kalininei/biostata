@@ -4,6 +4,9 @@ from bgui import dlgs
 from bgui import qtcommon
 from bgui import tview
 from bgui import maincoms
+from bgui import matrixview
+from bmat import stats
+from bmat import npinterface
 from bdata import derived_tabs
 from fileproc import export
 
@@ -610,3 +613,70 @@ class ActRedo(MainAct):
 
     def do(self):
         self.flow.exec_next()
+
+
+class ActCovarianceMatrix(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Covariance matrix")
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def valid_col_names(self):
+        ret = []
+        for c in self.amodel().dt.all_columns:
+            if c.dt_type not in ["ENUM", "BOOL", "TEXT"]:
+                ret.append(c.name)
+        return ret
+
+    def do(self):
+        all_cols = self.valid_col_names()
+        used_cols = [self.amodel().dt.get_column(ivis=x).name
+                     for x in self.aview().selected_columns()]
+        tp = [self.amodel().dt.get_column(x).col_type() for x in all_cols]
+        dialog = dlgs.CovarMatDlg(self.mainwin, used_cols, all_cols, tp)
+        if dialog.exec_():
+            colnames, bias, mtype = dialog.ret_value()
+            if mtype.startswith('sym'):
+                mtype = 'both'
+            mat = npinterface.mat_raw_values(self.amodel().dt, colnames)
+            if bias == 'population':
+                cm = stats.population_covariance_matrix(mat)
+            else:
+                cm = stats.sample_covariance_matrix(mat)
+            w = matrixview.MatrixView("Covariance matrix", self.mainwin,
+                                      cm, colnames, colnames, sym=mtype)
+            self.mainwin.add_subwindow(w)
+            w.show()
+
+
+class ActCorrelationMatrix(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Correlation matrix")
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def valid_col_names(self):
+        ret = []
+        for c in self.amodel().dt.all_columns:
+            if c.dt_type not in ["ENUM", "BOOL", "TEXT"]:
+                ret.append(c.name)
+        return ret
+
+    def do(self):
+        all_cols = self.valid_col_names()
+        used_cols = [self.amodel().dt.get_column(ivis=x).name
+                     for x in self.aview().selected_columns()]
+        tp = [self.amodel().dt.get_column(x).col_type() for x in all_cols]
+        dialog = dlgs.CorrMatDlg(self.mainwin, used_cols, all_cols, tp)
+        if dialog.exec_():
+            colnames, mtype = dialog.ret_value()
+            if mtype.startswith('sym'):
+                mtype = 'both'
+            mat = npinterface.mat_raw_values(self.amodel().dt, colnames)
+            cm = stats.correlation_matrix(mat)
+            w = matrixview.MatrixView("Correlation matrix", self.mainwin,
+                                      cm, colnames, colnames, sym=mtype)
+            self.mainwin.add_subwindow(w)
+            w.show()

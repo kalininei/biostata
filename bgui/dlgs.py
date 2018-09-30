@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 import copy
 import collections
 from PyQt5 import QtCore, QtWidgets
@@ -546,3 +545,102 @@ class InputInteger(OkCancelDialog):
 
     def ret_value(self):
         return self.wid.value()
+
+
+class _MatDlg(SimpleAbstractDialog):
+    def __init__(self, title, parent, default, colnames, coltypes):
+        self.default = default
+        self.colnames = colnames
+        self.coltypes = coltypes
+        super().__init__(title, parent)
+        self.resize(400, 300)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        raise NotImplementedError
+
+    def _odata_init(self):
+        efin = collections.OrderedDict()
+        if 'INT' in self.coltypes:
+            e = collections.OrderedDict()
+            for c, t in zip(self.colnames, self.coltypes):
+                if t == 'INT':
+                    e[c] = c in self.default
+            efin['INT'] = e
+        if 'REAL' in self.coltypes:
+            e = collections.OrderedDict()
+            for c, t in zip(self.colnames, self.coltypes):
+                if t == 'REAL':
+                    e[c] = c in self.default
+            efin['REAL'] = e
+        self.set_odata_entry("cat", efin)
+
+    def olist(self):
+        raise NotImplementedError
+
+    def _get_cat(self):
+        ret = []
+        for v1 in self.odata().cat.values():
+            for k, v in v1.items():
+                if v:
+                    ret.append(k)
+        return ret
+
+    def check_input(self):
+        r = self._get_cat()
+        if len(r) < 2:
+            raise Exception("At least two columns should be checked")
+
+    def ret_value(self):
+        raise NotImplementedError
+
+
+@qtcommon.hold_position
+class CovarMatDlg(_MatDlg):
+    def __init__(self, parent, default, colnames, coltypes):
+        super().__init__('Covariance matrix options', parent,
+                         default, colnames, coltypes)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.bias = 'population'
+        obj.matsym = 'lower'
+        obj.cat = collections.OrderedDict()
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Options", "bias", optwdg.SingleChoiceOptionEntry(
+                self, "bias", ['population', 'sample'])),
+            ("Options", "matrix type", optwdg.SingleChoiceOptionEntry(
+                self, "matsym", ['lower', 'upper', 'symmetrical'])),
+            ("Data", "Column list", optwdg.CheckTreeOptionEntry(
+                self, "cat", 1)),
+            ])
+
+    def ret_value(self):
+        "-> colnames, bias type, matrix type"
+        return (self._get_cat(), self.odata().bias, self.odata().matsym)
+
+
+@qtcommon.hold_position
+class CorrMatDlg(_MatDlg):
+    def __init__(self, parent, default, colnames, coltypes):
+        super().__init__('Correlation matrix options', parent,
+                         default, colnames, coltypes)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.matsym = 'lower'
+        obj.cat = collections.OrderedDict()
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Options", "matrix type", optwdg.SingleChoiceOptionEntry(
+                self, "matsym", ['lower', 'upper', 'symmetrical'])),
+            ("Data", "Column list", optwdg.CheckTreeOptionEntry(
+                self, "cat", 1)),
+            ])
+
+    def ret_value(self):
+        "-> colnames, matrix type"
+        return (self._get_cat(), self.odata().matsym)

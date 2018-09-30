@@ -106,6 +106,28 @@ def xlsx_export(datatab, opt, model, view):
     wb.save(opt.filename)
 
 
+def qmodel_xlsx_export(model, fname, hheader=False, vheader=False):
+    from PyQt5 import QtCore
+    wb = pxl.Workbook()
+    ws1 = wb.active
+    nrows = model.rowCount()
+    ncols = model.columnCount()
+    if hheader:
+        vals = [model.headerData(i, QtCore.Qt.Horizontal,
+                                 QtCore.Qt.DisplayRole) for i in range(nrows)]
+        if vheader:
+            vals.insert(0, '')
+        ws1.append(vals)
+    for i in range(nrows):
+        vals = [model.data(model.createIndex(i, j), QtCore.Qt.DisplayRole)
+                for j in range(ncols)]
+        if vheader:
+            vals.insert(0, model.headerData(i, QtCore.Qt.Vertical,
+                                            QtCore.Qt.DisplayRole))
+        ws1.append(vals)
+    wb.save(fname)
+
+
 def get_unused_tmp_file(ext):
     import tempfile
     if ext:

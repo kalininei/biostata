@@ -381,7 +381,7 @@ class TableView(QtWidgets.QTableView):
         for ir in usedrows:
             a = self.model().dt.ids_by_row(ir-2)
             used_ids.extend(a)
-        f = filt.Filter.filter_by_datalist(
+        f = filt.filter_by_datalist(
                 self.model().dt, 'id', used_ids, do_remove)
         com = maincoms.ComAddFilter(self.model(), f)
         self.flow.exec_command(com)
@@ -424,6 +424,14 @@ class TableView(QtWidgets.QTableView):
             txt.append('\t'.join(map(str, row)))
         txt = '\n'.join(txt)
         QtWidgets.QApplication.clipboard().setText(txt)
+
+    def selected_columns(self):
+        ret = []
+        si = self.selectionModel()
+        for i in range(self.model().columnCount()):
+            if si.columnIntersectsSelection(i, QtCore.QModelIndex()):
+                ret.append(i)
+        return ret
 
     def adjusted_width(self, how):
         """ how = 'data', 'data/caption'

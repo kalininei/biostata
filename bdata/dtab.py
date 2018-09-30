@@ -225,7 +225,7 @@ class DataTable(object):
         if group is None:
             group = self.group_by
         # filtration
-        fltline = filt.Filter.compile_sql_line(filters, self)
+        fltline = filt.compile_sql_line(filters, self)
 
         # grouping
         grlist, order = self._grouping_ordering(group)
@@ -635,7 +635,7 @@ class ViewedData:
                 # add additional filters defining this group
                 flt = [self.get_filter(iden=x)
                        for x in self.model.used_filters]
-                flt.append(filt.Filter.filter_by_values(
+                flt.append(filt.filter_by_values(
                         self.model, self.definition.keys(),
                         self.definition.values(), False, True))
                 # build query

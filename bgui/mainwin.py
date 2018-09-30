@@ -27,6 +27,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setGeometry(QtWidgets.QStyle.alignedRect(
             QtCore.Qt.LeftToRight, QtCore.Qt.AlignCenter,
             self.size(), QtWidgets.qApp.desktop().availableGeometry()))
+        self.__subwindows = []
 
         # data
         self.proj = proj
@@ -165,6 +166,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.datamenu.addSeparator()
         self.datamenu.addAction(self.acts["Remove active table"])
 
+        # --- Stats
+        self.statsmenu = menubar.addMenu('Stats')
+        self.statsmenu.addAction(self.acts['Covariance matrix'])
+        self.statsmenu.addAction(self.acts['Correlation matrix'])
+
         # --- Show
         self.showmenu = self.createPopupMenu()
         self.showmenu.setTitle('Show')
@@ -270,6 +276,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def _on_quit(self):
         self.opts.set_mainwindow_state(self.saveState(), self.saveGeometry())
         self.opts.save()
+
+    def closeEvent(self, event):   # noqa
+        for w in self.__subwindows[:]:
+            w.close()
+        event.accept()
 
     # ============== Procedures
     def run_act(self, aname):
@@ -413,3 +424,8 @@ class MainWindow(QtWidgets.QMainWindow):
                 self.run_act('Configuration')
                 return self.require_editor(ftype)
         return ret
+
+    def add_subwindow(self, win):
+        self.__subwindows.append(win)
+        win.setAttribute(QtCore.Qt.WA_DeleteOnClose)
+        win.destroyed.connect(lambda: self.__subwindows.remove(win))
