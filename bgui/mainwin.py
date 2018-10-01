@@ -243,6 +243,20 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_active_model(None)
 
     def _update_menu_status(self):
+        # this is called after each command, so we place some checks here
+        # assert self.wtab.count() == len(self.tabframes),\
+        # ############################################################
+        # if self.wtab.count() != len(self.tabframes):
+        #     print("{} != {}".format(self.wtab.count(), len(self.tabframes)))
+        #     import traceback
+        #     traceback.print_stack()
+        # for mod in self.models:
+        #     for col in mod.dt.all_columns:
+        #         if not col.uses_dict(None):
+        #             did = col.repr_delegate.dict.id
+        #             did = self.proj.get_dictionary(iden=did)
+        #             assert did is col.repr_delegate.dict
+
         # actions
         for v in self.acts.values():
             v.setEnabled(v.isactive())
@@ -342,14 +356,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _close_database(self):
         self.active_model = None
-        self.models = []
+        self.models.clear()
+        self.tabframes.clear()
         self.wtab.clear()
-        self.tabframes = []
         self.reset_title()
         self.database_closed.emit()
 
     def _init_project(self):
-        self.models = []
+        self.models.clear()
         # models
         for t in self.proj.data_tables:
             self.models.append(tmodel.TabModel(t))
@@ -358,7 +372,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._init_widgets()
 
     def _init_widgets(self):
-        self.tabframes = []
+        self.tabframes.clear()
         for m in self.models:
             self.tabframes.append(tview.TableView(self.flow, m, self.wtab))
         for f in self.tabframes:

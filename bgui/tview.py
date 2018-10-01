@@ -51,6 +51,7 @@ class TabDelegate(QtWidgets.QStyledItemDelegate):
 
     def __init__(self, mod, parent):
         super().__init__(parent)
+        self._nr, self._nc = 0, 0
         self.conf = cfg.ViewConfig.get()
         self.display_widgets = []
         self.row_heights = []
@@ -445,7 +446,6 @@ class TableView(QtWidgets.QTableView):
         for i in range(self.model().columnCount()):
             cid = self.model().dt.visible_columns[i].id
             ret[cid] = self.adjusted_width_for_column(i, how)
-            print(self.model().dt.all_columns[i].name, ret[cid])
         return ret
 
     def adjusted_width_for_column(self, icol, how):

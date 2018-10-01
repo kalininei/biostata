@@ -194,10 +194,11 @@ class ProjectDB:
 
     def get_dictionary(self, name=None, iden=None):
         if name is not None:
-            return next(filter(lambda x: x.name == name,
-                               self.dictionaries))
+            return next(filter(lambda x: x.name == name, self.dictionaries),
+                        None)
         if iden is not None:
-            return next(filter(lambda x: x.id == iden, self.dictionaries))
+            return next(filter(lambda x: x.id == iden, self.dictionaries),
+                        None)
 
     def get_filter(self, name=None, iden=None):
         if name is not None:

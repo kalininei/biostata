@@ -597,15 +597,6 @@ class Test1(unittest.TestCase):
         c = comproj.LoadDB(proj, "dbg.db")
         flow.exec_command(c)
         self.assertEqual(proj.data_tables[0].name, 't1')
-        flow.undo_prev()
-        self.assertEqual(len(proj.data_tables), 0)
-        flow.exec_next()
-        flow.undo_prev()
-        flow.exec_next()
-        self.assertEqual(len(proj.data_tables), 1)
-        flow.undo_prev()
-        flow.undo_prev()
-        self.assertEqual(len(proj.data_tables), 1)
 
     def test_functions(self):
         basic.log_message('===================== TEST FUNCTIONS ===========')

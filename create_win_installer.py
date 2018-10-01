@@ -41,7 +41,7 @@ fid.writelines(lines)
 fid.close()
 
 # run pyinstaller
-subprocess.call(["python", "-OO", "-m", "PyInstaller",
+subprocess.call(["python", "-O", "-m", "PyInstaller",
                  "-y", "-w", "--clean", "-i"
                  '{}'.format(os.path.join(os.curdir,
                                           'resources',

@@ -83,7 +83,7 @@ class ActRemoveColumn:
     def implicit_removes(tab, col):
         'remove columns which depend on removed or repr_changed columns'
         ret = [col]
-        candidates = [c for c in col if not c.is_original()]
+        candidates = [c for c in tab.all_columns if not c.is_original()]
         i = 0
         while i < len(ret):
             for it in candidates:
@@ -105,7 +105,7 @@ class ActRemoveColumn:
     def redo(self):
         self.acts = []
         for c in self.cols:
-            self.acts.append(ActRemoveSingleColumn(self.tab, self.col))
+            self.acts.append(ActRemoveSingleColumn(self.tab, c))
             self.acts[-1].redo()
 
     def undo(self):

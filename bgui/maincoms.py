@@ -8,36 +8,6 @@ from bdata import convert
 from bgui import tmodel
 
 
-class MainWinBU:
-    def __init__(self, mainwin):
-        self.mainwin = mainwin
-        self.models = mainwin.models[:]
-        self.tabframes = mainwin.tabframes[:]
-        self.active_model = mainwin.active_model
-
-    def clear(self):
-        self.models = []
-        self.tabframes = []
-        self.active_model = None
-
-    def restore(self):
-        self.mainwin.models = self.models[:]
-        self.mainwin.tabframes = self.tabframes[:]
-        self.mainwin.active_model = self.active_model
-
-        self.mainwin.wtab.clear()
-        for f in self.mainwin.tabframes:
-            self.mainwin.wtab.addTab(f, f.table_name())
-
-        if len(self.models) > 0:
-            ind = self.models.index(self.active_model)
-            self.mainwin._set_active_model(ind)
-            self.mainwin.wtab.setCurrentIndex(ind)
-        else:
-            self.mainwin._set_active_model(None)
-        self.mainwin.reset_title()
-
-
 class ActAddModel:
     def __init__(self, mainwin, dt, make_active):
         self.mw = mainwin
@@ -65,10 +35,12 @@ class ActAddModel:
         self.mw.wtab.addTab(self.newframe, self.newframe.table_name())
         if self.make_active:
             self.mw.wtab.setCurrentIndex(len(self.mw.models) - 1)
+        assert self.mw.wtab.count() == len(self.mw.tabframes)
 
     def undo(self):
         if self.make_active and self.lastactive is not None:
             self.mw.wtab.setCurrentIndex(self.lastactive)
+        assert self.mw.wtab.count() == len(self.mw.tabframes)
         self.mw.wtab.removeTab(self.mw.wtab.count()-1)
         self.mw.tabframes.pop()
         self.mw.models.pop()
@@ -101,42 +73,37 @@ class ActModelUpdate:
 class ComNewDatabase(command.Command):
     def __init__(self, mainwin):
         super().__init__(mw=mainwin)
-        self._wbu = MainWinBU(mainwin)
         self.com = comproj.NewDB(self.mw.proj)
-        self.mw = mainwin
+        self.set_no_undo()
 
     def _exec(self):
         self.com.do()
         self.mw._close_database()
         return True
 
-    def _undo(self):
-        self.com.undo()
-        self._wbu.restore()
-
 
 class ComLoadDatabase(command.Command):
     def __init__(self, mainwin, fname):
         super().__init__(mw=mainwin)
-        self._wbu = MainWinBU(self.mw)
         self.com = comproj.LoadDB(self.mw.proj, fname)
+        self.set_no_undo()
 
     def _exec(self):
         self.com.do()
         self.mw.database_opened.emit()
         return True
 
-    def _undo(self):
-        self.com.undo()
-        self._wbu.restore()
-
 
 class ComImport(command.Command):
-    def __init__(self, mainwin, comimp):
-        super().__init__(mw=mainwin, com=comimp)
+    def __init__(self, mainwin, newdicts, comimp):
+        super().__init__(mw=mainwin, newdicts=newdicts, com=comimp)
         self.acts = []
 
     def _exec(self):
+        for d in self.newdicts:
+            self.acts.append(command.ActFromCommand(comproj.AddDictionary(
+                self.mw.proj, d)))
+            self.acts[-1].redo()
         self.acts.append(command.ActFromCommand(self.com))
         self.acts[-1].redo()
         self.acts.append(ActAddModel(self.mw,
@@ -276,8 +243,9 @@ class ComSetColoring(command.Command):
         super().__init__(mod=mod, cn=cn, cs=cs, ilr=ilr)
 
     def _exec(self):
-        self.bu = (self.mod.coloring.color_by,
-                   self.mod.coloring.color_scheme,
+        cn = self.mod.dt.get_column(iden=self.mod.coloring.color_by).name
+        print('COLNAME', cn)
+        self.bu = (cn, self.mod.coloring.color_scheme,
                    not self.mod.coloring.absolute_limits)
         self._redo()
         return True
@@ -385,10 +353,13 @@ class ComRemAllFilters(command.Command):
 
 
 class ComConvertColumns(command.Command):
-    def __init__(self, mw, convs):
+    def __init__(self, mw, newdicts, convs):
         super().__init__()
         self.act_update = ActModelUpdate(mw.active_model)
         self.acts = []
+        for d in newdicts:
+            self.acts.append(command.ActFromCommand(comproj.AddDictionary(
+                mw.proj, d)))
         for c in convs:
             self.acts.append(command.ActFromCommand(
                 convert.ConvertTable(c)))
@@ -459,23 +430,37 @@ class ComRemoveTable(command.Command):
         self.acts.append(command.ActRemoveListEntry(
             self.mw.tabframes, self.mw.tabframes[self.ind]))
 
-        a = basic.CustomObject()
-        a.redo = lambda: self.mw.wtab.removeTab(self.ind)
-        a.undo = lambda: self.mw.wtab.insertTab(self.ind, self.tframe,
-                                                self.tframe.table_name())
+        class RT:
+            def __init__(self, mw, ind, tframe, tname):
+                self.mw = mw
+                self.ind = ind
+                self.tframe = tframe
+                self.tname = tname
+
+            def redo(self):
+                self.mw.wtab.removeTab(self.ind)
+
+            def undo(self):
+                self.mw.wtab.insertTab(self.ind, self.tframe, self.tname)
+
+        a = RT(self.mw, self.ind, self.tframe, self.tframe.table_name())
         self.acts.append(a)
         self._redo()
         return True
 
     def _undo(self):
+        assert self.acts[-2].lst == self.mw.tabframes
         for a in reversed(self.acts):
             a.undo()
+        assert self.mw.wtab.count() == len(self.mw.tabframes)
         if self.isactive:
             self.mw.wtab.setCurrentIndex(self.ind)
 
     def _redo(self):
+        assert self.acts[-2].lst == self.mw.tabframes
         for a in self.acts:
             a.redo()
+        assert self.mw.wtab.count() == len(self.mw.tabframes)
         if len(self.mw.models) == 0:
             self.mw._set_active_model(None)
 

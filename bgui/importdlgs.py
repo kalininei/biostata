@@ -16,11 +16,14 @@ class _ImportDialog(dlgs.OkCancelDialog):
     def __init__(self, proj, fn, require_editor, parent):
         title = 'Import table as {} from "{}"'.format(self.get_format(), fn)
         super().__init__(title, parent, "vertical")
-        self._ret_value = None
         self.proj = proj
         self.fn = fn
         self.require_editor = require_editor
+        # output values:
+        # table build command.
         self.com = None
+        # new dictionaries which should be built before building table
+        self.new_dictionaries = []
 
         self.buttonbox.button(QtWidgets.QDialogButtonBox.Ok).setEnabled(False)
         # mainframe = upperframe + lowerframe
@@ -48,7 +51,7 @@ class _ImportDialog(dlgs.OkCancelDialog):
         self.upper_frame.layout().addWidget(bbox)
 
         # lower frame = table widget
-        self.table = PreloadTable(self.proj, self)
+        self.table = PreloadTable(self.proj, self.new_dictionaries, self)
         self.lower_frame.setLayout(QtWidgets.QVBoxLayout())
         self.lower_frame.layout().addWidget(self.table)
 
@@ -109,22 +112,22 @@ class _ImportDialog(dlgs.OkCancelDialog):
             self.com.caps = [c[0] for c in columns]
             self.com.tps = [c[1] for c in columns]
             self.com.dnames = [c[2] for c in columns]
-            self._ret_value = self.com
             return super().accept()
         except Exception as e:
             qtcommon.message_exc(self, "Invalid input", e=e)
 
     def ret_value(self):
-        '-> name, tab, columns'
-        return self._ret_value
+        '-> newdicts, command'
+        return self.new_dictionaries, self.com
 
 
 class PreloadModel(QtCore.QAbstractTableModel):
     format_changed = QtCore.pyqtSignal(int, str)
 
-    def __init__(self, proj):
+    def __init__(self, pretab):
         super().__init__()
-        self.proj = proj
+        self.pretab = pretab
+        self.proj = pretab.proj
         self.tab = []
         self.caps = []
         self.columns_enabled = []
@@ -132,6 +135,14 @@ class PreloadModel(QtCore.QAbstractTableModel):
         self.columns_dicts = []
         self.data_rows = 0
         self.data_columns = 0
+
+    def get_dictionary(self, dname):
+        ret = self.proj.get_dictionary(dname)
+        if ret is None:
+            for d in self.pretab.new_dictionaries:
+                if d.name == dname:
+                    return d
+        assert False
 
     def load(self, caps, tab):
         if len(tab) == 0 or len(tab[0]) == 0:
@@ -180,7 +191,7 @@ class PreloadModel(QtCore.QAbstractTableModel):
                     elif self.columns_format[c] == "REAL":
                         float(v)
                     elif self.columns_format[c] in ["BOOL", "ENUM"]:
-                        dct = self.proj.get_dictionary(self.columns_dicts[c])
+                        dct = self.get_dictionary(self.columns_dicts[c])
                         dct.value_to_key(v)
                     return v
                 except Exception:
@@ -284,6 +295,9 @@ class ComboboxDelegate(QtWidgets.QStyledItemDelegate):
     def set_values(self, values):
         self.values = copy.deepcopy(values)
 
+    def insert_value(self, index, value):
+        self.values.insert(index, value)
+
     def createEditor(self, parent, option, index):   # noqa
         ret = QtWidgets.QComboBox(parent)
         ret.addItems(self.values)
@@ -303,8 +317,9 @@ class FormatComboboxDelegate(ComboboxDelegate):
 
 
 class DictComboboxDelegate(ComboboxDelegate):
-    def __init__(self, model,  parent):
+    def __init__(self, model, parent):
         self.model = model
+        self.pretab = parent
         super().__init__([], parent)
 
     def set_values(self, values):
@@ -318,12 +333,13 @@ class DictComboboxDelegate(ComboboxDelegate):
             uvals = self.model.get_unique_data_values(c)
             ukeys = list(range(len(uvals)))
             dialog = dictdlg.CreateNewDictionary(
-                self.model.proj.dictionaries, self.parent(),
+                self.pretab.alldicts(), self.parent(),
                 self.model.columns_format[c], ukeys, uvals, False)
             if dialog.exec_():
                 dct = dialog.ret_value()
-                self.model.proj.add_dictionary(dct)
+                self.pretab.new_dictionaries.append(dct)
                 value = dct.name
+                self.insert_value(-1, value)
             else:
                 value = None
         if value:
@@ -331,10 +347,11 @@ class DictComboboxDelegate(ComboboxDelegate):
 
 
 class PreloadTable(QtWidgets.QTableView):
-    def __init__(self, proj, parent):
+    def __init__(self, proj, newdicts, parent):
         super().__init__(parent)
-        model = PreloadModel(proj)
         self.proj = proj
+        model = PreloadModel(self)
+        self.new_dictionaries = newdicts
         self.setModel(model)
         self.format_delegate = FormatComboboxDelegate(self)
         self.dict_delegate = DictComboboxDelegate(self.model(), self)
@@ -342,12 +359,23 @@ class PreloadTable(QtWidgets.QTableView):
         self.setItemDelegateForRow(2, self.dict_delegate)
         self.model().format_changed.connect(self.format_changed)
 
+    def enumdicts(self):
+        return self.proj.enum_dictionaries() +\
+                [x for x in self.new_dictionaries if x.dt_type == "ENUM"]
+
+    def booldicts(self):
+        return self.proj.bool_dictionaries() +\
+                [x for x in self.new_dictionaries if x.dt_type == "BOOL"]
+
+    def alldicts(self):
+        return self.proj.dictionaries + self.new_dictionaries
+
     def format_changed(self, column, newformat):
         if newformat in ["ENUM", "BOOL"]:
             if newformat == "ENUM":
-                posdicts = [x.name for x in self.proj.enum_dictionaries()]
+                posdicts = [x.name for x in self.enumdicts()]
             elif newformat == "BOOL":
-                posdicts = [x.name for x in self.proj.bool_dictionaries()]
+                posdicts = [x.name for x in self.booldicts()]
             if len(posdicts) == 0:
                 posdicts = [""]
             self.dict_delegate.set_values(posdicts)

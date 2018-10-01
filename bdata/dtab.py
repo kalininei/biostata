@@ -298,6 +298,8 @@ class DataTable(object):
         cur = ET.SubElement(root, "COLUMNS")
         for c in self.all_columns:
             nd = ET.SubElement(cur, "E")
+            assert c.uses_dict(None) or\
+                self.proj.get_dictionary(iden=c.repr_delegate.dict.id)
             c.to_xml(nd)
             redstatus = self.redstatus_bytearray(c)
             if redstatus is not None:
@@ -312,11 +314,14 @@ class DataTable(object):
             n = ET.SubElement(cur, "ANON")
             f.to_xml(n)
         # used filter
+        assert all([self.get_filter(iden=x) is not None
+                    for x in self.used_filters])
         ET.SubElement(cur, "USED").text =\
             ' '.join([str(x) for x in self.used_filters])
 
         # ----- ordering
         if self.ordering is not None:
+            assert self.get_column(iden=self.ordering[1]) is not None
             ET.SubElement(root, "ORDER_BY").text =\
                 "{} {}".format(self.ordering[0], self.ordering[1])
 
@@ -324,6 +329,8 @@ class DataTable(object):
         if self.group_by == 'all':
             ET.SubElement(root, "GROUP_BY").text = 'all'
         elif self.group_by:
+            assert all([self.get_column(iden=x) is not None
+                        for x in self.group_by])
             ET.SubElement(root, "GROUP_BY").text =\
                 ' '.join([str(i) for i in self.group_by])
 

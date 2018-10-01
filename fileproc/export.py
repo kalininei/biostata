@@ -81,17 +81,22 @@ def xlsx_export(datatab, opt, model, view):
                 if opt.with_id:
                     jr -= 1
                 index = model.createIndex(ir, jr)
-                # 1) colors
-                fg, bg = model.data(index, tmodel.TabModel.ColorsRole)
-                clr = pxl.styles.colors.Color(rgb=bg.name()[1:])
-                my_fill = pxl.styles.fills.PatternFill(
-                        patternType='solid', fgColor=clr)
-                cell.fill = my_fill
-                # 2) fonts
                 ft = model.data(index, QtCore.Qt.FontRole)
-                pft = pxl.styles.Font(sz=ft.pointSize(), color=fg.name()[1:],
-                                      italic=ft.italic(), bold=ft.bold())
-                cell.font = pft
+                if model.use_coloring() or ir < 2 or jr < 1:
+                    # 1) colors
+                    fg, bg = model.data(index, tmodel.TabModel.ColorsRole)
+                    clr = pxl.styles.colors.Color(rgb=bg.name()[1:])
+                    my_fill = pxl.styles.fills.PatternFill(
+                            patternType='solid', fgColor=clr)
+                    cell.fill = my_fill
+                    # 2) fonts
+                    pft = pxl.styles.Font(
+                            sz=ft.pointSize(), color=fg.name()[1:],
+                            italic=ft.italic(), bold=ft.bold())
+                    cell.font = pft
+                else:
+                    pft = pxl.styles.Font(sz=ft.pointSize())
+                    cell.font = pft
 
         # 3) cell sizes
         if view is not None:

@@ -1,14 +1,14 @@
 import numpy as np
-from prog import filt
 
 
 def mat_raw_values(dt, colnames):
+    ''' returns 2D array where each row contains defined dt column.
+        dt rows which contain any None value are ignored.
+    '''
     colslist = [dt.get_column(x) for x in colnames]
-    flt = [dt.get_filter(iden=x) for x in dt.used_filters]
-    # add not NULL filters
-    for c in colnames:
-        flt.append(filt.filter_nonnull(dt, c))
-    qr = dt._compile_query(colslist, filters=flt,
-                           status_adds=False, group_adds=False)
+    qr = dt._compile_query(colslist, status_adds=False, group_adds=False)
     dt.query(qr)
-    return np.array(dt.qresults()).transpose()
+    ret = np.array(dt.qresults())
+    # remove rows which contain None values
+    notnone = np.all(ret != np.array(None), axis=1)
+    return ret[notnone].transpose()

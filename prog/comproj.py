@@ -1,6 +1,5 @@
 import os
 import pathlib
-import copy
 import xml.etree.ElementTree as ET
 from prog import basic
 from prog import command
@@ -11,60 +10,12 @@ from bdata import bcol
 from bdata import convert
 
 
-class ProjBackUp(object):
-    def __init__(self, proj):
-        self.proj = proj
-
-        # backup tables
-        self.ttab_names = []
-        for tab in proj.data_tables:
-            self.ttab_names.append(tab.ttab_name)
-            tab.rename_ttab('_projbu{} {}'.format(basic.uniint(),
-                                                  tab.ttab_name))
-
-        # backup data
-        self.data_tables = proj.data_tables[:]
-        self._curname = proj._curname
-        self._curdir = proj._curdir
-        self.dictionaries = proj.dictionaries[:]
-        self.named_filters = proj.named_filters[:]
-        self.idc = copy.deepcopy(proj.idc)
-
-        self.state_restored = False
-
-    def clear(self):
-        if not self.state_restored:
-            for tab in self.data_tables:
-                tab.destruct()
-        self.data_tables = None
-        self._curname = None
-        self._curdir = None
-        self.dictionaries = None
-        self.named_filters = None
-        self.idc = None
-
-    def restore(self):
-        for tab in self.proj.data_tables:
-            tab.destruct()
-        for nm, tab in zip(self.ttab_names, self.data_tables):
-            tab.rename_ttab(nm)
-
-        self.proj.data_tables = self.data_tables[:]
-        self.proj._curname = self._curname
-        self.proj._curdir = self._curdir
-        self.proj.dictionaries = self.dictionaries[:]
-        self.proj.named_filters = self.named_filters[:]
-        self.proj.idc = copy.deepcopy(self.idc)
-
-        self.state_restored = True
-
-
 class NewDB(command.Command):
     def __init__(self, proj):
         super().__init__(proj=proj)
+        self.set_no_undo()
 
     def _exec(self):
-        self._bu = ProjBackUp(self.proj)
         # detach
         if self.proj.sql.has_A:
             self.proj.sql.detach_database('A')
@@ -72,22 +23,15 @@ class NewDB(command.Command):
         self.proj.initialize()
         return True
 
-    def _clear(self):
-        self._bu.clear()
-
-    def _undo(self):
-        self._bu.restore()
-        self._clear()
-
 
 class LoadDB(command.Command):
     def __init__(self, proj, fname):
         super().__init__(proj=proj, fname=fname)
+        self.set_no_undo()
 
     def _exec(self):
         if not pathlib.Path(self.fname).exists():
             raise Exception('File not found {}'.format(self.fname))
-        self._bu = ProjBackUp(self.proj)
         self.proj.sql.attach_database('A', self.fname)
 
         # database information
@@ -126,13 +70,6 @@ class LoadDB(command.Command):
         self.proj.set_current_filename(self.fname)
         self.proj.xml_loaded.emit(info)
         return True
-
-    def _clear(self):
-        self._bu.clear()
-
-    def _undo(self):
-        self._bu.restore()
-        self._clear()
 
 
 class SaveDBAs(command.Command):

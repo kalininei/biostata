@@ -155,8 +155,8 @@ class ActImport(MainAct):
                 qtcommon.message_exc(self.mainwin, "Import error", e=e)
                 return
             if dialog2.exec_():
-                comimp = dialog2.ret_value()
-                com = maincoms.ComImport(self.mainwin, comimp)
+                newdicts, comimp = dialog2.ret_value()
+                com = maincoms.ComImport(self.mainwin, newdicts, comimp)
                 self.flow.exec_command(com)
 
 
@@ -526,11 +526,12 @@ class ActTabColInfo(MainAct):
         try:
             dialog = colinfodlg.TablesInfo(self.proj, self.mainwin)
             if dialog.exec_():
-                ret = dialog.ret_value()
+                newdicts, ret = dialog.ret_value()
                 if not ret:
                     return
                 else:
-                    com = maincoms.ComConvertColumns(self.mainwin, ret)
+                    com = maincoms.ComConvertColumns(
+                            self.mainwin, newdicts, ret)
                     self.flow.exec_command(com)
         except Exception as e:
             qtcommon.message_exc(self.mainwin, "Error", e=e)
@@ -651,18 +652,23 @@ class ActCovarianceMatrix(MainAct):
         tp = [self.amodel().dt.get_column(x).col_type() for x in all_cols]
         dialog = dlgs.CovarMatDlg(self.mainwin, used_cols, all_cols, tp)
         if dialog.exec_():
-            colnames, bias, mtype = dialog.ret_value()
-            if mtype.startswith('sym'):
-                mtype = 'both'
-            mat = npinterface.mat_raw_values(self.amodel().dt, colnames)
-            if bias == 'population':
-                cm = stats.population_covariance_matrix(mat)
-            else:
-                cm = stats.sample_covariance_matrix(mat)
-            w = matrixview.MatrixView("Covariance matrix", self.mainwin,
-                                      cm, colnames, colnames, sym=mtype)
-            self.mainwin.add_subwindow(w)
-            w.show()
+            try:
+                colnames, bias, mtype = dialog.ret_value()
+                if mtype.startswith('sym'):
+                    mtype = 'both'
+                mat = npinterface.mat_raw_values(self.amodel().dt, colnames)
+                if len(mat) < 2 or len(mat[0]) < 2:
+                    raise Exception("No enough data")
+                if bias == 'population':
+                    cm = stats.population_covariance_matrix(mat)
+                else:
+                    cm = stats.sample_covariance_matrix(mat)
+                w = matrixview.MatrixView("Covariance matrix", self.mainwin,
+                                          cm, colnames, colnames, sym=mtype)
+                self.mainwin.add_subwindow(w)
+                w.show()
+            except Exception as e:
+                qtcommon.message_exc(self.mainwin, 'Error', e=e)
 
 
 def _get_numerical_columns(amodel):

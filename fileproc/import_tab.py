@@ -1,4 +1,5 @@
 import openpyxl as pxl
+from prog import basic
 from prog import comproj
 from bdata import bcol
 from bdata import dtab
@@ -10,9 +11,19 @@ def split_plain_text(fname, options):
             colcount.
         returns equal column size 2d array of stripped text entries
     """
-    with open(fname, 'r') as f:
-        lines = f.readlines()
-    f.close()
+    lines = None
+    for e in ['utf8', 'unicode', 'windows-1250', 'windows-1252']:
+        try:
+            with open(fname, 'r', encoding=e) as f:
+                lines = f.readlines()
+        except Exception as e:
+            basic.ignore_exception(e=e)
+        else:
+            break
+    if lines is None:
+        # try without encoding to raise Exception
+        with open(fname, 'r') as f:
+            lines = f.readlines()
 
     # firstline-lastline
     firstline = max(0, options.firstline - 1)

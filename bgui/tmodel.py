@@ -330,11 +330,11 @@ class TabModel(QtCore.QAbstractTableModel):
         self.conf.refresh()
         self.view_update()
 
-    def set_coloring(self, column=None, scheme=None, is_local=None):
+    def set_coloring(self, colname=None, scheme=None, is_local=None):
         if scheme is not None:
             self.coloring.color_scheme = scheme
-        if column is not None:
-            self.coloring.set_column(self.dt, self.dt.get_column(column))
+        if colname is not None:
+            self.coloring.set_column(self.dt, self.dt.get_column(colname))
         if is_local is not None:
             self.coloring.absolute_limits = not is_local
         # here we call coloring.update()

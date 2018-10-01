@@ -24,8 +24,27 @@ class TablesInfo(dlgs.OkCancelDialog):
         self.mainframe.layout().addWidget(self.e_tree)
         self.mainframe.layout().addWidget(self.info_frame)
 
+        self.orig_dictionaries = self.proj.dictionaries[:]
+
     def reset_tree_item(self, item):
         self.e_tree.fill()
+
+    def new_dictionaries(self):
+        """ somewhere within this dialogs new dictionaries are added into
+            the project. At the end of it we remove thoise dictionaries
+            and sent these dictionaries as return values.
+        """
+        ret = []
+        for d in self.proj.dictionaries:
+            if d not in self.orig_dictionaries:
+                ret.append(d)
+        for d in ret:
+            self.proj.dictionaries.remove(d)
+        return ret
+
+    def reject(self):
+        self.new_dictionaries()
+        return super().reject()
 
     def accept(self):
         try:
@@ -47,12 +66,14 @@ class TablesInfo(dlgs.OkCancelDialog):
                     self.proj.is_possible_column_name(c)
                 if len(set(cnms)) < len(cnms):
                     raise Exception("Repeating column names are not valid.")
+            self._ret_value = self.new_dictionaries(), self._ret_value
             # return
             return super().accept()
         except Exception as e:
             qtcommon.message_exc(self, "Invalid input", e=e)
 
     def ret_value(self):
+        ''' -> new dictionaries, list of converters '''
         return self._ret_value
 
 

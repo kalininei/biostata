@@ -11,17 +11,21 @@ class Command(object):
         for k, v in kwargs.items():
             self.__dict__[k] = v
         self.__executed = False
+        self.__subcommand = False
+        self.__no_undo = False
 
     def do(self):
         """ execute (or redos) the command
             returns True if success
         """
         if self.__executed:
-            basic.log_message("**************************")
+            if not self.__subcommand:
+                basic.log_message("**************************")
             basic.log_message("REDO: " + str(self.__class__.__name__))
             self._redo()
         else:
-            basic.log_message("**************************")
+            if not self.__subcommand:
+                basic.log_message("**************************")
             basic.log_message("DO: " + str(self.__class__.__name__))
             self.__executed = self._exec()
             assert isinstance(self.__executed, bool)
@@ -31,7 +35,8 @@ class Command(object):
         """ undo the command
         """
         if self.__executed:
-            basic.log_message("**************************")
+            if not self.__subcommand:
+                basic.log_message("**************************")
             basic.log_message("UNDO: " + str(self.__class__.__name__))
             self._undo()
 
@@ -40,6 +45,15 @@ class Command(object):
         if self.__executed:
             self.__executed = False
             self._clear()
+
+    def has_undo(self):
+        return not self.__no_undo
+
+    def set_no_undo(self):
+        self.__no_undo = True
+
+    def set_subcommand(self):
+        self.__subcommand = True
 
     # ------------ methods to override
     def _exec(self):
@@ -116,6 +130,11 @@ class CommandFlow(object):
             if self._commands[self._curpos+1].do():
                 self._curpos += 1
                 self.adjust_commands_count()
+                if not self._commands[self._curpos].has_undo():
+                    for c in self._commands[:self._curpos+1]:
+                        c.reset()
+                    self._commands = self._commands[self._curpos+1:]
+                    self._curpos = -1
                 self.command_done.emit()
 
     def adjust_commands_count(self):
@@ -142,6 +161,8 @@ class CommandFlow(object):
             self._curpos -= 1
             self._commands[self._curpos + 1].undo()
             self.command_done.emit()
+        else:
+            assert False
 
     def undo_all(self):
         while (self.can_undo()):
@@ -237,9 +258,26 @@ class ActChangeAttr:
         self.obj.__dict__[self.attr] = self.oldval
 
 
+class ActChangeListAttr:
+    def __init__(self, obj, attr, newval):
+        self.obj = obj
+        self.attr = attr
+        self.newval = newval
+        self.oldval = self.obj.__dict__[self.attr][:]
+
+    def redo(self):
+        self.obj.__dict__[self.attr].clear()
+        self.obj.__dict__[self.attr].extend(self.newval)
+
+    def undo(self):
+        self.obj.__dict__[self.attr].clear()
+        self.obj.__dict__[self.attr].extend(self.oldval)
+
+
 class ActFromCommand:
     def __init__(self, com):
         self.com = com
+        self.com.set_subcommand()
 
     def redo(self):
         self.com.do()

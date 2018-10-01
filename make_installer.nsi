@@ -4,8 +4,8 @@
 !define VERSION "0.1"
 !define APPNAME "Biostata"
 !define EXENAME ${APPNAME}.exe
-OutFile "biostata-v${VERSION}-win64.exe"
-InstallDir $PROGRAMFILES64\${APPNAME}
+OutFile "biostata-v${VERSION}-win32.exe"
+InstallDir $PROGRAMFILES32\${APPNAME}
 
 !macro VerifyUserIsAdmin
 	UserInfo::GetAccountType
