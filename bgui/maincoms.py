@@ -611,10 +611,10 @@ class ComSetFilters(command.Command):
 
 
 class ComNumFunctionColumn(command.Command):
-    def __init__(self, model, name, colnames, func):
+    def __init__(self, model, name, colnames, func, bg):
         super().__init__()
         self.act = command.ActFromCommand(funccol.NumFunctionColumn(
-            model.dt, name, colnames, func))
+            model.dt, name, colnames, func, bg))
         self.act_update = ActModelUpdate(model)
 
     def _exec(self):

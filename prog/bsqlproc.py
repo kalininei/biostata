@@ -158,19 +158,23 @@ def build_regression_grouping(tp, ngroup):
         def __init__(self):
             super().__init__()
             self.wrk = None
-            self.ret = [None] * 5
 
         def start(self, obj):
             if self.wrk is None:
                 self.sz = 0
                 self.wrk = obj
+                self.ret = [None] * 5
 
         def end(self, obj):
             self.wrk = None
 
+        def finalize(self):
+            r = super().finalize()
+            self.wrk = None
+            return r
+
         def worker(self, a, b):
             self.ret = rfunc(a, b)
-            self.wrk = None
 
     r = _Runner()
 

@@ -6,6 +6,7 @@
 """
 import copy
 import unittest
+import math
 from prog import basic, projroot, command, comproj, bopts, valuedict, filt
 from fileproc import import_tab
 from bdata import convert, funccol
@@ -605,6 +606,102 @@ class Test1(unittest.TestCase):
         flow.undo_prev()
         flow.undo_prev()
         self.assertEqual(len(proj.data_tables), 1)
+
+    def test_functions(self):
+        basic.log_message('===================== TEST FUNCTIONS ===========')
+        opt = basic.CustomObject()
+        opt.firstline = 0
+        opt.lastline = -1
+        opt.comment_sign = '#'
+        opt.ignore_blank = True
+        opt.col_sep = 'tabular'
+        opt.row_sep = 'newline'
+        opt.colcount = -1
+        opt.tabname = 't1'
+        opt.read_cap = True
+
+        c = import_tab.ImportTabFromTxt(proj, 'test_db/t4.dat', opt)
+        flow.exec_command(c)
+        dt = proj.data_tables[0]
+
+        # integral
+        c = funccol.NumIntegralColumn(dt, "int_sin", 'X', 'SIN(X)')
+        flow.exec_command(c)
+        dt.update()
+        self.assertTrue(all([x is None for x in tu.get_dtab_column(dt, 'int_sin')]))   # noqa
+
+        c = funccol.GroupCategories(dt, ['Номер_эксперимента'], 'amean')
+        flow.exec_command(c)
+        dt.update()
+        col = tu.get_dtab_column(dt, 'int_sin')
+        self.assertAlmostEqual(sum(col[:3]), sum([0.22997014437065483, 0.8059085741205286, 0.5374542384689438]))  # noqa
+        self.assertEqual(col[3], None)
+
+        # linear regression
+        opts = basic.CustomObject()
+        opts.xcol = 'X'
+        opts.ycol = '1.8*X+4'
+        opts.tp = 'linear'
+        opts.out = ['a', 'b', 'corrcoef', 'stderr', 'slopeerr']
+        opts.out_names = ['1', '2', '3', '4', '5']
+        c = funccol.NumRegressionColumns(dt, opts)
+        flow.exec_command(c)
+        dt.update()
+        cols = [tu.get_dtab_column(dt, x) for x in opts.out_names]
+        for a, b in zip(cols[0], [1.8, 1.8, 1.8, None, 1.6]):
+            self.assertAlmostEqual(a, b)
+        for a, b in zip(cols[1], [4, 4, 4, None, 2]):
+            self.assertAlmostEqual(a, b)
+        for a, b in zip(cols[2], [1, 1, 1, None, 1]):
+            self.assertAlmostEqual(a, b)
+        for a, b in zip(cols[3], [0, 0, 0, None, 0]):
+            self.assertAlmostEqual(a, b)
+
+        # log regression
+        opts = basic.CustomObject()
+        opts.xcol = 'X'
+        opts.ycol = 'SIN(X)'
+        opts.tp = 'log'
+        opts.out = ['a', 'b', 'corrcoef', 'stderr', 'slopeerr']
+        opts.out_names = ['6', '7', '8', '9', '10']
+        c = funccol.NumRegressionColumns(dt, opts)
+        flow.exec_command(c)
+        dt.update()
+        cols = [tu.get_dtab_column(dt, x) for x in opts.out_names]
+        self.assertEqual(tu.get_dtab_column(dt, 1)[1], 1)
+        self.assertAlmostEqual(cols[0][1], 0.279074517687853)
+        self.assertAlmostEqual(cols[1][1], 0.684388781490891)
+        self.assertAlmostEqual(cols[2][1], math.sqrt(0.943109683070908))
+        self.assertListEqual(cols[0][3:6], [None]*3)
+        self.assertAlmostEqual(cols[0][6], 0)
+        self.assertAlmostEqual(cols[0][7], 0.605931917173364)
+
+        # average-function
+        c = funccol.NumFunctionColumn(dt, 'max', ['X', 'SIN(X)', '1.8*X+4'],
+                                      'max', False)
+        flow.exec_command(c)
+        c = funccol.GroupCategories(dt, [], 'amean')
+        flow.exec_command(c)
+        dt.update()
+        self.assertEqual(sum(tu.get_dtab_column(dt, 'max')[:-1]), 134.58)
+        self.assertEqual(tu.get_dtab_column(dt, 'max')[-1], None)
+
+        # after save procedure
+        c = comproj.SaveDBAs(proj, 'dbg.db')
+        flow.exec_command(c)
+        c = comproj.NewDB(proj)
+        flow.exec_command(c)
+        c = comproj.LoadDB(proj, 'dbg.db')
+        flow.exec_command(c)
+        dt = proj.data_tables[0]
+        dt.update()
+        self.assertEqual(sum(tu.get_dtab_column(dt, 'max')[:-1]), 134.58)
+        c = funccol.GroupCategories(dt, ['Номер_эксперимента'], 'amean')
+        flow.exec_command(c)
+        dt.update()
+        col = tu.get_dtab_column(dt, 'int_sin')
+        self.assertAlmostEqual(sum(col[:3]), sum([0.22997014437065483, 0.8059085741205286, 0.5374542384689438]))  # noqa
+
 
 if __name__ == '__main__':
     unittest.main()

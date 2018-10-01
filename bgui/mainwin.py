@@ -153,6 +153,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # --- Rows
         self.rowsmenu = menubar.addMenu('Rows')
+        self.rowsmenu.addAction(self.acts['Group all'])
         self.rowsmenu.addAction(self.acts['Group redundancies'])
         self.groupcatmenu = QtWidgets.QMenu('Group by category')
         self.rowsmenu.addMenu(self.groupcatmenu)

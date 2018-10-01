@@ -223,14 +223,15 @@ class GroupCategories(command.Command):
 
 
 class NumFunctionColumn(command.Command):
-    def __init__(self, tab, colname, args, func):
+    def __init__(self, tab, colname, args, func, before_group):
         cols = [tab.get_column(x) for x in args]
-        super().__init__(tab=tab, colname=colname, args=cols, func=func)
+        super().__init__(tab=tab, colname=colname, args=cols, func=func,
+                         before_group=before_group)
         self.acts = []
 
     def _exec(self):
         self.new_col = bcol.simple_row_function(
-                self.colname, self.args, self.func)
+                self.colname, self.args, self.func, self.before_group)
         self.acts.append(ActAddColumn(self.tab, self.new_col))
         self.acts[-1].redo()
         return True

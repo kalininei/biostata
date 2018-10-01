@@ -658,6 +658,7 @@ class NumFunctionDlg(_ColListChoiceDlg):
     def _default_odata(self, obj):
         "-> options struct with default values"
         obj.func = 'average'
+        obj.before_grouping = True
         obj.colname = '_auto_'
         super()._default_odata(obj)
 
@@ -672,6 +673,8 @@ class NumFunctionDlg(_ColListChoiceDlg):
                 self, 'colname', dostrip=True)),
             ("Function", "function", optwdg.SingleChoiceOptionEntry(
                 self, "func", funlist)),
+            ("Function", "use before grouping", optwdg.BoolOptionEntry(
+                self, "before_grouping")),
             self.cat_olist(),
             ])
 
@@ -694,8 +697,8 @@ class NumFunctionDlg(_ColListChoiceDlg):
         self.parent().proj.is_valid_table_name(self.odata().colname)
 
     def ret_value(self):
-        "-> colnames, matrix type"
-        return (self._get_cat(), self.odata().colname, self.odata().func)
+        return (self._get_cat(), self.odata().colname, self.odata().func,
+                self.odata().before_grouping)
 
 
 @qtcommon.hold_position

@@ -431,6 +431,19 @@ class ActGroupRedundancies(MainAct):
         self.flow.exec_command(com)
 
 
+class ActGroupAll(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, 'Group all')
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        m = 'amean'
+        com = maincoms.ComGroupCats(self.amodel(), 'all', m)
+        self.flow.exec_command(com)
+
+
 class ActGroup(MainAct):
     def __init__(self, mainwin):
         super().__init__(mainwin, "Group rows...",
@@ -708,9 +721,9 @@ class ActNumFunction(MainAct):
         dialog = dlgs.NumFunctionDlg(
                 self.mainwin, used_cols, all_cols, tps, inv_names)
         if dialog.exec_():
-            colnames, newname, func = dialog.ret_value()
+            colnames, newname, func, bg = dialog.ret_value()
             com = maincoms.ComNumFunctionColumn(
-                    self.amodel(), newname, colnames, func)
+                    self.amodel(), newname, colnames, func, bg)
             self.flow.exec_command(com)
 
 

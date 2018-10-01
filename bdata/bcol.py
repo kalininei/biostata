@@ -84,6 +84,14 @@ class ColumnInfo:
         if hasattr(self, 'status_column'):
             self.status_column.rename('_status ' + newname)
 
+    def description(self):
+        ret = []
+        ret.append(self.sql_delegate.description())
+        ret.append('')
+        if self.comment:
+            ret.append(self.comment)
+        return '\n'.join(ret)
+
     # ------------ delegated to repr_delegate
     def repr(self, x):
         try:
@@ -287,6 +295,10 @@ class OriginalSqlDelegate(_BasicSqlDelegate):
     def to_xml(self, root):
         ET.SubElement(root, "SQL_ORIG")
 
+    def description(self):
+        return "Original data\nGroup with {}".format(
+                self.column.real_data_groupfun)
+
 
 class FuncSqlDelegate(_BasicSqlDelegate):
     def __init__(self, deps):
@@ -349,6 +361,17 @@ class FuncSqlDelegate(_BasicSqlDelegate):
         self.deps = sql.deps
         self._sql_fun = sql._sql_fun
 
+    def description(self):
+        ret = ['Row function: {}'.format(self.function_type)]
+        ret.append('args: {}'.format(', '.join([x.name for x in self.deps])))
+        if self.use_before_grouping:
+            ret.append('used before grouping')
+        else:
+            ret.append('used after grouping')
+        ret.append('params: {}'.format(str(self.kwargs)))
+        ret.append("Group with {}".format(self.column.real_data_groupfun))
+        return '\n'.join(ret)
+
 
 class AggrFuncSqlDelegate(_BasicSqlDelegate):
     def __init__(self, deps):
@@ -399,6 +422,12 @@ class AggrFuncSqlDelegate(_BasicSqlDelegate):
                 deps, None, self.function_type, self.kwargs)
         self.deps = sql.deps
         self._sql_fun = sql._sql_fun
+
+    def description(self):
+        ret = ['Aggregate function: {}'.format(self.function_type)]
+        ret.append('args: {}'.format(', '.join([x.name for x in self.deps])))
+        ret.append('params: {}'.format(str(self.kwargs)))
+        return '\n'.join(ret)
 
 
 class OrigStatusColumn(ColumnInfo):
@@ -592,9 +621,9 @@ def custom_tmp_function(name, func, deplist, before_grouping, rettype):
     return ret
 
 
-def simple_row_function(name, args, func):
+def simple_row_function(name, args, func, before_group):
     rep = _BasicRepr.default("REAL")
-    sql = build_function_sql_delegate(args, True, None, func, {})
+    sql = build_function_sql_delegate(args, before_group, None, func, {})
     ret = ColumnInfo(name)
     ret.set_repr_delegate(rep)
     ret.set_sql_delegate(sql)

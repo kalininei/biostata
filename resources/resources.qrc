@@ -37,5 +37,7 @@
     <file alias="width">width.svg</file>
     <file alias="undo">undo.svg</file>
     <file alias="redo">redo.svg</file>
+    <file alias="aggr-func">func.svg</file>
+    <file alias="func">aggr-func.svg</file>
 </qresource>
 </RCC>

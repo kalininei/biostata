@@ -643,7 +643,7 @@ class ViewedData:
             else:
                 vc = len(self.model.visible_columns)
                 # add additional filters defining this group
-                flt = [self.get_filter(iden=x)
+                flt = [self.model.get_filter(iden=x)
                        for x in self.model.used_filters]
                 flt.append(filt.filter_by_values(
                         self.model, self.definition.keys(),

@@ -498,6 +498,7 @@ class ColumnInfoModel(TwoLevelTreeModel):
             itm.append(QtGui.QStandardItem())
             itm[0].setData(c.name, TwoLevelTreeModel.SubDataRole)
             itm[0].setText(c.name)
+            itm[0].setToolTip(c.description())
             cs = QtCore.Qt.Checked if c in self.dt.visible_columns else\
                 QtCore.Qt.Unchecked
             itm[0].setCheckState(cs)

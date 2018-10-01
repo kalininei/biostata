@@ -443,8 +443,9 @@ class TableView(QtWidgets.QTableView):
         """
         ret = {}
         for i in range(self.model().columnCount()):
-            cid = self.model().dt.all_columns[i].id
+            cid = self.model().dt.visible_columns[i].id
             ret[cid] = self.adjusted_width_for_column(i, how)
+            print(self.model().dt.all_columns[i].name, ret[cid])
         return ret
 
     def adjusted_width_for_column(self, icol, how):
