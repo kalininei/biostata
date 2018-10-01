@@ -144,6 +144,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self.columnsmenu.addAction(self.acts['Collapse all categories'])
         self.columnsmenu.addAction(self.acts['Remove all collapses'])
         self.columnsmenu.addAction(self.acts['Collapse...'])
+        self.columnsmenu.addSeparator()
+        self.columnsmenu.addAction(self.acts['Numerical function...'])
+        self.aggrmenu = QtWidgets.QMenu('Aggregate function')
+        self.aggrmenu.addAction(self.acts['Integral...'])
+        self.aggrmenu.addAction(self.acts['Regression...'])
+        self.columnsmenu.addMenu(self.aggrmenu)
 
         # --- Rows
         self.rowsmenu = menubar.addMenu('Rows')

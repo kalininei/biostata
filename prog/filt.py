@@ -207,6 +207,8 @@ class Filter:
         return ret3
 
     def to_sqlline(self, table):
+        if len(self.entries) == 0:
+            return '1'
         iparen = 0
         line = ""
         for e in self.entries:

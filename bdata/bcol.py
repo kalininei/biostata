@@ -266,8 +266,11 @@ class _BasicSqlDelegate:
     def from_xml(root):
         if root.find('SQL_ORIG') is not None:
             return OriginalSqlDelegate()
-        else:
+        elif root.find('SQL_AGGR_FUNC') is not None:
+            return AggrFuncSqlDelegate.from_xml(root)
+        elif root.find('SQL_FUNC') is not None:
             return FuncSqlDelegate.from_xml(root)
+        assert False
 
 
 class OriginalSqlDelegate(_BasicSqlDelegate):
@@ -327,9 +330,10 @@ class FuncSqlDelegate(_BasicSqlDelegate):
         # temporary fill deps with id.
         # fill_deps procedure should be called after all columns are built
         # to fill deps and build self.sql_fun
-        ret = FuncSqlDelegate([])
         nd = root.find('SQL_FUNC')
-        ret.use_before_grouping = bool(int(nd.find('BEFORE_GROUPING').text))
+        ret = FuncSqlDelegate([])
+        ret.use_before_grouping = bool(int(
+            nd.find('BEFORE_GROUPING').text))
         ret.function_type = unescape(nd.find('FUNCTION').text)
         ret.deps = list(map(int, nd.find('ARGUMENTS').text.split()))
         ret.kwargs = literal_eval(unescape(nd.find('DESCRIPTION').text))
@@ -342,6 +346,57 @@ class FuncSqlDelegate(_BasicSqlDelegate):
         sql = build_function_sql_delegate(
                 deps, self.use_before_grouping, None,
                 self.function_type, self.kwargs)
+        self.deps = sql.deps
+        self._sql_fun = sql._sql_fun
+
+
+class AggrFuncSqlDelegate(_BasicSqlDelegate):
+    def __init__(self, deps):
+        super().__init__()
+        # list of ColumnInfo from which this function gets its arguments
+        self.deps = deps
+        self._sql_fun = None
+        # string representation of function which was used to build self.
+        self.function_type = None
+        # serializable arguments for calling function_type
+        self.kwargs = {}
+
+    def is_original(self):
+        return False
+
+    def sql_line(self, grouping=False):
+        if not grouping:
+            return 'NULL'
+        else:
+            return "{}({})".format(self._sql_fun, ", ".join(
+                [x.sql_line(False) for x in self.deps]))
+
+    def to_xml(self, root):
+        cur = ET.SubElement(root, "SQL_AGGR_FUNC")
+        ET.SubElement(cur, 'FUNCTION').text =\
+            escape(self.function_type)
+        ET.SubElement(cur, "ARGUMENTS").text =\
+            ' '.join([str(x.id) for x in self.deps])
+        ET.SubElement(cur, "DESCRIPTION").text = escape(str(self.kwargs))
+
+    @staticmethod
+    def from_xml(root):
+        # temporary fill deps with id.
+        # fill_deps procedure should be called after all columns are built
+        # to fill deps and build self.sql_fun
+        nd = root.find('SQL_AGGR_FUNC')
+        ret = AggrFuncSqlDelegate([])
+        ret.function_type = unescape(nd.find('FUNCTION').text)
+        ret.deps = list(map(int, nd.find('ARGUMENTS').text.split()))
+        ret.kwargs = literal_eval(unescape(nd.find('DESCRIPTION').text))
+        return ret
+
+    def fill_deps(self, tab):
+        deps = []
+        for i in self.deps:
+            deps.append(tab.get_column(iden=i))
+        sql = build_aggr_function_sql_delegate(
+                deps, None, self.function_type, self.kwargs)
         self.deps = sql.deps
         self._sql_fun = sql._sql_fun
 
@@ -446,20 +501,63 @@ def get_sql_func(name, columns, **kwargs):
                 return delimiter.join(ret)
             except Exception as e:
                 basic.ignore_exception(e, "collapse error. " + str(args))
-    else:
-        assert False, "unknown function {}".format(name)
-    return func
+        return func
+    elif name.startswith('regression'):
+        tp = kwargs['tp']
+        ngroup = kwargs['group']
+        if name == 'regression a':
+            return bsqlproc.build_regression_grouping(tp, ngroup)['a']
+        if name == 'regression b':
+            return bsqlproc.build_regression_grouping(tp, ngroup)['b']
+        if name == 'regression stderr':
+            return bsqlproc.build_regression_grouping(tp, ngroup)['stderr']
+        if name == 'regression slopeerr':
+            return bsqlproc.build_regression_grouping(tp, ngroup)['slopeerr']
+        if name == 'regression corrcoef':
+            return bsqlproc.build_regression_grouping(tp, ngroup)['corrcoef']
+    elif name == 'average':
+        return 'row_average'
+    elif name == 'min':
+        return 'row_min'
+    elif name == 'max':
+        return 'row_max'
+    elif name == 'sum':
+        return 'row_sum'
+    elif name == 'median':
+        return 'row_median'
+    elif name == 'product':
+        return 'row_product'
+    elif name == 'xy_integral':
+        return 'xy_integral'
+    assert False, "unknown function {}".format(name)
 
 
 def build_function_sql_delegate(deps, before_grouping, func, func_type, kw):
     ret = FuncSqlDelegate(deps)
     if func is None:
         func = get_sql_func(func_type, deps, **kw)
-    ret._sql_fun = bsqlproc.connection.build_lambda_func(func)
+    if isinstance(func, str):
+        ret._sql_fun = func
+    else:
+        ret._sql_fun = bsqlproc.connection.build_lambda_func(func)
     ret.function_type = func_type
     ret.use_before_grouping = before_grouping
     ret.kwargs = kw
 
+    return ret
+
+
+def build_aggr_function_sql_delegate(deps, func, func_type, kw):
+    ret = AggrFuncSqlDelegate(deps)
+    if func is None:
+        func = get_sql_func(func_type, deps, **kw)
+    if isinstance(func, str):
+        ret._sql_fun = func
+    else:
+        ret._sql_fun = bsqlproc.connection.build_aggr_func(func)
+    ret.function_type = func_type
+    ret.use_before_grouping = False
+    ret.kwargs = kw
     return ret
 
 
@@ -491,4 +589,40 @@ def custom_tmp_function(name, func, deplist, before_grouping, rettype):
     ret.set_repr_delegate(rep)
     ret.set_sql_delegate(sql)
     ret.status_column = FuncStatusColumn(ret)
+    return ret
+
+
+def simple_row_function(name, args, func):
+    rep = _BasicRepr.default("REAL")
+    sql = build_function_sql_delegate(args, True, None, func, {})
+    ret = ColumnInfo(name)
+    ret.set_repr_delegate(rep)
+    ret.set_sql_delegate(sql)
+    ret.status_column = FuncStatusColumn(ret)
+    return ret
+
+
+def aggregate_integral_function(name, argx, argy):
+    rep = _BasicRepr.default("REAL")
+    sql = build_aggr_function_sql_delegate(
+            [argx, argy], 'xy_integral', 'xy_integral', {})
+    ret = ColumnInfo(name)
+    ret.set_repr_delegate(rep)
+    ret.set_sql_delegate(sql)
+    ret.status_column = FuncStatusColumn(ret)
+    return ret
+
+
+def aggregate_regression(argx, argy, tp, out, out_names):
+    kwargs = {'group': "{}_{}_{}".format(argx.id, argy.id, tp), 'tp': tp}
+    ret = []
+    for ct, cn in zip(out, out_names):
+        rep = _BasicRepr.default("REAL")
+        sql = build_aggr_function_sql_delegate(
+            [argx, argy], None, "regression " + ct, kwargs)
+        r = ColumnInfo(cn)
+        r.set_repr_delegate(rep)
+        r.set_sql_delegate(sql)
+        r.status_column = FuncStatusColumn(r)
+        ret.append(r)
     return ret

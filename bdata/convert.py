@@ -464,8 +464,7 @@ class TableConverter:
         'remove columns which depend on removed or repr_changed columns'
         ret = [c for c in self.citems if c.no_promote()]
         candidates = [c for c in self.citems
-                      if not c.no_promote() and isinstance(
-                          c.col.sql_delegate, bcol.FuncSqlDelegate)]
+                      if not c.no_promote() and not c.col.is_original()]
         iorig = len(ret)
         i = 0
         while i < len(ret):

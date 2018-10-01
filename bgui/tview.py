@@ -296,14 +296,19 @@ class TableView(QtWidgets.QTableView):
         # ---------- ordering v-sign
         self.horizontalHeader().sortIndicatorChanged.disconnect(
             self._act_sort_column)
-        a, b = 0, QtCore.Qt.AscendingOrder
-        if model.dt.ordering is not None:
-            a = model.dt.column_visindex(iden=model.dt.ordering[0])
-            if model.dt.ordering[1] == 'ASC':
-                b = QtCore.Qt.AscendingOrder
+        try:
+            if model.dt.ordering is None:
+                a, b = 0, QtCore.Qt.AscendingOrder
             else:
-                b = QtCore.Qt.DescendingOrder
-        self.horizontalHeader().setSortIndicator(a, b)
+                a = model.dt.column_visindex(iden=model.dt.ordering[0])
+                if model.dt.ordering[1] == 'ASC':
+                    b = QtCore.Qt.AscendingOrder
+                else:
+                    b = QtCore.Qt.DescendingOrder
+            self.horizontalHeader().setSortIndicatorShown(True)
+            self.horizontalHeader().setSortIndicator(a, b)
+        except ValueError:
+            self.horizontalHeader().setSortIndicatorShown(False)
         self.horizontalHeader().sortIndicatorChanged.connect(
             self._act_sort_column)
 

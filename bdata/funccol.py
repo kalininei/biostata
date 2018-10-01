@@ -51,7 +51,7 @@ class ActHideColumn:
             self.tab.visible_columns.insert(self.ind, self.col)
 
 
-class ActRemoveColumn:
+class ActRemoveSingleColumn:
     def __init__(self, tab, col):
         assert not col.is_original()
         self.tab = tab
@@ -76,6 +76,41 @@ class ActRemoveColumn:
             self.tab.all_columns.insert(self.ind1, self.col)
         if self.ind2 is not None:
             self.tab.visible_columns.insert(self.ind2, self.col)
+
+
+class ActRemoveColumn:
+    @staticmethod
+    def implicit_removes(tab, col):
+        'remove columns which depend on removed or repr_changed columns'
+        ret = [col]
+        candidates = [c for c in col if not c.is_original()]
+        i = 0
+        while i < len(ret):
+            for it in candidates:
+                # append implicitly removed column
+                if ret[i] in it.sql_delegate.deps:
+                    ret.append(it)
+                    candidates.remove(it)
+                    break
+            else:
+                i += 1
+        return ret
+
+    def __init__(self, tab, col):
+        assert not col.is_original()
+        self.cols = ActRemoveColumn.implicit_removes(tab, col)
+        self.tab = tab
+        self.acts = []
+
+    def redo(self):
+        self.acts = []
+        for c in self.cols:
+            self.acts.append(ActRemoveSingleColumn(self.tab, self.col))
+            self.acts[-1].redo()
+
+    def undo(self):
+        for a in reversed(self.acts):
+            a.undo()
 
 
 class ActShowColumn:
@@ -153,13 +188,19 @@ class GroupCategories(command.Command):
             raise NotImplementedError
 
     def __init__(self, tab, catlist, method):
-        col = [tab.get_column(x) for x in catlist]
+        if catlist == 'all':
+            col = 'all'
+        else:
+            col = [tab.get_column(x) for x in catlist]
         f = GroupCategories.data_group_function(method)
         super().__init__(tab=tab, col=col, fun=f)
         self.acts = []
 
     def _exec(self):
-        ids = [x.id for x in self.col]
+        if self.col != 'all':
+            ids = [x.id for x in self.col]
+        else:
+            ids = 'all'
         self.acts.append(
             command.ActChangeAttr(self.tab, 'group_by', ids))
         for x in self.tab.all_columns:
@@ -171,6 +212,86 @@ class GroupCategories(command.Command):
 
     def _clear(self):
         self.acts = []
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
+
+    def _redo(self):
+        for a in self.acts:
+            a.redo()
+
+
+class NumFunctionColumn(command.Command):
+    def __init__(self, tab, colname, args, func):
+        cols = [tab.get_column(x) for x in args]
+        super().__init__(tab=tab, colname=colname, args=cols, func=func)
+        self.acts = []
+
+    def _exec(self):
+        self.new_col = bcol.simple_row_function(
+                self.colname, self.args, self.func)
+        self.acts.append(ActAddColumn(self.tab, self.new_col))
+        self.acts[-1].redo()
+        return True
+
+    def _clear(self):
+        self.new_col = None
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
+
+    def _redo(self):
+        for a in self.acts:
+            a.redo()
+
+
+class NumIntegralColumn(command.Command):
+    def __init__(self, tab, colname, xcol, ycol):
+        xcol = tab.get_column(xcol)
+        ycol = tab.get_column(ycol)
+        super().__init__(tab=tab, colname=colname, xcol=xcol, ycol=ycol)
+        self.acts = []
+
+    def _exec(self):
+        self.new_col = bcol.aggregate_integral_function(
+                self.colname, self.xcol, self.ycol)
+        self.acts.append(ActAddColumn(self.tab, self.new_col))
+        self.acts[-1].redo()
+        return True
+
+    def _clear(self):
+        self.new_col = None
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
+
+    def _redo(self):
+        for a in self.acts:
+            a.redo()
+
+
+class NumRegressionColumns(command.Command):
+    def __init__(self, tab, opts):
+        xcol = tab.get_column(opts.xcol)
+        ycol = tab.get_column(opts.ycol)
+        super().__init__(tab=tab, opts=opts, xcol=xcol, ycol=ycol)
+        self.acts = []
+        self.new_cols = []
+
+    def _exec(self):
+        opts = self.opts
+        self.new_cols = bcol.aggregate_regression(
+                self.xcol, self.ycol, opts.tp, opts.out, opts.out_names)
+        for c in self.new_cols:
+            self.acts.append(ActAddColumn(self.tab, c))
+            self.acts[-1].redo()
+        return True
+
+    def _clear(self):
+        self.new_cols = []
 
     def _undo(self):
         for a in reversed(self.acts):

@@ -505,6 +505,25 @@ class ComSetColumns(command.Command):
                 raise Exception("Can not remove original column {}"
                                 "".format(c.name))
 
+    @staticmethod
+    def badcols(remains, allcols):
+        'remove columns which depend on removed or repr_changed columns'
+        ret = [c for c in allcols if c not in remains]
+        candidates = [c for c in allcols if not c.is_original()]
+        iorig = len(ret)
+        i = 0
+        while i < len(ret):
+            for it in candidates:
+                # append implicitly removed column
+                if ret[i] in it.sql_delegate.deps:
+                    ret.append(it)
+                    candidates.remove(it)
+                    break
+            else:
+                i += 1
+
+        return ret[iorig:]
+
     def __init__(self, tmod, cols, isvis):
         super().__init__()
         self.check_consistency(tmod, cols)
@@ -513,6 +532,14 @@ class ComSetColumns(command.Command):
         for v, c in zip(isvis, cols):
             if v:
                 vc.append(c)
+
+        # check for deleted dependencies
+        badcols = ComSetColumns.badcols(ac, tmod.dt.all_columns)
+        for b in badcols:
+            if b in ac:
+                ac.remove(b)
+            if b in vc:
+                vc.remove(b)
         tmod.dt._fix_column_order(ac)
         tmod.dt._fix_column_order(vc)
 
@@ -580,4 +607,55 @@ class ComSetFilters(command.Command):
     def _undo(self):
         for a in reversed(self.acts):
             a.undo()
+        self.act_update.undo()
+
+
+class ComNumFunctionColumn(command.Command):
+    def __init__(self, model, name, colnames, func):
+        super().__init__()
+        self.act = command.ActFromCommand(funccol.NumFunctionColumn(
+            model.dt, name, colnames, func))
+        self.act_update = ActModelUpdate(model)
+
+    def _exec(self):
+        self.act.redo()
+        self.act_update.redo()
+        return True
+
+    def _undo(self):
+        self.act.undo()
+        self.act_update.undo()
+
+
+class ComIntegralFunctionColumn(command.Command):
+    def __init__(self, model, name, xcol, ycol):
+        super().__init__()
+        self.act = command.ActFromCommand(funccol.NumIntegralColumn(
+            model.dt, name, xcol, ycol))
+        self.act_update = ActModelUpdate(model)
+
+    def _exec(self):
+        self.act.redo()
+        self.act_update.redo()
+        return True
+
+    def _undo(self):
+        self.act.undo()
+        self.act_update.undo()
+
+
+class ComRegressionFunctionColumn(command.Command):
+    def __init__(self, model, opts):
+        super().__init__()
+        self.act = command.ActFromCommand(funccol.NumRegressionColumns(
+            model.dt, opts))
+        self.act_update = ActModelUpdate(model)
+
+    def _exec(self):
+        self.act.redo()
+        self.act_update.redo()
+        return True
+
+    def _undo(self):
+        self.act.undo()
         self.act_update.undo()

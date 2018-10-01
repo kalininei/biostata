@@ -33,7 +33,7 @@ class DataTable(object):
         self.visible_columns = []
 
         # query options
-        # group column ids list
+        # group column ids list or 'all'
         self.group_by = []
         # (column id, "ASC"/"DESC")
         self.ordering = None
@@ -183,8 +183,11 @@ class DataTable(object):
             except KeyError:
                 self.ordering = None
         if group:
-            gc = [self.get_column(iden=x) for x in group]
-            grlist = 'GROUP BY ' + ', '.join([x.sql_line() for x in gc])
+            if group != 'all':
+                gc = [self.get_column(iden=x) for x in group]
+                grlist = 'GROUP BY ' + ', '.join([x.sql_line() for x in gc])
+            else:
+                grlist = ''
             order = ['MIN(id) ASC']
             if self.ordering:
                 if not oc.is_category():
@@ -318,7 +321,9 @@ class DataTable(object):
                 "{} {}".format(self.ordering[0], self.ordering[1])
 
         # ----- grouping
-        if self.group_by:
+        if self.group_by == 'all':
+            ET.SubElement(root, "GROUP_BY").text = 'all'
+        elif self.group_by:
             ET.SubElement(root, "GROUP_BY").text =\
                 ' '.join([str(i) for i in self.group_by])
 
@@ -374,7 +379,10 @@ class DataTable(object):
         # group
         fnd = root.find('GROUP_BY')
         if fnd is not None and fnd.text:
-            ret.group_by = list(map(int, fnd.text.split()))
+            if fnd.text == 'all':
+                ret.group_by = 'all'
+            else:
+                ret.group_by = list(map(int, fnd.text.split()))
         return ret
 
     # ------------------------ info and checks
@@ -604,6 +612,8 @@ class ViewedData:
             """ -> {field: value}, unique for this row """
             if not self.model.group_by:
                 return {"id": self.values[0]}
+            elif self.model.group_by == 'all':
+                return {}
             else:
                 ret = {}
                 for i in self.model.group_by:

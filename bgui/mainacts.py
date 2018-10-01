@@ -447,6 +447,8 @@ class ActGroup(MainAct):
             self.group_cats(r[1], r[0])
 
     def group_cats(self, cats, method):
+        if len(cats) == 0:
+            cats = 'all'
         com = maincoms.ComGroupCats(self.amodel(), cats, method)
         self.flow.exec_command(com)
 
@@ -650,6 +652,23 @@ class ActCovarianceMatrix(MainAct):
             w.show()
 
 
+def _get_numerical_columns(amodel):
+    ret = []
+    for c in amodel.dt.all_columns:
+        if c.dt_type not in ["ENUM", "BOOL", "TEXT"]:
+            ret.append(c.name)
+    return ret
+
+
+def _get_selected_columns(aview):
+    return [aview.model().dt.get_column(ivis=x).name
+            for x in aview.selected_columns()]
+
+
+def _get_all_columns(amodel):
+    return [x.name for x in amodel.dt.all_columns]
+
+
 class ActCorrelationMatrix(MainAct):
     def __init__(self, mainwin):
         super().__init__(mainwin, "Correlation matrix")
@@ -657,17 +676,9 @@ class ActCorrelationMatrix(MainAct):
     def isactive(self):
         return self.amodel() is not None
 
-    def valid_col_names(self):
-        ret = []
-        for c in self.amodel().dt.all_columns:
-            if c.dt_type not in ["ENUM", "BOOL", "TEXT"]:
-                ret.append(c.name)
-        return ret
-
     def do(self):
-        all_cols = self.valid_col_names()
-        used_cols = [self.amodel().dt.get_column(ivis=x).name
-                     for x in self.aview().selected_columns()]
+        all_cols = _get_numerical_columns(self.amodel())
+        used_cols = _get_selected_columns(self.aview())
         tp = [self.amodel().dt.get_column(x).col_type() for x in all_cols]
         dialog = dlgs.CorrMatDlg(self.mainwin, used_cols, all_cols, tp)
         if dialog.exec_():
@@ -680,3 +691,59 @@ class ActCorrelationMatrix(MainAct):
                                       cm, colnames, colnames, sym=mtype)
             self.mainwin.add_subwindow(w)
             w.show()
+
+
+class ActNumFunction(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Numerical function...")
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        all_cols = _get_numerical_columns(self.amodel())
+        used_cols = _get_selected_columns(self.aview())
+        inv_names = _get_all_columns(self.amodel())
+        tps = [self.amodel().dt.get_column(x).col_type() for x in all_cols]
+        dialog = dlgs.NumFunctionDlg(
+                self.mainwin, used_cols, all_cols, tps, inv_names)
+        if dialog.exec_():
+            colnames, newname, func = dialog.ret_value()
+            com = maincoms.ComNumFunctionColumn(
+                    self.amodel(), newname, colnames, func)
+            self.flow.exec_command(com)
+
+
+class ActIntegralFunction(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Integral...")
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        all_cols = _get_numerical_columns(self.amodel())
+        inv_names = _get_all_columns(self.amodel())
+        dialog = dlgs.IntegralFunctionDlg(self.mainwin, all_cols, inv_names)
+        if dialog.exec_():
+            xcol, ycol, newname = dialog.ret_value()
+            com = maincoms.ComIntegralFunctionColumn(
+                    self.amodel(), newname, xcol, ycol)
+            self.flow.exec_command(com)
+
+
+class ActRegressionFunction(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, "Regression...")
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        all_cols = _get_numerical_columns(self.amodel())
+        inv_names = _get_all_columns(self.amodel())
+        dialog = dlgs.RegressionFunctionDlg(self.mainwin, all_cols, inv_names)
+        if dialog.exec_():
+            opts = dialog.ret_value()
+            com = maincoms.ComRegressionFunctionColumn(self.amodel(), opts)
+            self.flow.exec_command(com)

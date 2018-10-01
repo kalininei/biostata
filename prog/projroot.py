@@ -151,101 +151,6 @@ class ProjectDB:
         tab.proj = self
         self.data_tables.append(tab)
 
-    # #######################################################################
-    # def set_named_filters(self, filtlist, useall=False):
-    #     # remove all existing filters
-    #     for dt in self.data_tables:
-    #         for f in self.named_filters:
-    #             dt.set_filter_usage(f, False)
-    #     self.named_filters.clear()
-    #     # add new
-    #     self.named_filters.extend([f for f in filtlist if f.name])
-    #     if useall:
-    #         for dt in self.data_tables:
-    #             for f in self.named_filters:
-    #                 dt.set_filter_usage(f, True)
-
-    # def remove_dictionary(self, k, lastcheck=True):
-    #     try:
-    #         d = self.dictionaries[k]
-    #     except KeyError:
-    #         return
-    #     # forbid removing of last type dictionary.
-    #     if lastcheck:
-    #         if d.dt_type == 'ENUM' and len(self.enum_dictionaries()) == 1:
-    #             raise Exception(
-    #                 "Can not remove last enum dictionary {}".format(k))
-    #         if d.dt_type == 'BOOL' and len(self.bool_dictionaries()) == 1:
-    #             raise Exception(
-    #                 "Can not remove last bool dictionary {}".format(k))
-    #     # search for columns containing this dict and convert them to int.
-    #     for t in self.data_tables:
-    #         for column in t.columns.values():
-    #             if column.uses_dict(d):
-    #                 t.convert_column(column.name, 'INT')
-    #     # search for filters containing this dict and remove them
-    #     for f in self.all_filters():
-    #         if f.uses_dict(d):
-    #             self.remove_filter_anywhere(f)
-    #     # remove from project
-    #     self.dictionaries.pop(k)
-
-    # def change_dictionaries(self, oldnew):
-    #     """ odlnew - {'olddict name': newdict}
-    #     """
-    #     try:
-    #         newd = oldnew['__new__']
-    #         oldnew.pop('__new__')
-    #     except KeyError:
-    #         newd = []
-    #     # 1) remove dictionaries
-    #     for k in [k1 for k1, v1 in oldnew.items() if v1 is None]:
-    #         self.remove_dictionary(k, False)
-
-    #     # 2) change dictionaries
-    #     for k, v in [(k1, v1) for k1, v1 in oldnew.items()
-    #                  if v1 is not None]:
-    #         d = self.dictionaries[k]
-    #         what_changed = valuedict.Dictionary.compare(d, v)
-    #         if 'keys added' in what_changed or\
-    #               'keys removed' in what_changed:
-    #             # remove filters
-    #             for f in self.all_filters():
-    #                 if f.uses_dict(d):
-    #                     self.remove_filter_anywhere(f)
-    #         elif 'name' in what_changed:
-    #             # changed name in filters
-    #             for f in filter(lambda x: x.uses_dict(d),
-    #                             self.all_filters()):
-    #                 f.change_dict_name(d.name, v.name)
-    #         # convert columns
-    #         for t in self.data_tables:
-    #             for c in filter(lambda x: x.uses_dict(d),
-    #                             t.columns.values()):
-    #                 t.convert_column(c.name, v.dt_type, v)
-    #         # update dictionaries
-    #         d.copy_from(v)
-
-    #     # 3) remove changed dicts
-    #     for nm in filter(lambda x: x in self.dictionaries, oldnew.keys()):
-    #         self.dictionaries.pop(nm)
-
-    #     # 4) add new dicts
-    #     for d in filter(lambda x: x is not None, oldnew.values()):
-    #         self.dictionaries[d.name] = d
-    #     for d in newd:
-    #         self.dictionaries[d.name] = d
-
-    # def remove_filter_anywhere(self, f):
-    #     for t in self.data_tables:
-    #         if f in t.used_filters:
-    #             t.used_filters.remove(f)
-    #         if f.name is None and f in t.all_anon_filters:
-    #             t.all_anon_filters.remove(f)
-    #             return
-    #     if f.name is not None and f in self.named_filters:
-    #         self.named_filters.remove(f)
-
     # ================= Info and data access
     def valid_tech_string(self, descr, nm):
         if not isinstance(nm, str) or not nm.strip():
@@ -280,21 +185,6 @@ class ProjectDB:
         self.valid_tech_string(m, nm)
         return True
 
-    # def all_filters(self):
-    #     ret = self.named_filters[:]
-    #     for t in self.data_tables:
-    #         ret.extend(t.all_anon_filters)
-    #     return ret
-
-    # def get_table_names(self):
-    #     return [x.table_name() for x in self.data_tables]
-
-    # def get_named_filter(self, name):
-    #     try:
-    #         return next(x for x in self.named_filters if x.name == name)
-    #     except StopIteration:
-    #         raise KeyError
-
     def get_table(self, name=None, iden=None):
         if name is not None:
             return next(filter(lambda x: x.table_name() == name,
@@ -324,12 +214,3 @@ class ProjectDB:
     def bool_dictionaries(self):
         return list(filter(lambda x: x.dt_type == "BOOL",
                            self.dictionaries))
-
-    # def need_save(self):
-    #     return self._curname != 'New database'
-
-    # def close_connection(self):
-    #     self.connection.close()
-
-    # def curdir(self):
-    #     return str(self._curdir)

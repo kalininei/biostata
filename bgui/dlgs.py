@@ -547,7 +547,7 @@ class InputInteger(OkCancelDialog):
         return self.wid.value()
 
 
-class _MatDlg(SimpleAbstractDialog):
+class _ColListChoiceDlg(SimpleAbstractDialog):
     def __init__(self, title, parent, default, colnames, coltypes):
         self.default = default
         self.colnames = colnames
@@ -557,7 +557,7 @@ class _MatDlg(SimpleAbstractDialog):
 
     def _default_odata(self, obj):
         "-> options struct with default values"
-        raise NotImplementedError
+        obj.cat = collections.OrderedDict()
 
     def _odata_init(self):
         efin = collections.OrderedDict()
@@ -574,6 +574,10 @@ class _MatDlg(SimpleAbstractDialog):
                     e[c] = c in self.default
             efin['REAL'] = e
         self.set_odata_entry("cat", efin)
+
+    def cat_olist(self):
+        return ("Data", "Column list", optwdg.CheckTreeOptionEntry(
+                self, "cat", 1))
 
     def olist(self):
         raise NotImplementedError
@@ -596,7 +600,7 @@ class _MatDlg(SimpleAbstractDialog):
 
 
 @qtcommon.hold_position
-class CovarMatDlg(_MatDlg):
+class CovarMatDlg(_ColListChoiceDlg):
     def __init__(self, parent, default, colnames, coltypes):
         super().__init__('Covariance matrix options', parent,
                          default, colnames, coltypes)
@@ -605,7 +609,7 @@ class CovarMatDlg(_MatDlg):
         "-> options struct with default values"
         obj.bias = 'population'
         obj.matsym = 'lower'
-        obj.cat = collections.OrderedDict()
+        super()._default_odata(obj)
 
     def olist(self):
         return optview.OptionsList([
@@ -613,8 +617,7 @@ class CovarMatDlg(_MatDlg):
                 self, "bias", ['population', 'sample'])),
             ("Options", "matrix type", optwdg.SingleChoiceOptionEntry(
                 self, "matsym", ['lower', 'upper', 'symmetrical'])),
-            ("Data", "Column list", optwdg.CheckTreeOptionEntry(
-                self, "cat", 1)),
+            self.cat_olist()
             ])
 
     def ret_value(self):
@@ -623,7 +626,7 @@ class CovarMatDlg(_MatDlg):
 
 
 @qtcommon.hold_position
-class CorrMatDlg(_MatDlg):
+class CorrMatDlg(_ColListChoiceDlg):
     def __init__(self, parent, default, colnames, coltypes):
         super().__init__('Correlation matrix options', parent,
                          default, colnames, coltypes)
@@ -631,16 +634,227 @@ class CorrMatDlg(_MatDlg):
     def _default_odata(self, obj):
         "-> options struct with default values"
         obj.matsym = 'lower'
-        obj.cat = collections.OrderedDict()
+        super()._default_odata(obj)
 
     def olist(self):
         return optview.OptionsList([
             ("Options", "matrix type", optwdg.SingleChoiceOptionEntry(
                 self, "matsym", ['lower', 'upper', 'symmetrical'])),
-            ("Data", "Column list", optwdg.CheckTreeOptionEntry(
-                self, "cat", 1)),
+            self.cat_olist(),
             ])
 
     def ret_value(self):
         "-> colnames, matrix type"
         return (self._get_cat(), self.odata().matsym)
+
+
+@qtcommon.hold_position
+class NumFunctionDlg(_ColListChoiceDlg):
+    def __init__(self, parent, default, colnames, coltypes, invalid_names):
+        super().__init__('New numerical function', parent,
+                         default, colnames, coltypes)
+        self.invalid_names = invalid_names
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.func = 'average'
+        obj.colname = '_auto_'
+        super()._default_odata(obj)
+
+    def _odata_init(self):
+        super()._odata_init()
+        self.set_odata_entry('colname', '_auto_')
+
+    def olist(self):
+        funlist = ['average', 'median', 'max', 'min', 'sum', 'product']
+        return optview.OptionsList([
+            ("Return", "Column name", optwdg.SimpleOptionEntry(
+                self, 'colname', dostrip=True)),
+            ("Function", "function", optwdg.SingleChoiceOptionEntry(
+                self, "func", funlist)),
+            self.cat_olist(),
+            ])
+
+    def check_input(self):
+        super().check_input()
+        if self.odata().colname == '_auto_':
+            cn = "{}({})".format(self.odata().func,
+                                 ', '.join(self._get_cat()))
+            i = 0
+            self.odata().colname = cn
+            while True:
+                if not self.odata().colname in self.invalid_names:
+                    break
+                else:
+                    i += 1
+                    self.odata().colname = "{}_{}".format(cn, i)
+        if self.odata().colname in self.invalid_names:
+            raise Exception("column {} already presents"
+                            "".format(self.odata().colname))
+        self.parent().proj.is_valid_table_name(self.odata().colname)
+
+    def ret_value(self):
+        "-> colnames, matrix type"
+        return (self._get_cat(), self.odata().colname, self.odata().func)
+
+
+@qtcommon.hold_position
+class IntegralFunctionDlg(SimpleAbstractDialog):
+    def __init__(self, parent, all_cols, invalid_names):
+        self.all_cols = all_cols
+        self.invalid_names = invalid_names
+        super().__init__("Integral function", parent)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.xcol = ''
+        obj.ycol = ''
+        obj.colname = '_auto_'
+
+    def _odata_init(self):
+        self.set_odata_entry('xcol', self.all_cols[0])
+        self.set_odata_entry('ycol', self.all_cols[0])
+        self.set_odata_entry('colname', '_auto_')
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Return", "Column name", optwdg.SimpleOptionEntry(
+                self, 'colname', dostrip=True)),
+            ("Function", "x-column", optwdg.SingleChoiceOptionEntry(
+                self, "xcol", self.all_cols)),
+            ("Function", "y-column", optwdg.SingleChoiceOptionEntry(
+                self, "ycol", self.all_cols)),
+            ])
+
+    def check_input(self):
+        if self.odata().colname == '_auto_':
+            cn = "Integral({}, {})".format(self.odata().xcol,
+                                           self.odata().ycol)
+            i = 0
+            self.odata().colname = cn
+            while True:
+                if self.odata().colname not in self.invalid_names:
+                    break
+                else:
+                    i += 1
+                    self.odata().colname = "{}_{}".format(cn, i)
+        if self.odata().colname in self.invalid_names:
+            raise Exception("column {} already presents"
+                            "".format(self.odata().colname))
+        self.parent().proj.is_valid_table_name(self.odata().colname)
+
+    def ret_value(self):
+        od = self.odata()
+        return (od.xcol, od.ycol, od.colname)
+
+
+@qtcommon.hold_position
+class RegressionFunctionDlg(SimpleAbstractDialog):
+    def __init__(self, parent, all_cols, invalid_names):
+        self.all_cols = all_cols
+        self.invalid_names = invalid_names
+        self.regtp = ['linear: f(x) = A*x + B',
+                      'log: f(x) = A*ln(x) + B',
+                      'power: f(x) = B*x^A']
+        super().__init__("Regression", parent)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.xcol = ''
+        obj.ycol = ''
+        obj.colname = '_auto_'
+        obj.regtp = self.regtp[0]
+        obj.a = True
+        obj.b = True
+        obj.stderr = False
+        obj.slopeerr = False
+        obj.corrcoef = False
+
+    def _odata_init(self):
+        self.set_odata_entry('xcol', self.all_cols[0])
+        self.set_odata_entry('ycol', self.all_cols[0])
+        self.set_odata_entry('colname', '_auto_')
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Return", "Column name", optwdg.SimpleOptionEntry(
+                self, 'colname', dostrip=True)),
+            ("Return", "Regression type", optwdg.SingleChoiceOptionEntry(
+                self, "regtp", self.regtp)),
+            ("Function", "x-column", optwdg.SingleChoiceOptionEntry(
+                self, "xcol", self.all_cols)),
+            ("Function", "y-column", optwdg.SingleChoiceOptionEntry(
+                self, "ycol", self.all_cols)),
+            ("Output columns", "A (slope)", optwdg.BoolOptionEntry(
+                self, "a")),
+            ("Output columns", "B (intercept)", optwdg.BoolOptionEntry(
+                self, "b")),
+            ("Output columns", "std error", optwdg.BoolOptionEntry(
+                self, "stderr")),
+            ("Output columns", "slope error", optwdg.BoolOptionEntry(
+                self, "slopeerr")),
+            ("Output columns", "correlation coef.", optwdg.BoolOptionEntry(
+                self, "corrcoef")),
+            ])
+
+    def _get_outcols(self):
+        ret = []
+        if self.odata().a:
+            ret.append('a')
+        if self.odata().b:
+            ret.append('b')
+        if self.odata().stderr:
+            ret.append('stderr')
+        if self.odata().slopeerr:
+            ret.append('slopeerr')
+        if self.odata().corrcoef:
+            ret.append('corrcoef')
+        return ret
+
+    def _get_outnames(self):
+        ret = []
+        cn = self.odata().colname
+        if cn == '_auto_':
+            if self.odata().regtp.startswith("lin"):
+                cn = "LinRegr"
+            elif self.odata().regtp.startswith("log"):
+                cn = "LogRegr"
+            elif self.odata().regtp.startswith("pow"):
+                cn = "PowRegr"
+            else:
+                assert False
+            cn = "{}({}, {})".format(cn, self.odata().xcol, self.odata().ycol)
+        if self.odata().a:
+            ret.append(cn + " A")
+        if self.odata().b:
+            ret.append(cn + " B")
+        if self.odata().stderr:
+            ret.append(cn + ' stderr')
+        if self.odata().slopeerr:
+            ret.append(cn + ' slope_err')
+        if self.odata().corrcoef:
+            ret.append(cn + ' corr_coef')
+        for i, r in enumerate(ret):
+            ret[i] = self._adjust_name(r)
+        return ret
+
+    def _adjust_name(self, r):
+        i = 0
+        rr = r
+        while True:
+            if rr not in self.invalid_names:
+                return rr
+            else:
+                i += 1
+                rr = "{}_{}".format(r, i)
+
+    def ret_value(self):
+        ret = collections.namedtuple(
+            'RegressionOptions', ['xcol', 'ycol', 'tp', 'out', 'out_names'])
+        od = self.odata()
+        ret.xcol = od.xcol
+        ret.ycol = od.ycol
+        ret.tp = od.regtp[:od.regtp.find(':')]
+        ret.out = self._get_outcols()
+        ret.out_names = self._get_outnames()
+        return ret
