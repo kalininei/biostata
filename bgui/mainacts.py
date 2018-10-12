@@ -679,6 +679,14 @@ def _get_numerical_columns(amodel):
     return ret
 
 
+def _get_real_columns(amodel):
+    ret = []
+    for c in amodel.dt.all_columns:
+        if c.dt_type == 'REAL':
+            ret.append(c.name)
+    return ret
+
+
 def _get_selected_columns(aview):
     return [aview.model().dt.get_column(ivis=x).name
             for x in aview.selected_columns()]
@@ -708,6 +716,28 @@ class ActCorrelationMatrix(MainAct):
             cm = stats.correlation_matrix(mat)
             w = matrixview.MatrixView("Correlation matrix", self.mainwin,
                                       cm, colnames, colnames, sym=mtype)
+            self.mainwin.add_subwindow(w)
+            w.show()
+
+
+class HierClustering(MainAct):
+    def __init__(self, mainwin):
+        super().__init__(mainwin, 'Hierarchical clustering')
+
+    def isactive(self):
+        return self.amodel() is not None
+
+    def do(self):
+        from bgui import hcluster
+        all_cols = _get_real_columns(self.amodel())
+        used_cols = _get_selected_columns(self.aview())
+        dialog = dlgs.HierClusterDlg(self.mainwin, used_cols, all_cols)
+        if dialog.exec_():
+            colnames = dialog.ret_value()
+            nm = "Clustering of {}: {}".format(
+                self.amodel().table_name(), ', '.join(colnames))
+            w = hcluster.HClusterView(nm, self.mainwin,
+                                      self.amodel(), colnames, self.flow)
             self.mainwin.add_subwindow(w)
             w.show()
 

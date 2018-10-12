@@ -177,6 +177,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.statsmenu = menubar.addMenu('Stats')
         self.statsmenu.addAction(self.acts['Covariance matrix'])
         self.statsmenu.addAction(self.acts['Correlation matrix'])
+        self.statsmenu.addAction(self.acts['Hierarchical clustering'])
 
         # --- Show
         self.showmenu = self.createPopupMenu()

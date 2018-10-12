@@ -149,6 +149,43 @@ def uniint():
     return __uniint_i
 
 
+def best_steping(mostticks, lims):
+    import bisect
+    import math
+    largest = lims[1] - lims[0]
+    if mostticks < 2:
+        mostticks = 2
+    if largest <= 0:
+        return []
+    minimum = largest / mostticks
+    magnitude = 10 ** math.floor(math.log(minimum, 10))
+    residual = minimum / magnitude
+    # this table must begin with 1 and end with 10
+    table = [1, 2, 2.5, 5, 10]
+    if residual < 10:
+        tick = table[bisect.bisect_right(table, residual)]
+    else:
+        tick = 10
+    tick = tick * magnitude
+
+    r0 = math.floor(lims[0]/tick)*tick
+    return r0, tick
+
+
+def get_best_steping(mostticks, lims, wends=False):
+    r0, tick = best_steping(mostticks, lims)
+    # r0 = math.floor(lims[0]/magnitude)*magnitude
+    ret = [r0]
+    while ret and ret[-1] < lims[1]:
+        ret.append(ret[-1] + tick)
+    if not wends:
+        while ret and ret[0] - lims[0] < 0.8*tick:
+            ret.pop(0)
+        while ret and lims[1] - ret[-1] < 0.8*tick:
+            ret.pop()
+    return ret
+
+
 def list_equal(lst1, lst2):
     if len(lst1) != len(lst2):
         return False

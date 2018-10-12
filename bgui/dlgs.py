@@ -702,6 +702,21 @@ class NumFunctionDlg(_ColListChoiceDlg):
 
 
 @qtcommon.hold_position
+class HierClusterDlg(_ColListChoiceDlg):
+    def __init__(self, parent, default, colnames):
+        tp = ['REAL' for _ in colnames]
+        super().__init__('Cluster data', parent, default, colnames, tp)
+
+    def olist(self):
+        return optview.OptionsList([
+            self.cat_olist(),
+            ])
+
+    def ret_value(self):
+        return self._get_cat()
+
+
+@qtcommon.hold_position
 class IntegralFunctionDlg(SimpleAbstractDialog):
     def __init__(self, parent, all_cols, invalid_names):
         self.all_cols = all_cols

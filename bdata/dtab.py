@@ -321,7 +321,7 @@ class DataTable(object):
 
         # ----- ordering
         if self.ordering is not None:
-            assert self.get_column(iden=self.ordering[1]) is not None
+            assert self.get_column(iden=self.ordering[0]) is not None
             ET.SubElement(root, "ORDER_BY").text =\
                 "{} {}".format(self.ordering[0], self.ordering[1])
 

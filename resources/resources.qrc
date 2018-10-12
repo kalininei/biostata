@@ -37,7 +37,11 @@
     <file alias="width">width.svg</file>
     <file alias="undo">undo.svg</file>
     <file alias="redo">redo.svg</file>
-    <file alias="aggr-func">func.svg</file>
-    <file alias="func">aggr-func.svg</file>
+    <file alias="drag">drag.svg</file>
+    <file alias="select">select.svg</file>
+    <file alias="bw-zoom">bw_zoom.svg</file>
+    <file alias="full-size">full-size.svg</file>
+    <file alias="writing">writing.svg</file>
+    <file alias="show-tab">show-table.svg</file>
 </qresource>
 </RCC>
