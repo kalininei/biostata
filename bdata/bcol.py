@@ -531,6 +531,15 @@ def get_sql_func(name, columns, **kwargs):
             except Exception as e:
                 basic.ignore_exception(e, "collapse error. " + str(args))
         return func
+    elif name == 'explicit_column':
+        dt = kwargs['data']
+
+        def func(i):
+            try:
+                return dt[i-1]
+            except Exception as e:
+                basic.ignore_exception(e, 'explicit column error')
+        return func
     elif name.startswith('regression'):
         tp = kwargs['tp']
         ngroup = kwargs['group']
@@ -603,6 +612,22 @@ def collapsed_categories(columns, delimiter='-'):
     ret.set_repr_delegate(rep)
     ret.set_sql_delegate(sql)
 
+    ret.status_column = FuncStatusColumn(ret)
+    return ret
+
+
+def explicit_column(tp, name, data, idcol):
+    ''' column with defined value.
+        data is a python list
+    '''
+    assert tp in ['INT', 'REAL', 'TEXT']
+    kwargs = {'data': data}
+    rep = _BasicRepr.default(tp)
+    sql = build_function_sql_delegate([idcol], True, None,
+                                      'explicit_column', kwargs)
+    ret = ColumnInfo(name)
+    ret.set_repr_delegate(rep)
+    ret.set_sql_delegate(sql)
     ret.status_column = FuncStatusColumn(ret)
     return ret
 

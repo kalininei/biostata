@@ -3,6 +3,8 @@ from PyQt5 import QtWidgets, QtCore, QtGui
 from prog import basic
 from bgui import coloring
 from bgui import hcluster_acts
+from bgui import maincoms
+from bmat import stats
 import numpy as np
 
 
@@ -15,21 +17,24 @@ class DendStep:
         self.right = right
         self.top = None
         self.poly = None
+        self.b_pen = QtGui.QPen()
+        self.b_pen.setWidth(2)
         self.pen = QtGui.QPen()
         self.pen.setWidth(2)
         self.pen.setColor(QtGui.QColor(0, 0, 0))
+        self.b_brush = QtGui.QBrush()
+        self.b_brush.setColor(QtGui.QColor(0, 0, 0))
         self.brush = QtGui.QBrush()
         self.brush.setColor(QtGui.QColor(0, 0, 0))
         self.brush.setStyle(QtCore.Qt.SolidPattern)
         self.font = QtGui.QFont()
-        self.font.setPointSize(10)
         self.influence_rect = None
 
     def set_color(self, color):
         self.pen.setColor(color)
         self.brush.setColor(color)
 
-    def draw(self, painter, to_screen, clip):
+    def draw(self, painter, to_screen, clip, opts):
         if not self.poly:
             self.poly = [None] * 4
             if self.left is not None:
@@ -38,7 +43,10 @@ class DendStep:
             if self.top is not None:
                 self.poly[2] = self.pnt
                 self.poly[3] = QtCore.QPointF(self.pnt.x(), self.top.pnt.y())
-        painter.setPen(self.pen)
+        if opts.use_colors:
+            painter.setPen(self.pen)
+        else:
+            painter.setPen(self.b_pen)
 
         # horizontal line
         if self.poly[0] is not None:
@@ -62,7 +70,11 @@ class DendStep:
         if clip.contains(pc):
             self.influence_rect = QtCore.QRectF(pc.x() - 5, pc.y() - 5, 10, 10)
             if self.is_selected:
-                painter.setBrush(self.brush)
+                if opts.use_colors:
+                    painter.setBrush(self.brush)
+                else:
+                    painter.setBrush(self.b_brush)
+                self.font.setPointSize(opts.font_size)
                 painter.setFont(self.font)
                 painter.drawEllipse(pc, 4, 4)
                 painter.drawText(pc.x() + 4, pc.y() - 4, str(self.iden))
@@ -84,8 +96,9 @@ class DendStep:
 
 
 class Dendrogram(QtWidgets.QGraphicsItem):
-    def __init__(self):
+    def __init__(self, opts):
         super().__init__()
+        self.opts = opts
         self.w = 0
         self.h = 0
         self.dw = 0
@@ -100,26 +113,11 @@ class Dendrogram(QtWidgets.QGraphicsItem):
         # manual clip within s.draw due to svg export problems
         clip = self.mapRectFromScene(self.scene().axis.graph_rect)
         for s in self.steps:
-            s.draw(painter, self.to_screen, clip)
+            s.draw(painter, self.to_screen, clip, self.opts)
 
     def get_rootsteps(self, ngroups):
-        if len(self.steps) == 0:
-            return []
-        rootsteps = [self.steps[-1]]
-        ig = 1
-        while ig < ngroups:
-            besty = self.steps[0].pnt.y() + 1
-            cand = None
-            for r in rootsteps:
-                if r.pnt.y() < besty:
-                    besty = r.pnt.y()
-                    cand = r
-            assert cand is not None
-            rootsteps.remove(cand)
-            rootsteps.append(cand.left)
-            rootsteps.append(cand.right)
-            ig += 1
-        return sorted(rootsteps, key=lambda x: x.pnt.x())
+        ng = self.linkage.get_root_groups(ngroups).tolist()
+        return [self.steps[x] for x in ng]
 
     def reset_group_coloring(self, ngroups):
         def color_step(s, color):
@@ -158,28 +156,11 @@ class Dendrogram(QtWidgets.QGraphicsItem):
         self.h = h
 
     def set_linkage(self, linkage):
-        nsamp = np.size(linkage, 0) + 1
+        nsamp = linkage.samp_count()
         self.dw = float(nsamp) - 1.0
-        self.dh = float(np.max(linkage[:, 2]))
-
-        # build order of bottom nodes
-        def place_items(lnk, sz, left, right, ret):
-            left, right = int(left), int(right)
-            if left < sz:
-                ret.append(left)
-            else:
-                l, r = lnk[left-sz, 0], lnk[left-sz, 1]
-                place_items(lnk, sz, l, r, ret)
-            if right < sz:
-                ret.append(right)
-            else:
-                l, r = lnk[right-sz, 0], lnk[right-sz, 1]
-                place_items(lnk, sz, l, r, ret)
-
-        st = np.argmax(linkage[:, 3])
-        self.bottom_order = []
-        place_items(linkage, nsamp, linkage[st, 0], linkage[st, 1],
-                    self.bottom_order)
+        self.dh = linkage.max_distance()
+        self.bottom_order = linkage.bottom_order.tolist()
+        self.linkage = linkage
 
         # build steps
         self.steps = [None] * nsamp
@@ -187,8 +168,8 @@ class Dendrogram(QtWidgets.QGraphicsItem):
         iden = 0
         for i, b in enumerate(self.bottom_order):
             iden += 1
-            self.steps[int(b)] = DendStep(iden, QtCore.QPointF(float(i), m))
-        for p in linkage:
+            self.steps[int(b)] = DendStep(b + 1, QtCore.QPointF(float(i), m))
+        for p in linkage.linkage:
             iden += 1
             d1, d2 = self.steps[int(p[0])], self.steps[int(p[1])]
             x, y = (d1.pnt.x() + d2.pnt.x())/2, m - p[2]
@@ -201,30 +182,46 @@ class Dendrogram(QtWidgets.QGraphicsItem):
             if s.influence_zone(pnt):
                 s.is_selected = not s.is_selected
                 self.update()
+                self.scene().selection_changed.emit()
                 return
 
 
 class Axis(QtWidgets.QGraphicsItem):
-    def __init__(self):
+    def __init__(self, opts):
         super().__init__()
+        self.opts = opts
         self.w, self.h = 0.0, 0.0
         self.maxy, self.maxx = 1.0, 1.0
         self.limy, self.limx = [0, 1], [0, 1]
-        self.yticks = []
+        self.set_font_sizes()
+        self.yticks = ()
         self.graph_rect = QtCore.QRectF()
+
+    def boundingRect(self):   # noqa
+        return QtCore.QRectF(0.0, 0.0, self.w, self.h)
+
+    def check_font_size(self):
+        if self.opts.font_size != self.__set_font_size:
+            self.set_font_sizes()
+            self.reset_graph_rect()
+
+    def set_font_sizes(self):
+        self.__set_font_size = self.opts.font_size
         self.vert_font = QtGui.QFont()
-        self.vert_font.setPointSize(10)
+        self.vert_font.setPointSize(self.opts.font_size)
         self.hor_font = self.vert_font
+        self.cap_font = QtGui.QFont()
+        self.cap_font.setPointSize(self.opts.font_size + 2)
+        self.cap_font.setBold(True)
         fm = QtGui.QFontMetricsF(self.vert_font)
         self.left_margin = float(fm.width('W') * 6)
         self.bottom_margin = float(fm.width('W') * 9)
         self.top_margin = float(10)
         self.right_margin = float(10)
-
-    def boundingRect(self):   # noqa
-        return QtCore.QRectF(0.0, 0.0, self.w, self.h)
+        self.cap_font_height = QtGui.QFontMetricsF(self.cap_font).height()
 
     def paint(self, painter, option, widget):
+        self.check_font_size()
         pen = QtGui.QPen()
         pen.setWidth(1)
         painter.setPen(pen)
@@ -286,16 +283,23 @@ class Axis(QtWidgets.QGraphicsItem):
     def reset_size(self, w, h):
         self.w = w
         self.h = h
+        self.reset_graph_rect()
+        self.set_limits([0.0, self.maxx], [0.0, self.maxy])
+
+    def reset_graph_rect(self):
         self.graph_rect = QtCore.QRectF(
             self.left_margin, self.top_margin,
-            w - self.left_margin - self.right_margin,
-            h - self.top_margin - self.bottom_margin)
-        self.set_limits([0.0, self.maxx], [0.0, self.maxy])
+            self.w - self.left_margin - self.right_margin,
+            self.h - self.top_margin - self.bottom_margin)
 
 
 class GLine(QtWidgets.QGraphicsItem):
-    def __init__(self):
+    def __init__(self, opts):
         super().__init__()
+        self.opts = opts
+        self.reset()
+
+    def reset(self):
         self.lims = [0, 1]
         self.igroup = 0
         self.ipos = 0.5
@@ -305,6 +309,8 @@ class GLine(QtWidgets.QGraphicsItem):
         return self.scene().axis.boundingRect()
 
     def paint(self, painter, option, widget):
+        if not self.opts.show_slider:
+            return
         dendrogram = self.scene().dendrogram
         axis = self.scene().axis
         rect = axis.graph_rect
@@ -353,6 +359,7 @@ class GLine(QtWidgets.QGraphicsItem):
             return self.lims[a] <= ipos <= self.lims[a + 1]
 
     def set_ipos(self, ip):
+        ip = max(0, ip)
         self.ipos = ip
         if not self.within_group(ip, self.igroup):
             for ig in range(1, len(self.lims) + 1):
@@ -368,21 +375,29 @@ class GLine(QtWidgets.QGraphicsItem):
 
 class HierarchicalScene(QtWidgets.QGraphicsScene):
     ncluster_changed = QtCore.pyqtSignal(int)
+    selection_changed = QtCore.pyqtSignal()
 
-    def __init__(self):
+    def __init__(self, opts):
         super().__init__()
-        self.dendrogram = Dendrogram()
+        self.opts = opts
+        self.captions = None
+        self.dendrogram = Dendrogram(opts)
         self.ncluster_changed.connect(self.dendrogram.reset_group_coloring)
-        self.axis = Axis()
-        self.gline = GLine()
+        self.axis = Axis(opts)
+        self.gline = GLine(opts)
         self.addItem(self.dendrogram)
         self.addItem(self.axis)
         self.addItem(self.gline)
 
+    def set_captions(self, cap):
+        self.captions = cap
+        self.axis.update()
+
     def set_linkage(self, linkage):
         self.dendrogram.set_linkage(linkage)
         self.axis.set_maxvals(self.dendrogram.dw, self.dendrogram.dh)
-        self.gline.set_group_limits(linkage[:, 2].tolist())
+        self.gline.reset()
+        self.gline.set_group_limits(linkage.linkage[:, 2].tolist())
 
     def reset_size(self, w, h):
         self.setSceneRect(QtCore.QRectF(0.0, 0.0, w, h))
@@ -416,12 +431,16 @@ class HierarchicalScene(QtWidgets.QGraphicsScene):
         self.gline.set_ipos(p.y())
 
     def horizontal_caption(self, x):
-        return str('ABCDEFGHI')
+        if self.captions is None:
+            return str(x)
+        else:
+            return self.captions[x]
 
 
 class HierarchicalView(QtWidgets.QGraphicsView):
-    def __init__(self, parent):
+    def __init__(self, parent, opts):
         super().__init__(parent)
+        self.opts = opts
         self._mode = 'drag'
         self.rubber_band = QtWidgets.QRubberBand(
                 QtWidgets.QRubberBand.Rectangle, self)
@@ -442,7 +461,7 @@ class HierarchicalView(QtWidgets.QGraphicsView):
         xmar = 0.5 * r.width()/(self.scene().axis.maxx + 1)
         ymar = 0.05 * h
         p1 = QtCore.QPointF(r.left() - xmar, r.top() - ymar)
-        p2 = QtCore.QPointF(r.right() + xmar, r.bottom())
+        p2 = QtCore.QPointF(r.right() + xmar, r.bottom() + 1)
         self.scene().zoom_content(QtCore.QRectF(p1, p2))
 
     def set_drag_mode(self):
@@ -486,16 +505,17 @@ class HierarchicalView(QtWidgets.QGraphicsView):
                 ny = self.mapToScene(event.pos()).y()
                 self.scene().move_slider(ny)
         else:
-            iz = self.scene().gline.influence_zone(event.pos())
-            # set slider cursor
-            if self._mode != 'slider' and iz:
-                self.__bu_mode = self._mode
-                self.__bu_cursor = self.cursor()
-                self._mode = 'slider'
-                self.setCursor(QtCore.Qt.SizeVerCursor)
-            elif self._mode == 'slider' and not iz:
-                self._mode = self.__bu_mode
-                self.setCursor(self.__bu_cursor)
+            if self.opts.show_slider:
+                iz = self.scene().gline.influence_zone(event.pos())
+                # set slider cursor
+                if self._mode != 'slider' and iz:
+                    self.__bu_mode = self._mode
+                    self.__bu_cursor = self.cursor()
+                    self._mode = 'slider'
+                    self.setCursor(QtCore.Qt.SizeVerCursor)
+                elif self._mode == 'slider' and not iz:
+                    self._mode = self.__bu_mode
+                    self.setCursor(self.__bu_cursor)
 
     def mouseReleaseEvent(self, event):   # noqa
         if event.button() == QtCore.Qt.LeftButton:
@@ -532,20 +552,34 @@ class HierarchicalView(QtWidgets.QGraphicsView):
 class HClusterView(QtWidgets.QWidget):
     def __init__(self, title, parent, dt, colnames, flow):
         super().__init__()
+        self.dt = dt
+        self.colnames = colnames
+        self.tab_state = -1
+        self.opts = hcluster_acts.HClusterOptions()
+
+        # mainwindow communication procedures
+        self.require_editor = parent.require_editor
+        self._tmod = parent.active_model
+        assert self._tmod.dt is dt
+        self.add_cluster_column =\
+            lambda nm, data: parent.flow.exec_command(
+                maincoms.ComAddCustomColumn(self._tmod, nm, 'INT', data))
+
         self.setLayout(QtWidgets.QVBoxLayout())
         self.setWindowIcon(parent.windowIcon())
         self.setWindowTitle(title)
-        self.view = HierarchicalView(self)
-        self.scene = HierarchicalScene()
+        self.view = HierarchicalView(self, self.opts)
+        self.scene = HierarchicalScene(self.opts)
         self.scene.ncluster_changed.connect(self._act_set_igroup)
         self.view.setScene(self.scene)
 
         self._build_acts()
         self.spin_wdg = hcluster_acts.NClusterWidget(self)
+        self.xlab_wdg = hcluster_acts.XLabelWidget(self)
         self.sselect_wdg = hcluster_acts.SpecSelectWidget(self)
 
         self.toolbar_coms = QtWidgets.QToolBar(self)
-        self.toolbar_coms.addAction(self.acts['Refresh database'])
+        self.toolbar_coms.addAction(self.acts['Sync with original table'])
         self.toolbar_coms.addAction(self.acts['Write clusters to database'])
         self.toolbar_coms.addAction(self.acts['Inspect selection'])
         self.toolbar_coms.addAction(self.acts['Settings'])
@@ -553,13 +587,15 @@ class HClusterView(QtWidgets.QWidget):
         self.toolbar_coms.addSeparator()
         self.toolbar_coms.addWidget(self.spin_wdg)
         self.toolbar_coms.addSeparator()
+        self.toolbar_coms.addWidget(self.xlab_wdg)
+        self.toolbar_coms.addSeparator()
         self.toolbar_coms.addAction(self.acts['Fit view'])
         self.toolbar_coms.addAction(self.acts['Mouse move'])
         self.toolbar_coms.addAction(self.acts['Mouse zoom'])
         self.toolbar_coms.addAction(self.acts['Mouse select'])
         self.toolbar_coms.addWidget(self.sselect_wdg)
 
-        self.refresh()
+        self.calc()
 
         self.layout().addWidget(self.toolbar_coms)
         self.layout().addWidget(self.view)
@@ -572,29 +608,61 @@ class HClusterView(QtWidgets.QWidget):
         self._update_menu_status()
         self.acts['Mouse move'].trigger()
 
-    def refresh(self):
-        linkage = np.array(
-            [[0.0, 16.0, 0.49499413, 2.0],
-             [10.0,  4.0,  0.7321348, 2.0],
-             [8.0,  5.0,  0.89753341, 2.0],
-             [18.0,  7.0,  0.91434718, 2.0],
-             [22.0, 14.0,  1.51446632, 3.0],
-             [15.0, 19.0,  1.53696267, 2.0],
-             [21.0, 20.0,  1.68851011, 4.0],
-             [9.0, 23.0,  2.06894465, 3.0],
-             [13.0, 25.0,  2.09670853, 3.0],
-             [28.0,  3.0,  2.44195772, 4.0],
-             [12.0, 24.0,  3.25370934, 4.0],
-             [2.0, 11.0,  3.54263112, 2.0],
-             [17.0,  6.0,  3.62834961, 2.0],
-             [1.0, 29.0,  3.6547446, 5.0],
-             [31.0, 27.0,  5.01845013, 5.0],
-             [32.0, 30.0,  9.57784247, 6.0],
-             [34.0, 26.0, 11.23855384, 9.0],
-             [35.0, 33.0, 15.79190506, 11.0],
-             [36.0, 37.0, 35.12455954, 20.0]])
-        self.spin_wdg.set_maximum(np.size(linkage, 0) + 1)
-        self.scene.set_linkage(linkage)
+    def set_captions(self):
+        if not self.linkage.was_calculated():
+            return
+        cn = self.xlab_wdg.combo.currentText()
+        if cn == '_row index':
+            vfrom = self.linkage.rowid
+        else:
+            if cn in self._bu_captions:
+                vfrom = self._bu_captions[cn]
+            else:
+                if self.is_legal_state():
+                    vfrom = np.array(self.dt.get_column_values(cn))
+                    vfrom = vfrom[self.linkage.rowid - 1]
+                    self._bu_captions[cn] = vfrom
+                else:
+                    qtcommon.message_exc(self, text='Syncronize data!')
+                    return self.xlab_wdg.combo.setCurrentText('_row index')
+        caps = list(map(lambda x: str(vfrom[x]),
+                        self.scene.dendrogram.bottom_order))
+        self.scene.set_captions(caps)
+
+    def calc(self):
+        # get colnames which currently present in dt
+        cn = []
+        for nm in self.colnames:
+            if self.dt.get_column(nm) is not None:
+                cn.append(nm)
+        if len(cn) == 0:
+            qtcommon.message_exc(self, text='Data columns are not availible.')
+        # build linkage
+        self.linkage = stats.HierarchicalLinkage(self.dt, cn, None)
+        self.acts['Inspect selection'].reset()
+        self._bu_captions = {}
+        # save state
+        self.tab_state = self.dt.state_hash()
+        # set possible x-axis captions
+        self.xlab_wdg.set_items([x.name for x in self.dt.all_columns
+                                 if x.is_category()])
+        # calculate
+        self.recalc()
+
+    def recalc(self):
+        self.linkage.recalc(self.opts.distance_method)
+        self.spin_wdg.set_maximum(self.linkage.samp_count())
+        self.scene.set_linkage(self.linkage)
+        self.set_captions()
+        self.view.reset_size()
+        self._update_menu_status()
+
+    def is_legal_state(self):
+        if hasattr(self, 'dt'):
+            return self.tab_state == self.dt.state_hash()
+        else:
+            return False
+        self.ac
 
     def _update_menu_status(self):
         for a in self.acts.values():
@@ -603,3 +671,8 @@ class HClusterView(QtWidgets.QWidget):
     def _act_set_igroup(self, val):
         self.scene.gline.set_igroup(val)
         self.spin_wdg.set_value(val)
+
+    def event(self, e):
+        if e.type() == QtCore.QEvent.WindowActivate:
+            self._update_menu_status()
+        return super().event(e)

@@ -301,3 +301,32 @@ class NumRegressionColumns(command.Command):
     def _redo(self):
         for a in self.acts:
             a.redo()
+
+
+class CustomColumn(command.Command):
+    def __init__(self, tab, name, tp, data):
+        vals = [None] * tab.n_total_rows()
+        for i in range(tab.n_rows()):
+            for ids in tab.ids_by_row(i):
+                vals[ids - 1] = data[i]
+        super().__init__(tab=tab, name=name, tp=tp, vals=vals)
+        self.acts = []
+        self.new_col = None
+
+    def _exec(self):
+        idc = self.tab.get_column('id')
+        self.new_col = bcol.explicit_column(self.tp, self.name, self.vals, idc)
+        self.acts.append(ActAddColumn(self.tab, self.new_col))
+        self.acts[-1].redo()
+        return True
+
+    def _clear(self):
+        del self.new_col
+
+    def _undo(self):
+        for a in reversed(self.acts):
+            a.undo()
+
+    def _redo(self):
+        for a in self.acts:
+            a.redo()

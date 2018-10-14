@@ -124,7 +124,7 @@ def qmodel_xlsx_export(model, fname, hheader=False, vheader=False):
             vals.insert(0, '')
         ws1.append(vals)
     for i in range(nrows):
-        vals = [model.data(model.createIndex(i, j), QtCore.Qt.DisplayRole)
+        vals = [model.data(model.index(i, j), QtCore.Qt.DisplayRole)
                 for j in range(ncols)]
         if vheader:
             vals.insert(0, model.headerData(i, QtCore.Qt.Vertical,

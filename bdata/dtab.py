@@ -56,6 +56,10 @@ class DataTable(object):
         # fills all columns, visible columns, sets ids
         self._complete_columns_lists()
 
+        qr = 'SELECT COUNT(*) FROM "{}"'.format(self.ttab_name)
+        self.query(qr)
+        self._n_total_rows = self.qresult()[0]
+
     # ---------------------- assembling procedures
     def _original_collist(self, with_type=True):
         collist = []
@@ -464,6 +468,9 @@ class DataTable(object):
         except:
             return 0
 
+    def n_total_rows(self):
+        return self._n_total_rows
+
     def applicable_named_filters(self):
         return [f for f in self.proj.named_filters if f.is_applicable(self)]
 
@@ -480,6 +487,14 @@ class DataTable(object):
                 break
             ret += 1
         return ret
+
+    def state_hash(self):
+        t1 = tuple((x.id for x in self.all_columns))
+        t2 = tuple((x.id for x in self.visible_columns))
+        t3 = self.group_by if self.group_by == 'all' else tuple(self.group_by)
+        t4 = self.ordering
+        t5 = tuple(self.used_filters)
+        return hash((t1, t2, t3, t4, t5))
 
     # ------------------------ Data access procedures
     def get_value(self, r, c):
@@ -518,6 +533,11 @@ class DataTable(object):
             return self.qresults()[0]
         else:
             raise NotImplementedError
+
+    def get_column_values(self, cname):
+        rv = self.get_raw_column_values(cname)
+        col = self.get_column(cname)
+        return [col.repr(x) for x in rv]
 
     def get_raw_column_values(self, cname):
         try:

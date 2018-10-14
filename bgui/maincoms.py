@@ -644,3 +644,20 @@ class ComRegressionFunctionColumn(command.Command):
     def _undo(self):
         self.act.undo()
         self.act_update.undo()
+
+
+class ComAddCustomColumn(command.Command):
+    def __init__(self, model, name, tp, data):
+        super().__init__()
+        self.act = command.ActFromCommand(funccol.CustomColumn(
+            model.dt, name, tp, data))
+        self.act_update = ActModelUpdate(model)
+
+    def _exec(self):
+        self.act.redo()
+        self.act_update.redo()
+        return True
+
+    def _undo(self):
+        self.act.undo()
+        self.act_update.undo()

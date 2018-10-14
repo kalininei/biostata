@@ -650,10 +650,10 @@ class CorrMatDlg(_ColListChoiceDlg):
 
 @qtcommon.hold_position
 class NumFunctionDlg(_ColListChoiceDlg):
-    def __init__(self, parent, default, colnames, coltypes, invalid_names):
+    def __init__(self, parent, default, colnames, coltypes, dt):
+        self.dt = dt
         super().__init__('New numerical function', parent,
                          default, colnames, coltypes)
-        self.invalid_names = invalid_names
 
     def _default_odata(self, obj):
         "-> options struct with default values"
@@ -683,18 +683,8 @@ class NumFunctionDlg(_ColListChoiceDlg):
         if self.odata().colname == '_auto_':
             cn = "{}({})".format(self.odata().func,
                                  ', '.join(self._get_cat()))
-            i = 0
-            self.odata().colname = cn
-            while True:
-                if not self.odata().colname in self.invalid_names:
-                    break
-                else:
-                    i += 1
-                    self.odata().colname = "{}_{}".format(cn, i)
-        if self.odata().colname in self.invalid_names:
-            raise Exception("column {} already presents"
-                            "".format(self.odata().colname))
-        self.parent().proj.is_valid_table_name(self.odata().colname)
+            self.odata().colname = self.dt.proj.auto_column_name(cn, self.dt)
+        self.dt.proj.is_valid_column_name(self.odata().colname, self.dt)
 
     def ret_value(self):
         return (self._get_cat(), self.odata().colname, self.odata().func,
@@ -702,25 +692,10 @@ class NumFunctionDlg(_ColListChoiceDlg):
 
 
 @qtcommon.hold_position
-class HierClusterDlg(_ColListChoiceDlg):
-    def __init__(self, parent, default, colnames):
-        tp = ['REAL' for _ in colnames]
-        super().__init__('Cluster data', parent, default, colnames, tp)
-
-    def olist(self):
-        return optview.OptionsList([
-            self.cat_olist(),
-            ])
-
-    def ret_value(self):
-        return self._get_cat()
-
-
-@qtcommon.hold_position
 class IntegralFunctionDlg(SimpleAbstractDialog):
-    def __init__(self, parent, all_cols, invalid_names):
+    def __init__(self, parent, all_cols, dt):
         self.all_cols = all_cols
-        self.invalid_names = invalid_names
+        self.dt = dt
         super().__init__("Integral function", parent)
 
     def _default_odata(self, obj):
@@ -748,18 +723,8 @@ class IntegralFunctionDlg(SimpleAbstractDialog):
         if self.odata().colname == '_auto_':
             cn = "Integral({}, {})".format(self.odata().xcol,
                                            self.odata().ycol)
-            i = 0
-            self.odata().colname = cn
-            while True:
-                if self.odata().colname not in self.invalid_names:
-                    break
-                else:
-                    i += 1
-                    self.odata().colname = "{}_{}".format(cn, i)
-        if self.odata().colname in self.invalid_names:
-            raise Exception("column {} already presents"
-                            "".format(self.odata().colname))
-        self.parent().proj.is_valid_table_name(self.odata().colname)
+            self.odata().colname = self.dt.proj.auto_column_name(cn, self.dt)
+        self.dt.proj.is_valid_column_name(self.odata().colname, self.dt)
 
     def ret_value(self):
         od = self.odata()
@@ -768,9 +733,9 @@ class IntegralFunctionDlg(SimpleAbstractDialog):
 
 @qtcommon.hold_position
 class RegressionFunctionDlg(SimpleAbstractDialog):
-    def __init__(self, parent, all_cols, invalid_names):
+    def __init__(self, parent, all_cols, dt):
         self.all_cols = all_cols
-        self.invalid_names = invalid_names
+        self.dt = dt
         self.regtp = ['linear: f(x) = A*x + B',
                       'log: f(x) = A*ln(x) + B',
                       'power: f(x) = B*x^A']
@@ -853,18 +818,8 @@ class RegressionFunctionDlg(SimpleAbstractDialog):
         if self.odata().corrcoef:
             ret.append(cn + ' corr_coef')
         for i, r in enumerate(ret):
-            ret[i] = self._adjust_name(r)
+            ret[i] = self.dt.proj.auto_column_name(r, self.dt)
         return ret
-
-    def _adjust_name(self, r):
-        i = 0
-        rr = r
-        while True:
-            if rr not in self.invalid_names:
-                return rr
-            else:
-                i += 1
-                rr = "{}_{}".format(r, i)
 
     def ret_value(self):
         ret = collections.namedtuple(
@@ -876,3 +831,50 @@ class RegressionFunctionDlg(SimpleAbstractDialog):
         ret.out = self._get_outcols()
         ret.out_names = self._get_outnames()
         return ret
+
+
+@qtcommon.hold_position
+class HierClusterDlg(_ColListChoiceDlg):
+    def __init__(self, parent, default, colnames):
+        tp = ['REAL' for _ in colnames]
+        super().__init__('Cluster data', parent, default, colnames, tp)
+
+    def olist(self):
+        return optview.OptionsList([
+            self.cat_olist(),
+            ])
+
+    def ret_value(self):
+        return self._get_cat()
+
+
+@qtcommon.hold_position
+class GetColumnName(SimpleAbstractDialog):
+    def __init__(self, parent, dt, default):
+        self.default = default
+        self.dt = dt
+        super().__init__('Enter column name', parent)
+
+    def _default_odata(self, obj):
+        "-> options struct with default values"
+        obj.colname = ''
+
+    def _odata_init(self):
+        if self.default is not None:
+            cn = self.default
+        else:
+            cn = 'Column'
+        cn = self.dt.proj.auto_column_name(cn, self.dt)
+        self.set_odata_entry('colname', cn)
+
+    def olist(self):
+        return optview.OptionsList([
+            ("Column name", "Column name", optwdg.SimpleOptionEntry(
+                self, 'colname', dostrip=True)),
+            ])
+
+    def check_input(self):
+        self.dt.proj.is_valid_column_name(self.odata().colname, self.dt)
+
+    def ret_value(self):
+        return self.odata().colname

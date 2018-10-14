@@ -737,7 +737,7 @@ class HierClustering(MainAct):
             nm = "Clustering of {}: {}".format(
                 self.amodel().table_name(), ', '.join(colnames))
             w = hcluster.HClusterView(nm, self.mainwin,
-                                      self.amodel(), colnames, self.flow)
+                                      self.amodel().dt, colnames, self.flow)
             self.mainwin.add_subwindow(w)
             w.show()
 
@@ -752,10 +752,9 @@ class ActNumFunction(MainAct):
     def do(self):
         all_cols = _get_numerical_columns(self.amodel())
         used_cols = _get_selected_columns(self.aview())
-        inv_names = _get_all_columns(self.amodel())
         tps = [self.amodel().dt.get_column(x).col_type() for x in all_cols]
         dialog = dlgs.NumFunctionDlg(
-                self.mainwin, used_cols, all_cols, tps, inv_names)
+                self.mainwin, used_cols, all_cols, tps, self.amodel().dt)
         if dialog.exec_():
             colnames, newname, func, bg = dialog.ret_value()
             com = maincoms.ComNumFunctionColumn(
@@ -772,8 +771,8 @@ class ActIntegralFunction(MainAct):
 
     def do(self):
         all_cols = _get_numerical_columns(self.amodel())
-        inv_names = _get_all_columns(self.amodel())
-        dialog = dlgs.IntegralFunctionDlg(self.mainwin, all_cols, inv_names)
+        dialog = dlgs.IntegralFunctionDlg(self.mainwin, all_cols,
+                                          self.amodel().dt)
         if dialog.exec_():
             xcol, ycol, newname = dialog.ret_value()
             com = maincoms.ComIntegralFunctionColumn(
@@ -790,8 +789,8 @@ class ActRegressionFunction(MainAct):
 
     def do(self):
         all_cols = _get_numerical_columns(self.amodel())
-        inv_names = _get_all_columns(self.amodel())
-        dialog = dlgs.RegressionFunctionDlg(self.mainwin, all_cols, inv_names)
+        dialog = dlgs.RegressionFunctionDlg(self.mainwin, all_cols,
+                                            self.amodel().dt)
         if dialog.exec_():
             opts = dialog.ret_value()
             com = maincoms.ComRegressionFunctionColumn(self.amodel(), opts)

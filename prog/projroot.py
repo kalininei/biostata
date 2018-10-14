@@ -185,6 +185,32 @@ class ProjectDB:
         self.valid_tech_string(m, nm)
         return True
 
+    def is_valid_column_name(self, nm, table):
+        """ checks if nm could be used as column name for table
+            raises Exception if negative
+        """
+        m = 'Column name "{}"'.format(nm)
+        self.valid_tech_string(m, nm)
+        cnames = list(map(lambda x: x.name.upper(), table.all_columns))
+        if nm.upper() in cnames:
+            s = '{} already exists in the table "{}".'.format(m, table.name)
+            raise Exception(s)
+
+    def auto_column_name(self, prefix, table):
+        """ constructs valid column name for a table as prefix_n
+            raises if this is imposible.
+        """
+        self.valid_tech_string(prefix, prefix)
+        ret = prefix
+        for i in range(1, 100000):
+            try:
+                self.is_valid_column_name(ret, table)
+                return ret
+            except Exception:
+                ret = prefix + '_' + str(i)
+        raise Exception('Failed to build valid column name from {}'.format(
+            prefix))
+
     def get_table(self, name=None, iden=None):
         if name is not None:
             return next(filter(lambda x: x.table_name() == name,
